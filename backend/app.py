@@ -114,22 +114,49 @@ def get_next_album_id():
 
 
 # ========== 初始化专辑数据（替换原有init_data） ==========
+# ========== 初始化专辑数据（扩展字段） ==========
 def init_data():
     try:
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR)
             print(f"创建data文件夹成功：{DATA_DIR}")
 
-        # 新的专辑数据结构（包含你要的所有属性）
+        # 扩展后的专辑数据结构（包含你要的所有详情字段）
         initial_data = [
             {
                 "id": 1,
-                "album_name": "七里香",  # 专辑名
-                "cover_img": "",  # 封面图片（先存空，后续可扩展上传）
-                "singer": "周杰伦",  # 歌手
-                "release_year": 2004,  # 发行年份
-                "main_type": "流行",  # 主要类型
-                "tags": ["经典", "华语"],  # 标签
+                "album_name": "七里香",
+                "cover_img": "",
+                "singer": "周杰伦",
+                "release_year": 2004,
+                "start_time": "2004-08-03",  # 开始时间
+                "track_count": 10,           # 曲目数量
+                "track_duration": "40.00",   # 曲目时长
+                "my_score": 92.0,            # 我的评分（50.9这种格式）
+                "burn_class": "",            # 刻录分类
+                "duration_type": "LP",       # 时长类型
+                "tags": ["经典", "华语"],
+                "main_type": ["流行"],       # 主要类型（数组）
+                "code": "04080307",          # 代号
+                "video_shared": "",          # 视频已分享
+                "mandopop_code": "040113",   # Mandopop代码
+                # 曲目详情（核心）
+                "tracks": [
+                    {"name": "七里香", "time": "0:00", "score": 9.5},
+                    {"name": "外婆", "time": "4:32", "score": 8.8},
+                    {"name": "将军", "time": "8:15", "score": 9.0}
+                ],
+                # 听后感/评论（简化版）
+                "review": {
+                    "single_score": 91.5,    # 单曲打分
+                    "private_score": 0.5,    # 私自打分
+                    "final_score": 92.0,     # 最终评分
+                    "personal_feeling": "经典华语专辑，百听不厌",  # 个人感想
+                    "comments": {            # 各平台评论
+                        "douban": ["评论1", "评论2"],
+                        "netease": ["评论1", "评论2"]
+                    }
+                },
                 "score": 9.2,
                 "comments": []
             },
@@ -139,8 +166,30 @@ def init_data():
                 "cover_img": "",
                 "singer": "周杰伦",
                 "release_year": 2003,
-                "main_type": "流行",
+                "start_time": "2003-07-31",
+                "track_count": 1,
+                "track_duration": "4.23",
+                "my_score": 85.0,
+                "burn_class": "",
+                "duration_type": "Single",
                 "tags": ["经典", "青春"],
+                "main_type": ["流行"],
+                "code": "03073107",
+                "video_shared": "",
+                "mandopop_code": "030113",
+                "tracks": [
+                    {"name": "晴天", "time": "0:00", "score": 8.5}
+                ],
+                "review": {
+                    "single_score": 84.8,
+                    "private_score": 0.2,
+                    "final_score": 85.0,
+                    "personal_feeling": "青春回忆，旋律动人",
+                    "comments": {
+                        "douban": ["评论1", "评论2"],
+                        "netease": ["评论1", "评论2"]
+                    }
+                },
                 "score": 8.5,
                 "comments": ["好听", "经典"]
             }
@@ -154,6 +203,8 @@ def init_data():
     except Exception as e:
         print(f"初始化专辑数据失败：{str(e)}")
         print(traceback.format_exc())
+
+
 
 # 启动时初始化
 init_user()
@@ -301,15 +352,33 @@ def add_album():
 
         # 2. 整理专辑数据
         new_album = {
-            "id": get_next_album_id(),  # 唯一ID
+            "id": get_next_album_id(),
             "album_name": data.get('album_name'),
-            "cover_img": data.get('cover_img', ''),  # 封面默认空
+            "cover_img": data.get('cover_img', ''),
             "singer": data.get('singer'),
-            "release_year": int(data.get('release_year')),  # 转成数字
-            "main_type": data.get('main_type'),
-            "tags": data.get('tags', []),  # 标签默认空数组
-            "score": float(data.get('score', 0.0)),  # 评分默认0
-            "comments": []  # 评论默认空
+            "release_year": int(data.get('release_year')),
+            "start_time": data.get('start_time', ''),  # 新增
+            "track_count": int(data.get('track_count', 0)),  # 新增
+            "track_duration": data.get('track_duration', ''),  # 新增
+            "my_score": float(data.get('my_score', 0.0)),  # 新增
+            "burn_class": data.get('burn_class', ''),  # 新增
+            "duration_type": data.get('duration_type', ''),  # 新增
+            "main_type": data.get('main_type', []),  # 新增（数组）
+            "code": data.get('code', ''),  # 新增
+            "video_shared": data.get('video_shared', ''),  # 新增
+            "mandopop_code": data.get('mandopop_code', ''),  # 新增
+            "tags": data.get('tags', []),
+            # 曲目和评论默认空
+            "tracks": data.get('tracks', []),
+            "review": {
+                "single_score": 0.0,
+                "private_score": 0.0,
+                "final_score": 0.0,
+                "personal_feeling": "",
+                "comments": {}
+            },
+            "score": float(data.get('score', 0.0)),
+            "comments": []
         }
 
         # 3. 读取现有专辑数据
@@ -339,6 +408,148 @@ def add_album():
             "msg": f"添加专辑失败：{str(e)}"
         }), 500
 
+# ========== 新增：删除专辑接口 ==========
+@app.route('/api/album/delete/<int:album_id>', methods=['DELETE'])
+@login_required
+def delete_album(album_id):
+    try:
+        if not os.path.exists(DATA_FILE):
+            return jsonify({"code": 404, "msg": "专辑数据文件不存在！"}), 404
+
+        # 读取所有专辑
+        with open(DATA_FILE, 'r', encoding='utf-8') as file:
+            albums = json.load(file)
+
+        # 过滤掉要删除的专辑
+        new_albums = [a for a in albums if a['id'] != album_id]
+        if len(new_albums) == len(albums):
+            return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+
+        # 保存删除后的数据
+        with open(DATA_FILE, 'w', encoding='utf-8') as file:
+            json.dump(new_albums, file, ensure_ascii=False, indent=2)
+
+        return jsonify({
+            "code": 200,
+            "msg": f"删除ID为{album_id}的专辑成功！"
+        })
+    except Exception as e:
+        print(f"删除专辑出错：{str(e)}")
+        return jsonify({"code": 500, "msg": f"删除专辑失败：{str(e)}"}), 500
+
+# ========== 新增：编辑听后感接口 ==========
+@app.route('/api/album/review/edit/<int:album_id>', methods=['POST'])
+@login_required
+def edit_review(album_id):
+    try:
+        data = request.get_json()
+        if not data or not data.get('personal_feeling'):
+            return jsonify({"code": 400, "msg": "听后感内容不能为空！"}), 400
+
+        if not os.path.exists(DATA_FILE):
+            return jsonify({"code": 404, "msg": "专辑数据文件不存在！"}), 404
+
+        # 读取所有专辑
+        with open(DATA_FILE, 'r', encoding='utf-8') as file:
+            albums = json.load(file)
+
+        # 查找并更新听后感
+        album = None
+        for a in albums:
+            if a['id'] == album_id:
+                album = a
+                break
+        if not album:
+            return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+
+        # 更新听后感（添加时间戳）
+        album['review']['personal_feeling'] = data.get('personal_feeling')
+        album['review']['update_time'] = data.get('update_time')  # 前端传的时间戳
+
+        # 保存更新后的数据
+        with open(DATA_FILE, 'w', encoding='utf-8') as file:
+            json.dump(albums, file, ensure_ascii=False, indent=2)
+
+        return jsonify({
+            "code": 200,
+            "msg": "听后感编辑成功！",
+            "data": album['review']
+        })
+    except Exception as e:
+        print(f"编辑听后感出错：{str(e)}")
+        return jsonify({"code": 500, "msg": f"编辑听后感失败：{str(e)}"}), 500
+
+# ========== 新增：删除听后感接口 ==========
+@app.route('/api/album/review/delete/<int:album_id>', methods=['DELETE'])
+@login_required
+def delete_review(album_id):
+    try:
+        if not os.path.exists(DATA_FILE):
+            return jsonify({"code": 404, "msg": "专辑数据文件不存在！"}), 404
+
+        # 读取所有专辑
+        with open(DATA_FILE, 'r', encoding='utf-8') as file:
+            albums = json.load(file)
+
+        # 查找并清空听后感
+        album = None
+        for a in albums:
+            if a['id'] == album_id:
+                album = a
+                break
+        if not album:
+            return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+
+        # 清空听后感
+        album['review']['personal_feeling'] = ""
+        album['review']['update_time'] = ""
+
+        # 保存更新后的数据
+        with open(DATA_FILE, 'w', encoding='utf-8') as file:
+            json.dump(albums, file, ensure_ascii=False, indent=2)
+
+        return jsonify({
+            "code": 200,
+            "msg": "听后感删除成功！"
+        })
+    except Exception as e:
+        print(f"删除听后感出错：{str(e)}")
+        return jsonify({"code": 500, "msg": f"删除听后感失败：{str(e)}"}), 500
+# ========== 获取专辑详情接口 ==========
+@app.route('/api/album/detail/<int:album_id>', methods=['GET'])
+@login_required
+def get_album_detail(album_id):
+    try:
+        if not os.path.exists(DATA_FILE):
+            return jsonify({"code": 404, "msg": "专辑数据文件不存在！"}), 404
+
+        # 读取所有专辑数据
+        with open(DATA_FILE, 'r', encoding='utf-8') as file:
+            albums = json.load(file)
+
+        # 根据ID查找专辑
+        album = None
+        for a in albums:
+            if a['id'] == album_id:
+                album = a
+                break
+
+        if not album:
+            return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+
+        # 返回专辑详情
+        return jsonify({
+            "code": 200,
+            "msg": "获取专辑详情成功！",
+            "data": album
+        })
+    except Exception as e:
+        print(f"获取专辑详情出错：{str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            "code": 500,
+            "msg": f"获取专辑详情失败：{str(e)}"
+        }), 500
 
 # ========== 提交评论 ==========
 @app.route('/api/music/comment', methods=['POST'])

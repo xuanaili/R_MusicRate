@@ -29,18 +29,5 @@
       "好听",
       "经典"
     ]
-  },
-  {
-    "id": 3,
-    "album_name": "测试",
-    "cover_img": "",
-    "singer": "测试歌手",
-    "release_year": 2022,
-    "main_type": "流行",
-    "tags": [
-      "经典，华语"
-    ],
-    "score": 3.0,
-    "comments": []
   }
 ]

@@ -2,49 +2,55 @@
 import Vue from 'vue'
 import App from './App.vue'
 import axios from 'axios'
-// 新增：导入路由
 import VueRouter from 'vue-router'
-// 导入登录页面和音乐页面
+// 导入页面组件
 import LoginPage from './views/LoginPage.vue'
 import MusicList from './views/MusicList.vue'
 import RegisterPage from "@/views/RegisterPage.vue";
 import AddAlbum from './views/AddAlbum.vue'
+import AlbumDetail from './views/AlbumDetail.vue'
 
-
-
-// 安装路由插件
+// 安装插件
 Vue.use(VueRouter)
+Vue.config.productionTip = false
 
-// 配置后端基础地址
+// ========== 1. 先定义路由（关键！） ==========
+const router = new VueRouter({
+  mode: 'hash', // 强制hash模式，避免路径问题
+  routes: [
+    { path: '/', redirect: '/login' },
+    { path: '/login', component: LoginPage },
+    { path: '/register', component: RegisterPage },
+    { path: '/music', component: MusicList },
+    { path: '/add-album', component: AddAlbum },
+    { path: '/album/detail/:id', component: AlbumDetail } // 动态参数路由
+  ]
+})
+
+// ========== 2. 配置axios ==========
 axios.defaults.baseURL = 'http://127.0.0.1:5000'
+axios.defaults.timeout = 10000 // 增加超时时间
 
-// ========== 新增：请求拦截器（所有请求自动加token） ==========
+// 请求拦截器：自动加token
 axios.interceptors.request.use(
   config => {
-    // 从本地取token，有就加到请求头里
     const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = token
     }
     return config
   },
-  error => {
-    return Promise.reject(error)
-  }
+  error => Promise.reject(error)
 )
 
-// ========== 新增：响应拦截器（统一处理登录过期） ==========
+// 响应拦截器：处理401（此时router已定义）
 axios.interceptors.response.use(
-  response => {
-    return response
-  },
+  response => response,
   error => {
-    // 如果后端返回401（未登录/登录过期），跳回登录页
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token')  // 清空无效token
-      localStorage.removeItem('username')
-      alert(error.response.data.msg)
-      router.push('/login')  // 跳登录页
+      localStorage.clear()
+      alert(error.response.data.msg || '登录已过期，请重新登录')
+      router.push('/login') // 此时router已定义
     }
     return Promise.reject(error)
   }
@@ -52,21 +58,9 @@ axios.interceptors.response.use(
 
 // 挂载axios
 Vue.prototype.$axios = axios
-Vue.config.productionTip = false
 
-// ========== 新增：配置路由规则 ==========
-const router = new VueRouter({
-  routes: [
-    { path: '/', redirect: '/login' },  // 默认跳登录页
-    { path: '/login', component: LoginPage },  // 登录页
-    { path: '/register', component: RegisterPage },  // 新增：注册页
-    { path: '/music', component: MusicList },   // 音乐列表页
-    { path: '/add-album', component: AddAlbum } //音乐添加页
-  ]
-})
-
-// 启动Vue（挂载路由）
+// ========== 3. 启动Vue ==========
 new Vue({
-  router,  // 加路由
+  router, // 挂载路由
   render: h => h(App)
 }).$mount('#app')
