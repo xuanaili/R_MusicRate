@@ -94,28 +94,66 @@ def get_next_user_id():
     except Exception as e:
         print(f"生成用户ID失败：{str(e)}")
         return 1  # 兜底返回1
+# ========== 工具函数：生成唯一专辑ID ==========
+def get_next_album_id():
+    """读取专辑文件，返回下一个可用的专辑ID"""
+    try:
+        if not os.path.exists(DATA_FILE):
+            return 1
+        with open(DATA_FILE, 'r', encoding='utf-8') as file:
+            albums = json.load(file)
+        if not albums:
+            return 1
+        max_id = max([album['id'] for album in albums])
+        return max_id + 1
+    except Exception as e:
+        print(f"生成专辑ID失败：{str(e)}")
+        return 1
 
-# ========== 初始化音乐数据 ==========
+
+
+
+# ========== 初始化专辑数据（替换原有init_data） ==========
 def init_data():
     try:
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR)
             print(f"创建data文件夹成功：{DATA_DIR}")
 
+        # 新的专辑数据结构（包含你要的所有属性）
         initial_data = [
-            {"id": 1, "name": "晴天 - 周杰伦", "score": 8.5, "comments": ["好听", "经典"]},
-            {"id": 2, "name": "七里香 - 周杰伦", "score": 9.2, "comments": []}
+            {
+                "id": 1,
+                "album_name": "七里香",  # 专辑名
+                "cover_img": "",  # 封面图片（先存空，后续可扩展上传）
+                "singer": "周杰伦",  # 歌手
+                "release_year": 2004,  # 发行年份
+                "main_type": "流行",  # 主要类型
+                "tags": ["经典", "华语"],  # 标签
+                "score": 9.2,
+                "comments": []
+            },
+            {
+                "id": 2,
+                "album_name": "晴天",
+                "cover_img": "",
+                "singer": "周杰伦",
+                "release_year": 2003,
+                "main_type": "流行",
+                "tags": ["经典", "青春"],
+                "score": 8.5,
+                "comments": ["好听", "经典"]
+            }
         ]
         if not os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'w', encoding='utf-8') as file:  # 改变量名：f → file
+            with open(DATA_FILE, 'w', encoding='utf-8') as file:
                 json.dump(initial_data, file, ensure_ascii=False, indent=2)
-            print(f"创建音乐文件成功：{DATA_FILE}")
+            print(f"创建专辑文件成功：{DATA_FILE}")
         else:
-            print(f"音乐文件已存在：{DATA_FILE}")
+            print(f"专辑文件已存在：{DATA_FILE}")
     except Exception as e:
-        print(f"初始化音乐数据失败：{str(e)}")
+        print(f"初始化专辑数据失败：{str(e)}")
         print(traceback.format_exc())
-
 
 # 启动时初始化
 init_user()
@@ -229,24 +267,77 @@ def login():
         return jsonify({"code": 500, "msg": f"登录出错：{str(e)}"}), 500
 
 
-# ========== 获取音乐列表 ==========
+# ========== 获取专辑列表（原get_music_list，改名更贴合） ==========
 @app.route('/api/music', methods=['GET'])
 @login_required
-def get_music_list():
+def get_album_list():  # 函数名从get_music_list改成get_album_list
     try:
         if not os.path.exists(DATA_FILE):
-            print(f"音乐文件不存在：{DATA_FILE}")
-            return jsonify({"code": 500, "msg": "音乐数据文件缺失！"}), 500
+            print(f"专辑文件不存在：{DATA_FILE}")
+            return jsonify({"code": 500, "msg": "专辑数据文件缺失！"}), 500
 
-        with open(DATA_FILE, 'r', encoding='utf-8') as file:  # 改变量名：f → file
-            music_list = json.load(file)
+        with open(DATA_FILE, 'r', encoding='utf-8') as file:
+            album_list = json.load(file)
 
-        print(f"返回音乐列表：{music_list}")
-        return jsonify(music_list)
+        print(f"返回专辑列表：{album_list}")
+        return jsonify(album_list)
     except Exception as e:
-        print(f"获取音乐列表出错：{str(e)}")
+        print(f"获取专辑列表出错：{str(e)}")
         print(traceback.format_exc())
-        return jsonify({"code": 500, "msg": f"获取音乐出错：{str(e)}"}), 500
+        return jsonify({"code": 500, "msg": f"获取专辑出错：{str(e)}"}), 500
+# ========== 添加专辑接口 ==========
+@app.route('/api/album/add', methods=['POST'])
+@login_required  # 必须登录才能添加
+def add_album():
+    try:
+        data = request.get_json()
+        print(f"添加专辑请求参数：{data}")
+
+        # 1. 校验必填字段（根据你的需求调整）
+        required_fields = ['album_name', 'singer', 'release_year', 'main_type']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"code": 400, "msg": f"{field}不能为空！"}), 400
+
+        # 2. 整理专辑数据
+        new_album = {
+            "id": get_next_album_id(),  # 唯一ID
+            "album_name": data.get('album_name'),
+            "cover_img": data.get('cover_img', ''),  # 封面默认空
+            "singer": data.get('singer'),
+            "release_year": int(data.get('release_year')),  # 转成数字
+            "main_type": data.get('main_type'),
+            "tags": data.get('tags', []),  # 标签默认空数组
+            "score": float(data.get('score', 0.0)),  # 评分默认0
+            "comments": []  # 评论默认空
+        }
+
+        # 3. 读取现有专辑数据
+        albums = []
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r', encoding='utf-8') as file:
+                albums = json.load(file)
+
+        # 4. 添加新专辑
+        albums.append(new_album)
+
+        # 5. 保存更新后的数据
+        with open(DATA_FILE, 'w', encoding='utf-8') as file:
+            json.dump(albums, file, ensure_ascii=False, indent=2)
+
+        print(f"添加专辑成功：{new_album['album_name']}")
+        return jsonify({
+            "code": 200,
+            "msg": "专辑添加成功！",
+            "data": new_album
+        })
+    except Exception as e:
+        print(f"添加专辑出错：{str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            "code": 500,
+            "msg": f"添加专辑失败：{str(e)}"
+        }), 500
 
 
 # ========== 提交评论 ==========

@@ -1,22 +1,46 @@
 [
   {
     "id": 1,
-    "name": "晴天 - 周杰伦",
-    "score": 5.0,
-    "comments": [
-      "好听",
+    "album_name": "七里香",
+    "cover_img": "",
+    "singer": "周杰伦",
+    "release_year": 2004,
+    "main_type": "流行",
+    "tags": [
       "经典",
-      "飒飒",
-      "好好好",
-      "1"
-    ]
+      "华语"
+    ],
+    "score": 9.2,
+    "comments": []
   },
   {
     "id": 2,
-    "name": "七里香 - 周杰伦",
-    "score": 5.1,
+    "album_name": "晴天",
+    "cover_img": "",
+    "singer": "周杰伦",
+    "release_year": 2003,
+    "main_type": "流行",
+    "tags": [
+      "经典",
+      "青春"
+    ],
+    "score": 8.5,
     "comments": [
-      "一般般"
+      "好听",
+      "经典"
     ]
+  },
+  {
+    "id": 3,
+    "album_name": "测试",
+    "cover_img": "",
+    "singer": "测试歌手",
+    "release_year": 2022,
+    "main_type": "流行",
+    "tags": [
+      "经典，华语"
+    ],
+    "score": 3.0,
+    "comments": []
   }
 ]

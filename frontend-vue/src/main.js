@@ -8,6 +8,9 @@ import VueRouter from 'vue-router'
 import LoginPage from './views/LoginPage.vue'
 import MusicList from './views/MusicList.vue'
 import RegisterPage from "@/views/RegisterPage.vue";
+import AddAlbum from './views/AddAlbum.vue'
+
+
 
 // 安装路由插件
 Vue.use(VueRouter)
@@ -57,7 +60,8 @@ const router = new VueRouter({
     { path: '/', redirect: '/login' },  // 默认跳登录页
     { path: '/login', component: LoginPage },  // 登录页
     { path: '/register', component: RegisterPage },  // 新增：注册页
-    { path: '/music', component: MusicList }   // 音乐列表页
+    { path: '/music', component: MusicList },   // 音乐列表页
+    { path: '/add-album', component: AddAlbum } //音乐添加页
   ]
 })
 
