@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>音乐评分网站</title>
+    <link rel="stylesheet" href="./assets/css/global.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.7.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <h1>我的音乐评分</h1>
+            <!-- 引入MusicItem组件 -->
+            <MusicItem
+              v-for="music in musicList"
+              :key="music.id"
+              :music="music"
+              @add-comment="handleAddComment"
+            />
+        </div>
+    </div>
+
+    <!-- 注意：组件化版本需要用模块化方式引入，CDN版需加type="module" -->
+    <script src="./app.js" type="module"></script>
+</body>
+</html>

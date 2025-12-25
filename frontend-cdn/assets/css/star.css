@@ -1,0 +1,11 @@
+.star-rating {
+  color: #ccc;
+  font-size: 20px;
+  margin: 10px 0;
+}
+.star-rating span {
+  cursor: pointer;
+}
+.star-rating span.active {
+  color: #ffc107;
+}
