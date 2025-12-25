@@ -11,6 +11,10 @@
     </div>
     <button @click="handleLogin">登录</button>
     <div class="error-tip" v-if="errorMsg">{{ errorMsg }}</div>
+    <!-- 新增：跳注册页的链接 -->
+    <div class="go-register">
+      没有账号？<span @click="goRegister">立即注册</span>
+    </div>
   </div>
 </template>
 
@@ -54,6 +58,10 @@ export default {
           console.error("登录失败：", err);
           this.errorMsg = "登录失败，请检查后端是否启动！";
         });
+    },
+    // 跳注册页
+    goRegister(){
+    this.$router.push("/register");
     }
   }
 };
@@ -90,5 +98,13 @@ button {
 .error-tip {
   color: red;
   margin-top: 10px;
+}
+.go-register {
+  margin-top: 15px;
+  color: #666;
+}
+.go-register span {
+  color: #42b983;
+  cursor: pointer;
 }
 </style>

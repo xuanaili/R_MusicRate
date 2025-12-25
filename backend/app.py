@@ -78,6 +78,23 @@ def login_required(func):  # 改变量名：f → func，避免冲突
     return wrapper
 
 
+# ========== 工具函数：生成唯一用户ID ==========
+def get_next_user_id():
+    """读取用户文件，返回下一个可用的用户ID（避免重复）"""
+    try:
+        if not os.path.exists(USER_FILE):
+            return 1  # 没有用户文件，第一个用户ID为1
+        with open(USER_FILE, 'r', encoding='utf-8') as file:
+            users = json.load(file)
+        if not users:
+            return 1
+        # 取最大ID +1
+        max_id = max([u['id'] for u in users])
+        return max_id + 1
+    except Exception as e:
+        print(f"生成用户ID失败：{str(e)}")
+        return 1  # 兜底返回1
+
 # ========== 初始化音乐数据 ==========
 def init_data():
     try:
@@ -104,6 +121,63 @@ def init_data():
 init_user()
 init_data()
 
+
+
+# ========== 注册接口 ==========
+@app.route('/api/register', methods=['POST'])
+def register():
+    try:
+        data = request.get_json()
+        print(f"注册请求参数：{data}")
+
+        # 1. 校验必填字段
+        username = data.get('username')
+        password = data.get('password')
+        if not username or not password:
+            return jsonify({"code": 400, "msg": "用户名和密码不能为空！"}), 400
+
+        # 2. 确保data文件夹存在
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR)
+
+        # 3. 读取/初始化用户数据
+        users = []
+        if os.path.exists(USER_FILE):
+            with open(USER_FILE, 'r', encoding='utf-8') as file:
+                users = json.load(file)
+
+        # 4. 检查用户名是否已存在（核心：避免重复注册）
+        for u in users:
+            if u['username'] == username:
+                print(f"用户名已存在：{username}")
+                return jsonify({"code": 400, "msg": "用户名已被注册！"}), 400
+
+        # 5. 生成新用户数据
+        new_user = {
+            "id": get_next_user_id(),  # 唯一ID
+            "username": username,
+            "password": password,  # 注意：实际项目要加密，这里简化
+            "token": ""  # 初始token为空
+        }
+        users.append(new_user)
+
+        # 6. 保存新用户数据
+        with open(USER_FILE, 'w', encoding='utf-8') as file:
+            json.dump(users, file, ensure_ascii=False, indent=2)
+
+        print(f"注册成功：用户名={username}")
+        return jsonify({
+            "code": 200,
+            "msg": "注册成功！请登录",
+            "data": {"username": username}
+        })
+    except Exception as e:
+        print(f"注册接口出错：{str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            "code": 500,
+            "msg": f"注册失败：{str(e)}"
+        }), 500
 
 # ========== 登录接口 ==========
 @app.route('/api/login', methods=['POST'])
