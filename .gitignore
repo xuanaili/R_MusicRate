@@ -1,0 +1,7 @@
+# created by virtualenv automatically
+.venv/         # Python虚拟环境
+__pycache__/   # Python缓存文件
+*.log          # 日志文件
+node_modules/  # 后续前端装依赖的文件夹
+.DS_Store      # Mac系统文件
+.idea
