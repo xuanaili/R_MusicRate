@@ -3,6 +3,7 @@
 // import Vue from 'vue';
 // 引入音乐卡片组件
 import MusicItem from './components/MusicItem.vue';
+import Vue from "vue";
 
 new Vue({
   el: '#app',
