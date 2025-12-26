@@ -1,4 +1,4 @@
-# 听后感相关接口 - 添加、删除、编辑、清空
+# MusicRate/backend/api/review.py 听后感相关接口 - 添加、删除、编辑、清空
 from flask import request, jsonify
 import json
 import uuid

@@ -1,11 +1,11 @@
-# 专辑基础操作接口 - 增删改查、列表、详情
+# MusicRate/backend/api/album.py 专辑基础操作接口 - 增删改查、列表、详情
 from flask import request, jsonify
 import json
 import traceback
-from ..db_utils import get_db, get_album_table_name, current_user_id
+from ..db_utils import get_db, get_album_table_name, current_user_id, check_and_create_user_album_table
 from ..decorators import login_required
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, VALID_SORT_FIELDS
-
+import pymysql
 
 def register_album_routes(app):
     """注册专辑基础操作路由（需传入Flask app实例）"""
@@ -17,11 +17,19 @@ def register_album_routes(app):
         return get_album_list()
 
     # 2. 获取专辑列表（带分页、排序）
+    # 修复后的 get_album_list 函数
     @app.route('/api/music', methods=['GET'])
-    @login_required
+    @login_required  # 确保登录装饰器已正确实现
     def get_album_list():
         try:
-            # 获取分页和排序参数
+            # 1. 先检查并创建用户分表（兜底保障）
+            if not current_user_id:
+                return jsonify({"code": 401, "msg": "未获取到用户信息，请重新登录"}), 401
+
+            # 强制检查分表是否存在，不存在则创建
+            check_and_create_user_album_table(current_user_id)
+
+            # 2. 获取分页和排序参数
             page = int(request.args.get('page', DEFAULT_PAGE))
             page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
             sort_by = request.args.get('sort_by', 'album_name')
@@ -33,55 +41,61 @@ def register_album_routes(app):
             if sort_order not in ['asc', 'desc']:
                 sort_order = 'asc'
 
-            # 获取当前用户的专辑表名
+            # 3. 获取当前用户的专辑表名
             table_name = get_album_table_name(current_user_id)
             db = get_db()
-            cursor = db.cursor()
 
-            # 1. 查询总条数（用于分页）
+            # 关键修复：明确指定字典游标（和db_utils保持一致）
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+
+            # 4. 查询总条数（用于分页）
             cursor.execute(f'SELECT COUNT(*) as total FROM `{table_name}`')
-            total = cursor.fetchone()['total']
+            total = cursor.fetchone()['total']  # 字典游标才能这样取值
 
-            # 2. 计算分页偏移量
+            # 5. 计算分页偏移量
             offset = (page - 1) * page_size
 
-            # 3. 带排序和分页的查询
-            cursor.execute(f'''
+            # 6. 带排序和分页的查询（参数化查询防注入）
+            query_sql = f'''
                 SELECT * FROM `{table_name}` 
                 ORDER BY `{sort_by}` {sort_order.upper()}
                 LIMIT %s OFFSET %s
-            ''', (page_size, offset))
+            '''
+            cursor.execute(query_sql, (page_size, offset))
             albums = cursor.fetchall()
             cursor.close()
 
-            # 解析JSON字段（tags/main_type等）
+            # 7. 解析JSON字段（兼容NULL值）
             album_list = []
             for album in albums:
                 album_dict = {
                     "id": album["id"],
                     "album_name": album["album_name"],
-                    "cover_img": album["cover_img"],
+                    "cover_img": album["cover_img"] or "",
                     "singer": album["singer"],
                     "release_year": album["release_year"],
-                    "start_time": album["start_time"],
-                    "track_count": album["track_count"],
-                    "track_duration": album["track_duration"],
-                    "my_score": album["my_score"],
-                    "burn_class": album["burn_class"],
-                    "duration_type": album["duration_type"],
-                    "tags": json.loads(album["tags"] or "") if album["tags"] is not None else [],
-                    "main_type": json.loads(album["main_type"] or "") if album["main_type"] is not None else [],
-                    "code": album["code"],
-                    "video_shared": album["video_shared"],
-                    "mandopop_code": album["mandopop_code"],
-                    "tracks": json.loads(album["tracks"] or "") if album["tracks"] is not None else [],
-                    "review": json.loads(album["review"] or "") if album["review"] is not None else {},
-                    "score": album["score"],
-                    "comments": json.loads(album["comments"] or "") if album["comments"] is not None else []
+                    "start_time": album["start_time"] or "",
+                    "track_count": album["track_count"] or 0,
+                    "track_duration": album["track_duration"] or "",
+                    "my_score": album["my_score"] or 0.0,
+                    "burn_class": album["burn_class"] or "",
+                    "duration_type": album["duration_type"] or "",
+                    # 兼容NULL值的JSON解析
+                    "tags": json.loads(album["tags"]) if (album["tags"] and album["tags"].strip()) else [],
+                    "main_type": json.loads(album["main_type"]) if (
+                                album["main_type"] and album["main_type"].strip()) else [],
+                    "code": album["code"] or "",
+                    "video_shared": album["video_shared"] or "",
+                    "mandopop_code": album["mandopop_code"] or "",
+                    "tracks": json.loads(album["tracks"]) if (album["tracks"] and album["tracks"].strip()) else [],
+                    "review": json.loads(album["review"]) if (album["review"] and album["review"].strip()) else {},
+                    "score": album["score"] or 0.0,
+                    "comments": json.loads(album["comments"]) if (
+                                album["comments"] and album["comments"].strip()) else []
                 }
                 album_list.append(album_dict)
 
-            # 构造分页数据
+            # 8. 构造返回数据
             total_pages = (total + page_size - 1) // page_size
             return jsonify({
                 "code": 200,
@@ -96,6 +110,12 @@ def register_album_routes(app):
                     }
                 }
             })
+        except pymysql.err.ProgrammingError as e:
+            # 专门捕获表不存在的异常
+            if "Table '" in str(e) and "' doesn't exist" in str(e):
+                return jsonify({"code": 500, "msg": f"用户专属专辑表不存在，请重新登录触发创建！错误：{str(e)}"}), 500
+            print(f"❌ MySQL语法错误：{str(e)}")
+            return jsonify({"code": 500, "msg": f"数据库语法错误：{str(e)}"}), 500
         except Exception as e:
             print(f"❌ 获取专辑列表出错：{str(e)}")
             print(traceback.format_exc())

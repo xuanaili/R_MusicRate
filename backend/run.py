@@ -1,4 +1,4 @@
-# 项目启动入口 - 替代原app.py的启动逻辑
+# MusicRate/backend/run.py 项目启动入口
 from backend import create_app  # 从backend包导入create_app
 from backend.db_utils import init_base_tables
 

@@ -1,4 +1,4 @@
-# Flask应用初始化入口 - 统一创建和配置app实例
+# MusicRate/backend/__init__.py Flask应用初始化入口 - 统一创建和配置app实例
 from flask import Flask
 from flask_cors import CORS
 from .config import SECRET_KEY

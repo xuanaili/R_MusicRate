@@ -1,4 +1,4 @@
-# 全局配置文件 - 包含所有基础配置项
+# MusicRate/backend/config.py 全局配置文件 - 包含所有基础配置项
 import os
 import pymysql
 

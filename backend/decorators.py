@@ -1,8 +1,9 @@
-# 登录校验装饰器 - 独立封装登录验证逻辑
+# MusicRate/backend/decorators.py 登录校验装饰器 - 独立封装登录验证逻辑
 from functools import wraps
 from flask import request, jsonify
 import traceback
 from .db_utils import get_db, check_and_create_user_album_table, current_user_id
+import pymysql
 
 
 def login_required(func):
@@ -19,8 +20,9 @@ def login_required(func):
 
             # MySQL验证token
             db = get_db()
-            cursor = db.cursor()
-            cursor.execute('SELECT id, username FROM users WHERE token = %s', (token,))
+            # 关键修改1：使用字典游标，才能用user["user_id"]取值
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+            cursor.execute('SELECT user_id, username FROM users WHERE token = %s', (token,))
             user = cursor.fetchone()
             cursor.close()
 
@@ -28,7 +30,7 @@ def login_required(func):
                 return jsonify({"code": 401, "msg": "登录已过期，请重新登录！"}), 401
 
             # 设置当前登录用户ID
-            current_user_id = user["id"]
+            current_user_id = user["user_id"]
             # 检查并创建用户专辑表（确保表存在）
             check_and_create_user_album_table(current_user_id)
 

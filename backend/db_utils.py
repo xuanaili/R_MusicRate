@@ -1,7 +1,8 @@
-# 数据库核心工具 - 包含连接、分表、表初始化等功能
+# MusicRate/backend/db_utils.py 数据库核心工具 - 包含连接、分表、表初始化等功能
 from flask import g
 import pymysql
 import traceback
+import bcrypt  # 用于密码加密，需要先安装：pip install bcrypt
 from .config import MYSQL_CONFIG, DEFAULT_ADMIN_USER, DEFAULT_ADMIN_PWD
 
 # 全局变量：当前登录用户ID（跨模块共享）
@@ -36,7 +37,8 @@ def create_user_album_table(user_id):
     """为新用户创建专属的专辑表"""
     try:
         db = get_db()
-        cursor = db.cursor()
+        # 统一使用字典游标，取值更清晰
+        cursor = db.cursor(pymysql.cursors.DictCursor)
         table_name = get_album_table_name(user_id)
         # 移除TEXT字段的DEFAULT默认值（MySQL语法限制）
         cursor.execute(f'''
@@ -76,14 +78,16 @@ def check_and_create_user_album_table(user_id):
     """检查用户专辑表是否存在，不存在则创建"""
     try:
         db = get_db()
-        cursor = db.cursor()
+        # 统一使用字典游标
+        cursor = db.cursor(pymysql.cursors.DictCursor)
         table_name = get_album_table_name(user_id)
         # 检查表是否存在
         cursor.execute(f'''
-            SELECT COUNT(*) FROM information_schema.TABLES 
+            SELECT COUNT(*) AS count FROM information_schema.TABLES 
             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
         ''', (MYSQL_CONFIG['db'], table_name))
-        table_exists = cursor.fetchone()['COUNT(*)'] > 0
+        # 字典取值：按字段名count取
+        table_exists = cursor.fetchone()['count'] > 0
 
         if not table_exists:
             create_user_album_table(user_id)
@@ -93,20 +97,37 @@ def check_and_create_user_album_table(user_id):
         raise e
 
 
+def hash_password(password):
+    """使用bcrypt加密密码"""
+    # 生成盐值
+    salt = bcrypt.gensalt()
+    # 加密密码（需转字节）
+    hashed_pwd = bcrypt.hashpw(password.encode('utf-8'), salt)
+    # 返回字符串格式的加密密码
+    return hashed_pwd.decode('utf-8')
+
+
 def init_base_tables():
     """初始化基础表（users + album_pool）"""
     try:
         db = get_db()
-        cursor = db.cursor()
-        # 1. 创建用户表（核心基础表，不分表）
+        # 统一使用字典游标
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        # 1. 创建用户表（按新设计调整字段）
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                password VARCHAR(50) NOT NULL,
-                token VARCHAR(100) DEFAULT "",
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                user_id INT PRIMARY KEY AUTO_INCREMENT COMMENT '用户唯一标识',
+                username VARCHAR(50) UNIQUE NOT NULL COMMENT '用户名（禁用 %^&）',
+                password VARCHAR(100) NOT NULL COMMENT '密码（bcrypt加密存储）',
+                level INT DEFAULT 0 COMMENT '等级/经验',
+                create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '开户日期',
+                last_login DATETIME DEFAULT NULL COMMENT '最近登录',
+                is_vip TINYINT DEFAULT 0 COMMENT '是否VIP（0/1）',
+                is_admin TINYINT DEFAULT 0 COMMENT '是否管理员（0/1）',
+                donate_amount DECIMAL(10,2) DEFAULT 0.00 COMMENT '捐款数',
+                album_count INT DEFAULT 0 COMMENT '收藏专辑数',
+                token VARCHAR(100) DEFAULT "" COMMENT '用户登录令牌'
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
         ''')
 
         # 2. 创建专辑搜索池表（解决TEXT索引长度问题）
@@ -146,23 +167,28 @@ def init_default_admin():
     """初始化默认admin用户，并创建其专属专辑表"""
     try:
         db = get_db()
-        cursor = db.cursor()
-        # 检查admin是否存在
-        cursor.execute('SELECT id FROM users WHERE username = %s', (DEFAULT_ADMIN_USER,))
+        # 统一使用字典游标
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        # 检查admin是否存在（字段名改为user_id）
+        cursor.execute('SELECT user_id FROM users WHERE username = %s', (DEFAULT_ADMIN_USER,))
         user = cursor.fetchone()
         if not user:
-            # 创建admin用户
+            # 加密默认管理员密码
+            hashed_pwd = hash_password(DEFAULT_ADMIN_PWD)
+            # 创建admin用户（按新字段调整）
             cursor.execute('''
-                INSERT INTO users (username, password, token) 
-                VALUES (%s, %s, "")
-            ''', (DEFAULT_ADMIN_USER, DEFAULT_ADMIN_PWD))
+                INSERT INTO users (
+                    username, password, is_admin, token
+                ) VALUES (%s, %s, 1, "")
+            ''', (DEFAULT_ADMIN_USER, hashed_pwd))
             admin_id = cursor.lastrowid
             db.commit()
             # 为admin创建专属专辑表
             create_user_album_table(admin_id)
             print(f"✅ 默认admin用户创建成功（ID：{admin_id}），并生成专属专辑表！")
         else:
-            print(f"✅ 默认admin用户已存在（ID：{user['id']}），无需重复创建")
+            # 字典取值：按字段名user_id取
+            print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），无需重复创建")
         cursor.close()
     except Exception as e:
         print(f"❌ 初始化admin用户失败：{str(e)}")
@@ -174,9 +200,11 @@ def get_next_id(table_name):
     """获取指定表的下一个自增ID"""
     try:
         db = get_db()
-        cursor = db.cursor()
-        cursor.execute(f'SELECT MAX(id) FROM `{table_name}`')
-        max_id = cursor.fetchone()["MAX(id)"]
+        # 统一使用字典游标
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute(f'SELECT MAX(id) AS max_id FROM `{table_name}`')
+        # 字典取值：按字段名max_id取
+        max_id = cursor.fetchone()['max_id']
         cursor.close()
         return 1 if max_id is None else max_id + 1
     except Exception as e:

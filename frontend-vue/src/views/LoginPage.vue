@@ -1,3 +1,4 @@
+<!--MusicRate/frontend-vue/src/views/LoginPage.vue-->
 <template>
   <div class="login-container">
     <h2>用户登录</h2>

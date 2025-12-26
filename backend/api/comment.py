@@ -1,4 +1,4 @@
-# 评论相关接口 - 提交、添加
+# MusicRate/backend/api/comment.py 评论相关接口 - 提交、添加
 from flask import request, jsonify
 import json
 import traceback

@@ -1,4 +1,4 @@
-# 专辑搜索池接口 - 搜索、复制、详情
+# MusicRate/backend/api/ablum_pool.py 专辑搜索池接口 - 搜索、复制、详情
 from flask import request, jsonify
 import json
 import traceback
