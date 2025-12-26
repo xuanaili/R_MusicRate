@@ -1,3 +1,4 @@
+<!-- MusicRate\frontend-vue\src\views\AlbumDetail.vue -->
 <template>
   <div class="layout-container">
     <aside class="sidebar">
@@ -128,65 +129,65 @@
         </div>
       </div>
 
-      <!-- 平台评论 Tab -->
+      <!-- 平台评论 Tab（完全重构：多用户共享评论） -->
       <div v-if="activeTab === 'comments'" class="tab-content">
-        <h2>{{ album.album_name || '未知专辑' }}——评论</h2>
+        <h2>{{ album.album_name || '未知专辑' }}——公共评论区</h2>
 
-        <!-- 专辑评论区 -->
-        <div class="album-comments">
-          <h3>专辑评论</h3>
-          <div class="comments-list">
-            <ul v-if="album.comments && album.comments.length > 0">
-              <li v-for="(comment, idx) in album.comments" :key="idx">{{ comment }}</li>
-            </ul>
-            <p v-else class="no-comment">暂无评论</p>
-          </div>
-          <div class="comment-input-area">
-            <input
-              v-model="newComment"
-              placeholder="输入评论"
-              class="comment-input"
+        <!-- 评论输入框（适配新接口：已评论时禁用） -->
+        <div class="comment-input-card">
+          <textarea
+            v-model="newCommentContent"
+            placeholder="分享你的听后感..."
+            class="comment-textarea"
+            rows="3"
+            :disabled="hasComment"
+          ></textarea>
+          <div class="comment-submit-area">
+            <button
+              @click="submitPublicComment"
+              class="submit-btn"
+              :disabled="!newCommentContent.trim() || hasComment"
             >
-            <button @click="submitComment" class="comment-btn">提交评论</button>
+              {{ hasComment ? '你已发表评论，不可重复发布' : '发布评论' }}
+            </button>
           </div>
         </div>
 
-        <h3>国外论坛</h3>
-        <div class="forum-group">
-          <h4>PF</h4>
-          <p>Review</p>
-          <h4>AOTY</h4>
-          <p>Review1</p>
-          <p>Review2</p>
-          <p>Review3</p>
-          <p>Review4</p>
-          <h4>RYM</h4>
-          <p>Review1</p>
-          <p>Review2</p>
-          <p>Review3</p>
-          <p>Review4</p>
-        </div>
-
-        <h3>国内论坛</h3>
-        <div class="forum-group">
-          <h4>豆瓣</h4>
-          <div v-for="(comment, idx) in ((album.review || {}).comments || {}).douban || []" :key="idx">
-            <p>Review{{ idx+1 }}: {{ comment }}</p>
+        <!-- 公共评论列表（显示用户名、时间、点赞） -->
+        <div class="comments-list-container" v-if="publicComments.length > 0">
+          <div class="comment-item" v-for="comment in publicComments" :key="comment.id">
+            <!-- 评论头部：左上角显示用户名 -->
+            <div class="comment-header">
+              <span class="comment-username">{{ comment.username }}</span>
+              <!-- 管理员标识 -->
+              <span v-if="comment.is_admin" class="admin-tag">管理员</span>
+            </div>
+            <!-- 评论内容 -->
+            <div class="comment-content">{{ comment.content }}</div>
+            <!-- 评论底部：左下角时间 + 右下角点赞/删除 -->
+            <div class="comment-footer">
+              <span class="comment-time">{{ comment.create_time }}</span>
+              <div class="comment-actions">
+                <button
+                  class="like-btn"
+                  @click="likePublicComment(comment.id)"
+                  :class="{liked: comment.like_user_ids.includes(currentUserId)}"
+                >
+                  👍 {{ comment.like_count }}
+                </button>
+                <!-- 管理员/评论作者可删除 -->
+                <button
+                  v-if="isAdmin || comment.user_id == currentUserId"
+                  class="delete-comment-btn"
+                  @click="deletePublicComment(comment.id)"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
           </div>
-          <h4>网易云</h4>
-          <div v-for="(comment, idx) in ((album.review || {}).comments || {}).netease || []" :key="idx">
-            <p>Review{{ idx+1 }}: {{ comment }}</p>
-          </div>
-          <h4>酷狗</h4>
-          <p>Review1</p>
-          <p>Review2</p>
-          <p>Review3</p>
-          <p>Review4</p>
         </div>
-
-        <div class="footer-tip">
-          别忘记评分，写标签，以及记录读完时间
-        </div>
+        <p class="no-comment" v-else>暂无评论，快来抢沙发~</p>
       </div>
     </main>
   </div>
@@ -199,8 +200,15 @@ export default {
     return {
       album: {},
       activeTab: 'base',
-      newComment: '',
-      newFeelingContent: ''
+      newFeelingContent: '',
+      // 新增：公共评论相关
+      newCommentContent: '',       // 公共评论输入内容
+      publicComments: [],          // 多用户共享评论列表
+      currentUserId: localStorage.getItem('user_id') || '', // 当前用户ID（登录时存储）
+      isAdmin: localStorage.getItem('is_admin') === '1',    // 是否为管理员
+      albumPoolId: '',              // 公共专辑池ID（关键：初始化）
+      hasComment: false,           // 是否已对该专辑发表评论
+      existingCommentId: null      // 已发表的评论ID
     };
   },
   created() {
@@ -208,13 +216,23 @@ export default {
       this.$router.push('/login');
       return;
     }
+    // 初始化用户信息
+    this.currentUserId = localStorage.getItem('user_id');
+    this.isAdmin = localStorage.getItem('is_admin') === '1';
+
     const albumId = this.$route.params.id || this.$route.query.id;
     if (!albumId) {
       alert('未找到专辑ID！');
       this.$router.push('/music');
       return;
     }
-    this.getAlbumDetail(Number(albumId));
+    // 先获取专辑详情，再获取/创建公共专辑ID（异步顺序保证）
+    this.getAlbumDetail(Number(albumId)).then(() => {
+      this.getAlbumPoolRealId().then(() => {
+        // 初始化时检查是否已评论
+        this.checkUserComment();
+      });
+    });
   },
   watch: {
     album: {
@@ -233,32 +251,132 @@ export default {
     }
   },
   methods: {
-    getAlbumDetail(albumId) {
-      this.$axios({
-        url: `/api/album/detail/${albumId}`, // 改回后端接口
-        method: 'GET',
-        headers: {
-          'Authorization': localStorage.getItem('token') || '',
-          'Content-Type': 'application/json;charset=utf-8'
+    // 获取公共专辑池ID：不存在则自动创建
+    async getAlbumPoolRealId() {
+      try {
+        // 校验专辑基础信息
+        if (!this.album.album_name || !this.album.singer) {
+          alert('专辑名称或歌手信息缺失，无法创建公共专辑！');
+          return;
         }
-      })
-          .then((res) => {
-            if (res.data.code === 200) {
-              this.album = res.data.data;
-              this.album.review = this.album.review || {};
-              this.album.comments = this.album.comments || [];
-              this.album.tracks = this.album.tracks || [];
-            } else {
-              alert(res.data.msg);
-              this.$router.push('/music');
-            }
-          })
-          .catch((err) => {
-            console.error('获取详情失败：', err);
-            alert('获取专辑详情失败！' + err.message);
-            this.$router.push('/music');
-          });
+
+        const res = await this.$axios({
+          url: '/api/album_pool/get_id',
+          method: 'GET',
+          params: {
+            album_name: this.album.album_name,
+            singer: this.album.singer
+          },
+          headers: {
+            'Authorization': localStorage.getItem('token') || ''
+          }
+        });
+
+        if (res.data.code === 200) {
+          this.albumPoolId = res.data.data.id;
+          this.getPublicComments(); // 自动加载评论列表
+        } else if (res.data.code === 404) {
+          // 公共专辑不存在，自动创建
+          await this.createAlbumPool();
+          if (this.albumPoolId) {
+            this.getPublicComments();
+          }
+        }
+      } catch (err) {
+        console.error('获取专辑池ID失败：', err);
+        alert('获取公共专辑ID失败：' + err.message);
+      }
     },
+
+    // 创建专辑到公共专辑池
+    async createAlbumPool() {
+      try {
+        const res = await this.$axios({
+          url: '/api/album_pool/add',
+          method: 'POST',
+          headers: {
+            'Authorization': localStorage.getItem('token') || '',
+            'Content-Type': 'application/json'
+          },
+          data: {
+            album_name: this.album.album_name,
+            cover_img: this.album.cover_img || '',
+            singer: this.album.singer,
+            release_year: this.album.release_year || 0,
+            main_type: this.album.main_type || '',
+            tags: this.album.tags || [],
+            my_score: this.album.my_score || 0.0
+          }
+        });
+        if (res.data.code === 200) {
+          this.albumPoolId = res.data.data.id;
+          alert('公共专辑创建成功！');
+        }
+      } catch (err) {
+        console.error('创建专辑池失败：', err);
+        alert('创建公共专辑失败：' + err.message);
+      }
+    },
+
+    // 检查当前用户是否已对该专辑发表评论
+    async checkUserComment() {
+      if (!this.albumPoolId) return false;
+      try {
+        const res = await this.$axios({
+          url: '/api/album/pool/comment/check',
+          method: 'GET',
+          params: {
+            album_id: this.albumPoolId
+          },
+          headers: {
+            'Authorization': localStorage.getItem('token') || ''
+          }
+        });
+        if (res.data.code === 200) {
+          this.hasComment = res.data.data.has_comment;
+          this.existingCommentId = res.data.data.comment_id;
+          return res.data.data.has_comment;
+        }
+        return false;
+      } catch (err) {
+        console.error('检查用户评论失败：', err);
+        return false;
+      }
+    },
+
+    // 获取专辑详情（返回Promise，保证异步顺序）
+    getAlbumDetail(albumId) {
+      return new Promise((resolve, reject) => {
+        this.$axios({
+          url: `/api/album/detail/${albumId}`,
+          method: 'GET',
+          headers: {
+            'Authorization': localStorage.getItem('token') || '',
+            'Content-Type': 'application/json;charset=utf-8'
+          }
+        })
+        .then((res) => {
+          if (res.data.code === 200) {
+            this.album = res.data.data;
+            this.album.review = this.album.review || {};
+            this.album.tracks = this.album.tracks || [];
+            resolve();
+          } else {
+            alert(res.data.msg);
+            this.$router.push('/music');
+            reject(res.data.msg);
+          }
+        })
+        .catch((err) => {
+          console.error('获取详情失败：', err);
+          alert('获取专辑详情失败！' + err.message);
+          this.$router.push('/music');
+          reject(err);
+        });
+      });
+    },
+
+    // 新增单条听后感
     addSingleReview() {
       if (!this.newFeelingContent.trim()) {
         alert('听后感内容不能为空！');
@@ -268,7 +386,7 @@ export default {
       const createTime = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
       this.$axios({
-        url: `/api/album/review/add/${this.album.id}`, // 改回id
+        url: `/api/album/review/add/${this.album.id}`,
         method: 'POST',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
@@ -279,26 +397,28 @@ export default {
           create_time: createTime
         }
       })
-          .then((res) => {
-            if (res.data.code === 200) {
-              alert('听后感添加成功！');
-              this.newFeelingContent = '';
-              this.getAlbumDetail(this.album.id);
-            } else {
-              alert(res.data.msg);
-            }
-          })
-          .catch((err) => {
-            console.error('添加听后感失败：', err);
-            alert('添加听后感失败！' + err.message);
-          });
+      .then((res) => {
+        if (res.data.code === 200) {
+          alert('听后感添加成功！');
+          this.newFeelingContent = '';
+          this.getAlbumDetail(this.album.id);
+        } else {
+          alert(res.data.msg);
+        }
+      })
+      .catch((err) => {
+        console.error('添加听后感失败：', err);
+        alert('添加听后感失败！' + err.message);
+      });
     },
+
+    // 删除单条听后感
     deleteSingleReview(feelingId) {
       if (!confirm('确定要删除这条听后感吗？')) {
         return;
       }
       this.$axios({
-        url: `/api/album/review/delete/single/${this.album.id}`, // 改回id
+        url: `/api/album/review/delete/single/${this.album.id}`,
         method: 'POST',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
@@ -308,87 +428,188 @@ export default {
           feeling_id: feelingId
         }
       })
-          .then((res) => {
-            if (res.data.code === 200) {
-              alert('听后感删除成功！');
-              this.getAlbumDetail(this.album.id);
-            } else {
-              alert(res.data.msg);
-            }
-          })
-          .catch((err) => {
-            console.error('删除听后感失败：', err);
-            alert('删除听后感失败！' + err.message);
-          });
+      .then((res) => {
+        if (res.data.code === 200) {
+          alert('听后感删除成功！');
+          this.getAlbumDetail(this.album.id);
+        } else {
+          alert(res.data.msg);
+        }
+      })
+      .catch((err) => {
+        console.error('删除听后感失败：', err);
+        alert('删除听后感失败！' + err.message);
+      });
     },
+
+    // 清空所有听后感
     deleteAllReview() {
       if (!confirm('确定要清空所有听后感吗？')) {
         return;
       }
       this.$axios({
-        url: `/api/album/review/delete/${this.album.id}`, // 改回id
+        url: `/api/album/review/delete/${this.album.id}`,
         method: 'DELETE',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json;charset=utf-8'
         }
       })
-          .then((res) => {
-            if (res.data.code === 200) {
-              alert('所有听后感已清空！');
-              this.getAlbumDetail(this.album.id);
-            } else {
-              alert(res.data.msg);
-            }
-          })
-          .catch((err) => {
-            console.error('清空听后感失败：', err);
-            alert('清空听后感失败！' + err.message);
-          });
-    },
-    submitComment() {
-      const comment = this.newComment.trim()
-      if (!comment) {
-        alert('评论不能为空！')
-        return
-      }
-
-      this.$axios({
-        url: '/api/music/comment', // 改回后端实际评论接口
-        method: 'POST',
-        headers: {
-          'Authorization': localStorage.getItem('token') || '',
-          'Content-Type': 'application/json;charset=utf-8'
-        },
-        data: {
-          musicId: this.album.id, // 改回id
-          comment: comment,
-          score: 0
+      .then((res) => {
+        if (res.data.code === 200) {
+          alert('所有听后感已清空！');
+          this.getAlbumDetail(this.album.id);
+        } else {
+          alert(res.data.msg);
         }
       })
-          .then((res) => {
-            if (res.data.code === 200) {
-              alert('评论提交成功！');
-              this.newComment = '';
-              this.getAlbumDetail(this.album.id);
-            } else {
-              alert(res.data.msg);
-            }
-          })
-          .catch((err) => {
-            console.error('提交评论失败：', err);
-            alert('提交评论失败！' + err.message);
-          });
+      .catch((err) => {
+        console.error('清空听后感失败：', err);
+        alert('清空听后感失败！' + err.message);
+      });
     },
+
+    // 返回专辑列表
     goBack() {
       this.$router.push('/music');
+    },
+
+    // ==================== 公共评论核心方法 ====================
+    // 1. 获取公共评论列表
+    getPublicComments() {
+      if (!this.albumPoolId) {
+        alert('公共专辑ID未初始化，请稍后重试！');
+        return;
+      }
+      this.$axios({
+        url: `/api/album/pool/comment/list/${this.albumPoolId}`,
+        method: 'GET',
+        headers: {
+          'Authorization': localStorage.getItem('token') || ''
+        }
+      }).then(res => {
+        if (res.data.code === 200) {
+          this.publicComments = res.data.data;
+        } else {
+          alert('获取公共评论失败：' + res.data.msg);
+        }
+      }).catch(err => {
+        console.error('获取公共评论失败：', err);
+        alert('获取公共评论失败！');
+      });
+    },
+
+    // 2. 发布公共评论（自动处理公共专辑ID + 重复评论校验）
+    async submitPublicComment() {
+      const content = this.newCommentContent.trim();
+      if (!content) {
+        alert('评论内容不能为空！');
+        return;
+      }
+
+      // 自动获取/创建公共专辑ID
+      if (!this.albumPoolId) {
+        await this.getAlbumPoolRealId();
+        if (!this.albumPoolId) {
+          alert('创建公共专辑失败，无法发布评论！');
+          return;
+        }
+      }
+
+      // 发布前检查是否已评论
+      const hasComment = await this.checkUserComment();
+      if (hasComment) {
+        alert('你已对该专辑发表过评论，无法重复发布！');
+        return;
+      }
+
+      try {
+        const res = await this.$axios({
+          url: '/api/album/pool/comment/add',
+          method: 'POST',
+          headers: {
+            'Authorization': localStorage.getItem('token') || '',
+            'Content-Type': 'application/json'
+          },
+          data: {
+            album_id: this.albumPoolId,
+            content: content
+          }
+        });
+
+        if (res.data.code === 200) {
+          alert('公共评论发布成功！');
+          this.newCommentContent = '';
+          this.hasComment = true; // 更新评论状态
+          this.getPublicComments(); // 刷新评论列表
+        } else {
+          alert('发布评论失败：' + res.data.msg);
+        }
+      } catch (err) {
+        console.error('发布失败：', err);
+        alert(`发布失败：${err.response?.data?.msg || err.message}`);
+      }
+    },
+
+    // 3. 公共评论点赞/取消点赞
+    likePublicComment(commentId) {
+      this.$axios({
+        url: `/api/album/pool/comment/like/${commentId}`,
+        method: 'POST',
+        headers: {
+          'Authorization': localStorage.getItem('token') || ''
+        }
+      }).then(res => {
+        if (res.data.code === 200) {
+          const comment = this.publicComments.find(item => item.id === commentId);
+          if (comment) {
+            comment.like_count = res.data.data.like_count;
+            if (res.data.data.is_liked) {
+              comment.like_user_ids.push(this.currentUserId);
+            } else {
+              comment.like_user_ids = comment.like_user_ids.filter(id => id !== this.currentUserId);
+            }
+          }
+        } else {
+          alert(res.data.msg);
+        }
+      }).catch(err => {
+        console.error('点赞失败：', err);
+        alert('点赞失败！');
+      });
+    },
+
+    // 4. 删除公共评论（保留作者+管理员权限）
+    deletePublicComment(commentId) {
+      if (!confirm('确定要删除这条评论吗？')) return;
+      this.$axios({
+        url: `/api/album/pool/comment/delete/${commentId}`,
+        method: 'DELETE',
+        headers: {
+          'Authorization': localStorage.getItem('token') || ''
+        }
+      }).then(res => {
+        if (res.data.code === 200) {
+          alert('评论删除成功！');
+          // 如果删除的是自己的评论，重置评论状态
+          if (commentId === this.existingCommentId) {
+            this.hasComment = false;
+            this.existingCommentId = null;
+          }
+          this.getPublicComments(); // 刷新评论列表
+        } else {
+          alert('删除评论失败：' + res.data.msg);
+        }
+      }).catch(err => {
+        console.error('删除公共评论失败：', err);
+        alert('删除评论失败！');
+      });
     }
   }
 };
 </script>
 
 <style scoped>
-/* 样式不变，保留原有 */
 /* 基础样式 */
 * {
   margin: 0;
@@ -636,7 +857,7 @@ h5 {
   font-size: 14px;
 }
 
-/* 评论相关样式 */
+/* 原有评论样式（兼容） */
 .album-comments {
   margin: 20px 0;
   padding: 20px;
@@ -667,6 +888,8 @@ h5 {
   color: #999;
   font-size: 13px;
   margin: 5px 0;
+  text-align: center;
+  padding: 30px 0;
 }
 
 .comment-input-area {
@@ -742,5 +965,135 @@ h5 {
   text-align: center;
   margin: 20px 0;
   font-size: 14px;
+}
+
+/* 公共评论专属样式 */
+.comment-input-card {
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+
+.comment-textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.comment-textarea:disabled {
+  background-color: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.comment-submit-area {
+  margin-top: 10px;
+  text-align: right;
+}
+
+.submit-btn {
+  padding: 8px 20px;
+  background: #42b983;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.submit-btn:disabled {
+  background: #999;
+  cursor: not-allowed;
+}
+
+.comments-list-container {
+  margin-top: 20px;
+}
+
+.comment-item {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.comment-header {
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comment-username {
+  font-weight: 600;
+  color: #42b983;
+  font-size: 14px;
+}
+
+.admin-tag {
+  background-color: #e53935;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+.comment-content {
+  line-height: 1.6;
+  color: #333;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+.comment-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #999;
+}
+
+.comment-time {
+  flex: 1;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.like-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.like-btn.liked {
+  color: #e53935;
+}
+
+.delete-comment-btn {
+  padding: 4px 8px;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.delete-comment-btn:hover {
+  background: #c0392b;
 }
 </style>

@@ -113,11 +113,11 @@ def check_and_create_user_album_table(user_id):
         raise e
 
 def init_base_tables():
-    """初始化基础表（重构后的users + album_pool）"""
+    """初始化基础表（重构后的users + album_pool + album_comments）"""
     try:
         db = get_db()
         cursor = db.cursor()
-        # ========== 核心修改：重构users表结构 ==========
+        # ========== 1. 重构后的users表（原有逻辑保留） ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INT PRIMARY KEY AUTO_INCREMENT COMMENT '用户唯一标识',
@@ -134,7 +134,7 @@ def init_base_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表（重构版）';
         ''')
 
-        # 2. 保留原有album_pool表结构（无需修改）
+        # ========== 2. 原有album_pool表（无需修改） ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS album_pool (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -155,17 +155,34 @@ def init_base_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑搜索池表';
         ''')
 
+        # ========== 3. 新增：album_comments 公共评论表（核心修改） ==========
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS album_comments (
+                id INT AUTO_INCREMENT PRIMARY KEY COMMENT '评论ID',
+                album_id INT COMMENT '关联的专辑搜索池ID',
+                user_id INT COMMENT '评论用户ID',
+                username VARCHAR(50) NOT NULL COMMENT '评论用户名',
+                content TEXT NOT NULL COMMENT '评论内容',
+                create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '评论时间',
+                like_count INT NOT NULL DEFAULT 0 COMMENT '点赞数',
+                like_user_ids VARCHAR(255) DEFAULT '' COMMENT '点赞用户ID列表',
+                -- 恢复外键约束
+                FOREIGN KEY (album_id) REFERENCES album_pool(id),
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                INDEX idx_album_id (album_id),
+                INDEX idx_create_time (create_time)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑公共评论表';
+        ''')
+
         db.commit()
         cursor.close()
-        print("✅ MySQL基础表（重构后users + album_pool）初始化成功！")
-
+        print("✅ MySQL基础表（重构后users + album_pool + album_comments）初始化成功！")
         # 初始化默认admin用户（适配新表结构）
         init_default_admin()
     except Exception as e:
         print(f"❌ 初始化基础表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
-
 def init_default_admin():
     """初始化默认admin用户（适配新表结构），并创建其专属专辑表"""
     try:

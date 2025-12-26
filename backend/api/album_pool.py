@@ -264,3 +264,29 @@ def register_album_pool_routes(app):
             print(f"❌ 复制专辑出错：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"复制专辑失败：{str(e)}"}), 500
+
+    @app.route('/api/album_pool/get_id', methods=['GET'])
+    @login_required
+    def get_album_pool_id():
+        try:
+            album_name = request.args.get('album_name')
+            singer = request.args.get('singer')
+            if not album_name or not singer:
+                return jsonify({"code": 400, "msg": "专辑名和歌手不能为空！"}), 400
+
+            db = get_db()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+            cursor.execute('''
+                SELECT id FROM album_pool 
+                WHERE album_name = %s AND singer = %s
+            ''', (album_name, singer))
+            album = cursor.fetchone()
+            cursor.close()
+
+            if album:
+                return jsonify({"code": 200, "msg": "查询成功！", "data": {"id": album['id']}})
+            else:
+                return jsonify({"code": 404, "msg": "专辑池不存在！"}), 404
+        except Exception as e:
+            print(f"查询专辑池ID失败：{str(e)}")
+            return jsonify({"code": 500, "msg": f"查询失败：{str(e)}"}), 500

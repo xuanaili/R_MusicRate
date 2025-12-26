@@ -63,6 +63,8 @@ export default {
             localStorage.setItem("username", res.data.data.username);
             // 优化后：显式存储为字符串 "1"/"0"，确保类型统一
             localStorage.setItem("is_admin", res.data.data.is_admin.toString());
+            // 存一下用户id
+            localStorage.setItem("user_id", res.data.data.user_id.toString());
             // 跳转到音乐评分页面
             this.$router.push("/music");
           } else {
