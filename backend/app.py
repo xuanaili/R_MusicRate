@@ -1,4 +1,4 @@
-
+from flask import Flask, request, jsonify, g, send_from_directory
 from flask_cors import CORS
 import json
 import os
@@ -6,7 +6,6 @@ import uuid
 from functools import wraps
 import traceback
 import pymysql
-from flask import Flask, request, jsonify, g, send_from_directory
 from pymysql.err import ProgrammingError
 import requests
 
@@ -302,7 +301,7 @@ def login():
         password = data.get('password')
 
         if not username or not password:
-            return jsonify({"code": 400, "msg": "账号和密码不能为空！"}), 401
+            return jsonify({"code": 400, "msg": "账号和密码不能为空！"}), 400
 
         # MySQL验证账号密码
         db = get_db()
@@ -333,8 +332,15 @@ def login():
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"登录出错：{str(e)}"}), 500
 
+# 3. 获取专辑列表（读取用户专属表）- 保留分页和排序
+# ========== 新增：兼容前端的 /api/album/list 接口 ==========
+@app.route('/api/album/list', methods=['GET'])
+@login_required
+def album_list_compatible():
+    # 直接调用原有/get_album_list函数的逻辑，复用所有分页、排序功能
+    return get_album_list()
 
-# 3. 获取专辑列表（读取用户专属表）- 新增分页和排序
+
 @app.route('/api/music', methods=['GET'])
 @login_required
 def get_album_list():
@@ -420,7 +426,10 @@ def get_album_list():
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"获取专辑出错：{str(e)}"}), 500
 
-# 4. 添加专辑（写入用户专属表）
+# 4. 添加专辑（写入用户专属表）- 整合重构后的review结构
+
+
+
 @app.route('/api/album/add', methods=['POST'])
 @login_required
 def add_album():
@@ -434,7 +443,7 @@ def add_album():
             if not data.get(field):
                 return jsonify({"code": 400, "msg": f"{field}不能为空！"}), 400
 
-        # 整理数据
+        # 整理数据（整合重构后的review结构）
         new_album = {
             "album_name": data.get('album_name').strip(),
             "cover_img": data.get('cover_img', '').strip(),
@@ -452,11 +461,14 @@ def add_album():
             "video_shared": data.get('video_shared', ''),
             "mandopop_code": data.get('mandopop_code', ''),
             "tracks": json.dumps(data.get('tracks', [])) or "",
+            # 重构后的review结构
             "review": json.dumps({
-                "feelings": [],  # 初始化听后感数组
+                "feelings": [],  # 保留原有听后感列表
                 "single_score": 0.0,
                 "private_score": 0.0,
-                "final_score": 0.0
+                "final_score": 0.0,
+                "personal_feeling": "",  # 新增的单条听后感
+                "update_time": ""
             }) or "",
             "score": float(data.get('score', 0.0)),
             "comments": json.dumps([]) or ""
@@ -534,7 +546,7 @@ def delete_album(album_id):
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"删除专辑失败：{str(e)}"}), 500
 
-# 6. 新增：添加单条听后感
+# 6. 新增：添加单条听后感（保留原有逻辑）
 @app.route('/api/album/review/add/<int:album_id>', methods=['POST'])
 @login_required
 def add_single_review(album_id):
@@ -648,9 +660,10 @@ def delete_all_review(album_id):
             cursor.close()
             return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
 
-        # 清空所有听后感
+        # 清空所有听后感（兼容重构后的结构）
         review = json.loads(album["review"]) if album["review"] else {}
         review["feelings"] = []
+        review["personal_feeling"] = ""
         new_review = json.dumps(review)
 
         cursor.execute(f'''
@@ -668,7 +681,50 @@ def delete_all_review(album_id):
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"清空听后感失败：{str(e)}"}), 500
 
-# 9. 获取专辑详情（读取用户专属表）
+# 9. 编辑听后感（重构后的单条听后感编辑）
+@app.route('/api/album/review/edit/<int:album_id>', methods=['POST'])
+@login_required
+def edit_review(album_id):
+    try:
+        data = request.get_json()
+        if not data or not data.get('personal_feeling'):
+            return jsonify({"code": 400, "msg": "听后感内容不能为空！"}), 400
+
+        table_name = get_album_table_name(current_user_id)
+        db = get_db()
+        cursor = db.cursor()
+
+        # 查询原有review
+        cursor.execute(f'SELECT review FROM `{table_name}` WHERE id = %s', (album_id,))
+        album = cursor.fetchone()
+        if not album:
+            cursor.close()
+            return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+
+        # 更新听后感（重构后的结构）
+        review = json.loads(album["review"]) if album["review"] else {}
+        review['personal_feeling'] = data.get('personal_feeling')
+        review['update_time'] = data.get('update_time', '')
+        new_review = json.dumps(review)
+
+        # 保存更新
+        cursor.execute(f'''
+            UPDATE `{table_name}` SET review = %s WHERE id = %s
+        ''', (new_review, album_id))
+        db.commit()
+        cursor.close()
+
+        return jsonify({
+            "code": 200,
+            "msg": "听后感编辑成功！",
+            "data": review
+        })
+    except Exception as e:
+        print(f"编辑听后感出错：{str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"code": 500, "msg": f"编辑听后感失败：{str(e)}"}), 500
+
+# 10. 获取专辑详情（读取用户专属表）
 @app.route('/api/album/detail/<int:album_id>', methods=['GET'])
 @login_required
 def get_album_detail(album_id):
@@ -719,7 +775,7 @@ def get_album_detail(album_id):
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 500
 
-# 10. 提交评论（更新用户专属表）
+# 11. 提交评论（更新用户专属表）
 @app.route('/api/music/comment', methods=['POST'])
 @login_required
 def submit_comment():
@@ -792,6 +848,50 @@ def submit_comment():
         print(f"提交评论出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"提交评论出错：{str(e)}"}), 500
+
+# 12. 兼容的专辑评论添加接口（适配前端原有调用格式）
+@app.route('/api/album/comment/add/<int:album_id>', methods=['POST'])
+@login_required
+def add_album_comment(album_id):
+    try:
+        data = request.get_json()
+        comment = data.get('comment')
+
+        if not comment:
+            return jsonify({"code": 400, "msg": "评论内容不能为空！"}), 400
+
+        # 调用原有submit_comment的核心逻辑
+        table_name = get_album_table_name(current_user_id)
+        db = get_db()
+        cursor = db.cursor()
+
+        # 查询原有数据
+        cursor.execute(f'SELECT score, comments FROM `{table_name}` WHERE id = %s', (album_id,))
+        album = cursor.fetchone()
+        if not album:
+            cursor.close()
+            return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+
+        # 更新评论
+        comments = json.loads(album["comments"]) if album["comments"] else []
+        comments.append(comment)
+
+        # 保存更新（评分保持不变）
+        cursor.execute(f'''
+            UPDATE `{table_name}` SET comments = %s WHERE id = %s
+        ''', (json.dumps(comments), album_id))
+        db.commit()
+        cursor.close()
+
+        return jsonify({
+            "code": 200,
+            "msg": "评论提交成功！",
+            "data": {"comments": comments}
+        })
+    except Exception as e:
+        print(f"添加专辑评论出错：{str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"code": 500, "msg": f"添加评论失败：{str(e)}"}), 500
 
 # ========== 启动初始化 ==========
 with app.app_context():

@@ -44,14 +44,14 @@
 
     <!-- 循环渲染子组件 MusicItem -->
     <div v-else class="album-list">
-      <div v-for="music in musicList" :key="music.id" class="album-item-wrapper">
+      <div v-for="music in musicList" :key="music.origin_id" class="album-item-wrapper">
         <MusicItem
           :music="music"
           @add-comment="handleAddComment"
         />
         <!-- 新增：删除专辑按钮 -->
         <button
-          @click="deleteAlbum(music.id)"
+          @click="deleteAlbum(music.origin_id)"
           class="delete-album-btn"
         >
           删除专辑
@@ -155,7 +155,7 @@ export default {
     getMusicList() {
       this.loading = true
       this.$axios({
-        url: 'http://127.0.0.1:5000/api/music',
+        url: '/api/album/list',  // 修改：适配新的专辑列表接口
         method: 'GET',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
@@ -197,13 +197,17 @@ export default {
     // 处理评论提交
     handleAddComment(data) {
       this.$axios({
-        url: 'http://127.0.0.1:5000/api/music/comment',
+        url: '/api/album/comment/add',  // 修改：适配新的评论接口
         method: 'POST',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json'
         },
-        data: data
+        data: {
+          origin_id: data.musicId,  // 修改：用origin_id替代musicId
+          content: data.comment,
+          track_id: 0  // 专辑评论，track_id为0
+        }
       })
       .then(resp => {
         if (resp.data.code === 200) {
@@ -219,12 +223,12 @@ export default {
       })
     },
     // 新增：删除专辑
-    deleteAlbum(albumId) {
-      if (!confirm(`确定要删除ID为${albumId}的专辑吗？此操作不可恢复！`)) {
+    deleteAlbum(originId) {
+      if (!confirm(`确定要删除ID为${originId}的专辑吗？此操作不可恢复！`)) {
         return;
       }
       this.$axios({
-        url: `http://127.0.0.1:5000/api/album/delete/${albumId}`,
+        url: `/api/album/delete/${originId}`,  // 修改：适配新的删除接口
         method: 'DELETE',
         headers: {
           'Authorization': localStorage.getItem('token') || '',

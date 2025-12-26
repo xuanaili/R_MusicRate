@@ -19,23 +19,14 @@
           <p>封面: {{ album.cover_img || album.album_name + '.jpg' || '未知.jpg' }}</p>
           <p>歌手: {{ album.singer || '未知' }}</p>
           <p>发行时间: "{{ album.release_year || '未知' }}"</p>
-          <p>开始时间: {{ album.start_time || '未知' }}</p>
           <p>曲目数量: {{ album.track_count || 0 }}</p>
           <p>曲目时长: "{{ album.track_duration || '0.00' }}"</p>
           <p>我的评分: {{ album.my_score || 0.0 }}</p>
           <p>刻录分类: {{ album.burn_class || '-' }}</p>
-          <p>时长类型: {{ album.duration_type || '-' }}</p>
           <p>tags:</p>
           <ul class="tags-list">
             <li v-for="tag in (album.tags || [])" :key="tag">- {{ tag }}</li>
           </ul>
-          <p>主要类型:</p>
-          <ul class="tags-list">
-            <li v-for="type in (album.main_type || [])" :key="type">- {{ type }}</li>
-          </ul>
-          <p>代号: "{{ album.code || '未知' }}"</p>
-          <p>视频已分享: {{ album.video_shared || '-' }}</p>
-          <p>Mandopop: "{{ album.mandopop_code || '未知' }}"</p>
         </div>
 
         <div class="bookinfo-card">
@@ -79,14 +70,14 @@
         <h3>简介</h3>
         <div class="tracks-list">
           <div v-for="(track, idx) in (album.tracks || [])" :key="idx">
-            <h4>{{ idx+1 }}. {{ track.name || '未知曲目' }}  {{ track.time || '0:00' }}</h4>
+            <h4>{{ idx+1 }}. {{ track.track_name || '未知曲目' }}  {{ track.duration || '0:00' }}</h4>
           </div>
         </div>
 
         <div class="tip-card">
           <h3>开始欣赏</h3>
           <div class="query-code">
-            path: 音乐库/{{ album.code || '未知' }}
+            path: 音乐库/{{ album.id || '未知' }}
           </div>
         </div>
       </div>
@@ -129,13 +120,11 @@
 
         <!-- 原有评分部分 -->
         <div class="score-section">
-          <h4>评分</h4>
+          <h4>单曲评分</h4>
           <div v-for="(track, idx) in (album.tracks || [])" :key="idx">
-            <p>{{ track.score || 0 }}->>>{{ idx+1 }}. {{ track.name || '未知曲目' }}  {{ track.time || '0:00' }}</p>
+            <p>{{ track.score || 0 }}->>>{{ idx+1 }}. {{ track.track_name || '未知曲目' }}  {{ track.duration || '0:00' }}</p>
           </div>
-          <p>单曲打分：{{ (album.review || {}).single_score || 0.0 }}</p>
-          <p>私自打分：{{ (album.review || {}).private_score || 0.0 }}</p>
-          <p>最终评分：{{ (album.review || {}).final_score || 0.0 }}</p>
+          <p>最终评分：{{ album.my_score || 0.0 }}</p>
         </div>
       </div>
 
@@ -211,7 +200,7 @@ export default {
       album: {},
       activeTab: 'base',
       newComment: '',
-      newFeelingContent: '' // 新输入的听后感内容
+      newFeelingContent: ''
     };
   },
   created() {
@@ -232,7 +221,6 @@ export default {
       deep: true,
       handler(newVal) {
         if (newVal.review && newVal.review.personal_feeling) {
-          // 兼容旧数据
           if (!newVal.review.feelings) {
             newVal.review.feelings = [{
               id: 'old_data',
@@ -247,41 +235,40 @@ export default {
   methods: {
     getAlbumDetail(albumId) {
       this.$axios({
-        url: `http://127.0.0.1:5000/api/album/detail/${albumId}`,
+        url: `/api/album/detail/${albumId}`, // 改回后端接口
         method: 'GET',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json;charset=utf-8'
         }
       })
-      .then((res) => {
-        if (res.data.code === 200) {
-          this.album = res.data.data;
-          this.album.review = this.album.review || {};
-          this.album.comments = this.album.comments || [];
-        } else {
-          alert(res.data.msg);
-          this.$router.push('/music');
-        }
-      })
-      .catch((err) => {
-        console.error('获取详情失败：', err);
-        alert('获取专辑详情失败！' + err.message);
-        this.$router.push('/music');
-      });
+          .then((res) => {
+            if (res.data.code === 200) {
+              this.album = res.data.data;
+              this.album.review = this.album.review || {};
+              this.album.comments = this.album.comments || [];
+              this.album.tracks = this.album.tracks || [];
+            } else {
+              alert(res.data.msg);
+              this.$router.push('/music');
+            }
+          })
+          .catch((err) => {
+            console.error('获取详情失败：', err);
+            alert('获取专辑详情失败！' + err.message);
+            this.$router.push('/music');
+          });
     },
-    // 新增单条听后感
     addSingleReview() {
       if (!this.newFeelingContent.trim()) {
         alert('听后感内容不能为空！');
         return;
       }
-      // 生成时间戳
       const now = new Date();
-      const createTime = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+      const createTime = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
       this.$axios({
-        url: `http://127.0.0.1:5000/api/album/review/add/${this.album.id}`,
+        url: `/api/album/review/add/${this.album.id}`, // 改回id
         method: 'POST',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
@@ -292,27 +279,26 @@ export default {
           create_time: createTime
         }
       })
-      .then((res) => {
-        if (res.data.code === 200) {
-          alert('听后感添加成功！');
-          this.newFeelingContent = '';
-          this.getAlbumDetail(this.album.id);
-        } else {
-          alert(res.data.msg);
-        }
-      })
-      .catch((err) => {
-        console.error('添加听后感失败：', err);
-        alert('添加听后感失败！' + err.message);
-      });
+          .then((res) => {
+            if (res.data.code === 200) {
+              alert('听后感添加成功！');
+              this.newFeelingContent = '';
+              this.getAlbumDetail(this.album.id);
+            } else {
+              alert(res.data.msg);
+            }
+          })
+          .catch((err) => {
+            console.error('添加听后感失败：', err);
+            alert('添加听后感失败！' + err.message);
+          });
     },
-    // 删除单条听后感
     deleteSingleReview(feelingId) {
       if (!confirm('确定要删除这条听后感吗？')) {
         return;
       }
       this.$axios({
-        url: `http://127.0.0.1:5000/api/album/review/delete/single/${this.album.id}`,
+        url: `/api/album/review/delete/single/${this.album.id}`, // 改回id
         method: 'POST',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
@@ -335,13 +321,12 @@ export default {
             alert('删除听后感失败！' + err.message);
           });
     },
-    // 清空所有听后感
     deleteAllReview() {
       if (!confirm('确定要清空所有听后感吗？')) {
         return;
       }
       this.$axios({
-        url: `http://127.0.0.1:5000/api/album/review/delete/${this.album.id}`,
+        url: `/api/album/review/delete/${this.album.id}`, // 改回id
         method: 'DELETE',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
@@ -361,7 +346,6 @@ export default {
             alert('清空听后感失败！' + err.message);
           });
     },
-    // 提交评论
     submitComment() {
       const comment = this.newComment.trim()
       if (!comment) {
@@ -370,14 +354,14 @@ export default {
       }
 
       this.$axios({
-        url: 'http://127.0.0.1:5000/api/music/comment',
+        url: '/api/music/comment', // 改回后端实际评论接口
         method: 'POST',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json;charset=utf-8'
         },
         data: {
-          musicId: this.album.id,
+          musicId: this.album.id, // 改回id
           comment: comment,
           score: 0
         }
@@ -404,6 +388,7 @@ export default {
 </script>
 
 <style scoped>
+/* 样式不变，保留原有 */
 /* 基础样式 */
 * {
   margin: 0;

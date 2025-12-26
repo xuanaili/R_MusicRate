@@ -17,14 +17,13 @@
         @click="goToAlbumDetail"
         style="cursor: pointer; color: #42b983;"
       >
-        {{ music.album_name || music.name || '未知专辑' }}
+        {{ music.album_name || '未知专辑' }}
       </h3>
       <p class="singer"><strong>歌手：</strong>{{ music.singer || '未知' }}</p>
       <p class="year"><strong>发行年份：</strong>{{ music.release_year || '未知' }}</p>
-      <p class="type"><strong>主要类型：</strong>{{ music.main_type || '未知' }}</p>
-      <!-- 修复：判断tags是否存在后再join -->
+      <p class="type"><strong>主要类型：</strong>{{ (music.main_type && music.main_type.length > 0) ? music.main_type[0] : '未知' }}</p>
       <p class="tags"><strong>标签：</strong>{{ (music.tags && music.tags.length > 0) ? music.tags.join('、') : '无' }}</p>
-      <p class="score"><strong>评分：</strong>{{ music.score || 0 }}</p>
+      <p class="score"><strong>评分：</strong>{{ music.my_score || 0 }}</p>
     </div>
   </div>
 </template>
@@ -45,13 +44,13 @@ export default {
   },
   methods: {
     goToAlbumDetail() {
-      if (!this.music.id) {
+      if (!this.music.id) { // 改回后端实际的id
         alert('专辑ID不存在，无法查看详情！');
         return;
       }
       this.$router.push({
-        path: `/album/detail/${this.music.id}`,
-        query: { id: this.music.id }
+        path: `/album/detail/${this.music.id}`, // 改回id
+        query: {id: this.music.id}
       });
     },
     submitComment() {
@@ -61,7 +60,7 @@ export default {
         return
       }
       this.$emit('add-comment', {
-        musicId: this.music.id,
+        musicId: this.music.id, // 改回id
         comment: comment,
         score: 0
       })
@@ -72,6 +71,7 @@ export default {
 </script>
 
 <style scoped>
+/* 样式不变，保留原有 */
 .music-item {
   display: flex;
   gap: 20px;
@@ -81,6 +81,7 @@ export default {
   margin-bottom: 20px;
   background: #f9f9f9;
 }
+
 .cover {
   width: 160px;
   height: 160px;
@@ -91,47 +92,57 @@ export default {
   border-radius: 6px;
   overflow: hidden;
 }
+
 .cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+
 .no-cover {
   color: #999;
   font-size: 12px;
   text-align: center;
 }
+
 .info {
   flex: 1;
 }
+
 .album-name {
   margin: 0 0 10px 0;
   font-size: 18px;
   transition: all 0.2s;
 }
+
 .album-name:hover {
   color: #3aa876;
   text-decoration: underline;
 }
+
 .singer, .year, .type, .tags, .score {
   margin: 5px 0;
   color: #666;
   font-size: 14px;
 }
+
 .score {
   color: #e67e22;
   font-weight: 600;
 }
+
 .comments {
   margin-top: 15px;
   padding-top: 15px;
   border-top: 1px dashed #eee;
 }
+
 .no-comment {
   color: #999;
   font-size: 13px;
   margin: 5px 0;
 }
+
 .comment-input {
   padding: 8px;
   width: 250px;
@@ -140,6 +151,7 @@ export default {
   border-radius: 4px;
   font-size: 13px;
 }
+
 .comment-btn {
   padding: 8px 15px;
   background: #42b983;
@@ -149,14 +161,17 @@ export default {
   cursor: pointer;
   font-size: 13px;
 }
+
 .comment-btn:hover {
   background: #3aa876;
 }
+
 .comments ul {
   list-style: none;
   padding: 0;
   margin: 8px 0;
 }
+
 .comments li {
   background: #fff;
   padding: 6px 10px;
