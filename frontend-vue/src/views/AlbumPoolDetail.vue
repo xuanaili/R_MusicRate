@@ -1,6 +1,12 @@
+<!-- MusicRate\frontend-vue\src\components\AlbumPoolDetail.vue -->
 <template>
   <div class="pool-detail-container">
     <h2>公共专辑详情</h2>
+    <!-- 管理员修改按钮 -->
+    <div v-if="isAdmin" class="edit-btn-container">
+      <button @click="goEditAlbum" class="edit-btn">修改专辑信息</button>
+    </div>
+
     <div v-if="loading" class="loading-tip">加载中...</div>
     <div v-else-if="!albumData" class="empty-tip">未找到该公共专辑</div>
     <div v-else class="album-detail">
@@ -13,7 +19,7 @@
         <p>歌手：{{ albumData.singer }}</p>
         <p>发行年份：{{ albumData.release_year }}</p>
         <p>标签：{{ albumData.tags?.join('、') || '无' }}</p>
-        <p>创建用户：{{ albumData.create_user_name || '未知' }}</p>
+        <p>创建用户：{{ albumData.create_user_name || albumData.create_user || '未知用户' }}</p>
         <p>创建时间：{{ albumData.create_time || '未知' }}</p>
       </div>
       <div class="actions">
@@ -30,7 +36,8 @@ export default {
   data() {
     return {
       albumData: null,
-      loading: false
+      loading: false,
+      isAdmin: false // 是否为管理员
     }
   },
   created() {
@@ -38,6 +45,8 @@ export default {
       this.$router.push('/login');
       return;
     }
+    // 判断是否为管理员
+    this.isAdmin = localStorage.getItem('is_admin') === '1';
     // 获取URL中的poolId
     const poolId = this.$route.params.poolId;
     this.getPoolAlbumDetail(poolId);
@@ -90,6 +99,10 @@ export default {
         alert('复制失败！');
       });
     },
+    // 跳转到修改页面
+    goEditAlbum() {
+      this.$router.push(`/album/pool/edit/${this.$route.params.poolId}`);
+    },
     // 返回搜索池
     goBack() {
       this.$router.push('/album-pool');
@@ -103,6 +116,19 @@ export default {
   max-width: 800px;
   margin: 0 auto;
   padding: 20px;
+}
+/* 新增修改按钮样式 */
+.edit-btn-container {
+  text-align: right;
+  margin-bottom: 20px;
+}
+.edit-btn {
+  padding: 8px 20px;
+  background: #ff9800;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 .loading-tip, .empty-tip {
   text-align: center;

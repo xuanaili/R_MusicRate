@@ -10,6 +10,9 @@ import RegisterPage from '@/views/RegisterPage.vue'
 import AddAlbum from '@/views/AddAlbum.vue'
 import AlbumDetail from '@/views/AlbumDetail.vue'
 import SearchAlbumPool from '@/components/SearchAlbumPool.vue' // 补充.vue后缀
+// ========== 核心新增：导入编辑页组件 ==========
+import EditPoolAlbum from '@/views/EditPoolAlbum.vue'
+// ========== 新增结束 ==========
 
 // 安装插件
 Vue.use(VueRouter)
@@ -48,14 +51,22 @@ const router = new VueRouter({
       name: 'AlbumPoolDetail',
       // 正确路径：@代表src目录，views在src下
       component: () => import('@/views/AlbumPoolDetail.vue')
+    },
+    // ========== 核心新增：编辑页路由 ==========
+    {
+      path: '/album/pool/edit/:poolId', // 动态接收专辑ID
+      name: 'EditPoolAlbum', // 路由名要和详情页跳转时的name一致
+      component: EditPoolAlbum, // 关联导入的编辑页组件
+      meta: { requiresAuth: true } // 标记需要登录（和其他页面保持一致）
     }
+    // ========== 新增结束 ==========
   ]
 })
 
 // ========== 新增：全局路由守卫（补充SearchAlbumPool和AlbumPoolDetail需要登录） ==========
 router.beforeEach((to, from, next) => {
-  // 需要登录的页面名称列表（补充新增的页面）
-  const authRequired = ['MusicList', 'AddAlbum', 'AlbumDetail', 'SearchAlbumPool', 'AlbumPoolDetail']
+  // 需要登录的页面名称列表（补充新增的EditPoolAlbum）
+  const authRequired = ['MusicList', 'AddAlbum', 'AlbumDetail', 'SearchAlbumPool', 'AlbumPoolDetail', 'EditPoolAlbum']
   // 判断是否已登录（token存在）
   const hasToken = !!localStorage.getItem('token')
 
