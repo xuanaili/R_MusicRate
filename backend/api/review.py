@@ -1,9 +1,9 @@
-# MusicRate/backend/api/review.py 听后感相关接口 - 添加、删除、编辑、清空
+# MusicRate\backend\api\review.py 听后感相关接口 - 添加、删除、编辑、清空
 from flask import request, jsonify
 import json
 import uuid
 import traceback
-from ..db_utils import get_db, get_album_table_name, current_user_id
+from ..db_utils import get_db, get_album_table_name, get_current_user_id  # 导入get_current_user_id
 from ..decorators import login_required
 
 
@@ -15,6 +15,10 @@ def register_review_routes(app):
     @login_required
     def add_single_review(album_id):
         try:
+            # 获取当前登录用户ID（从g对象中获取）
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
             data = request.get_json()
             content = data.get('content', '').strip()
             if not content:
@@ -67,6 +71,10 @@ def register_review_routes(app):
     @login_required
     def delete_single_review(album_id):
         try:
+            # 获取当前登录用户ID（从g对象中获取）
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
             data = request.get_json()
             feeling_id = data.get('feeling_id')
             if not feeling_id:
@@ -114,6 +122,10 @@ def register_review_routes(app):
     @login_required
     def delete_all_review(album_id):
         try:
+            # 获取当前登录用户ID（从g对象中获取）
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
             table_name = get_album_table_name(current_user_id)
             db = get_db()
             cursor = db.cursor()
@@ -152,6 +164,10 @@ def register_review_routes(app):
     @login_required
     def edit_review(album_id):
         try:
+            # 获取当前登录用户ID（从g对象中获取）
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
             data = request.get_json()
             if not data or not data.get('personal_feeling'):
                 return jsonify({"code": 400, "msg": "听后感内容不能为空！"}), 400

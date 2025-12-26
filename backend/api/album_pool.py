@@ -1,8 +1,8 @@
-# MusicRate/backend/api/ablum_pool.py 专辑搜索池接口 - 搜索、复制、详情
+# MusicRate\backend\api\album_pool.py 专辑搜索池接口 - 搜索、复制、详情
 from flask import request, jsonify
 import json
 import traceback
-from ..db_utils import get_db, get_album_table_name, current_user_id
+from ..db_utils import get_db, get_album_table_name, get_current_user_id  # 导入get_current_user_id
 from ..decorators import login_required
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 
@@ -125,6 +125,10 @@ def register_album_pool_routes(app):
     @login_required
     def copy_album(album_id):
         try:
+            # 获取当前登录用户ID（从g对象中获取）
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
             db = get_db()
             cursor = db.cursor()
 

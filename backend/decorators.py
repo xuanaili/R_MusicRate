@@ -1,17 +1,16 @@
-# MusicRate/backend/decorators.py 登录校验装饰器 - 独立封装登录验证逻辑
+# MusicRate\backend\decorators.py 登录校验装饰器 - 独立封装登录验证逻辑
 from functools import wraps
-from flask import request, jsonify
+from flask import request, jsonify, g
 import traceback
-from .db_utils import get_db, check_and_create_user_album_table, current_user_id
-import pymysql
-
+from .db_utils import get_db, check_and_create_user_album_table, set_current_user_id
 
 def login_required(func):
     """登录校验装饰器：验证token有效性，设置当前登录用户ID"""
     @wraps(func)
     def wrapper(*args, **kwargs):
-        global current_user_id
-        current_user_id = None  # 重置当前用户ID
+        # ========== 核心修改：跳过 OPTIONS 请求的 token 校验 ==========
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
         try:
             # 获取请求头中的token
             token = request.headers.get('Authorization')
@@ -20,19 +19,18 @@ def login_required(func):
 
             # MySQL验证token
             db = get_db()
-            # 关键修改1：使用字典游标，才能用user["user_id"]取值
-            cursor = db.cursor(pymysql.cursors.DictCursor)
-            cursor.execute('SELECT user_id, username FROM users WHERE token = %s', (token,))
+            cursor = db.cursor()
+            cursor.execute('SELECT id, username FROM users WHERE token = %s', (token,))
             user = cursor.fetchone()
             cursor.close()
 
             if not user:
                 return jsonify({"code": 401, "msg": "登录已过期，请重新登录！"}), 401
 
-            # 设置当前登录用户ID
-            current_user_id = user["user_id"]
+            # 设置当前登录用户ID到Flask g对象（线程安全）
+            set_current_user_id(user["id"])
             # 检查并创建用户专辑表（确保表存在）
-            check_and_create_user_album_table(current_user_id)
+            check_and_create_user_album_table(user["id"])
 
             # 执行原函数
             return func(*args, **kwargs)

@@ -1,8 +1,8 @@
-# MusicRate/backend/api/comment.py 评论相关接口 - 提交、添加
+# MusicRate\backend\api\comment.py 评论相关接口 - 提交、添加
 from flask import request, jsonify
 import json
 import traceback
-from ..db_utils import get_db, get_album_table_name, current_user_id
+from ..db_utils import get_db, get_album_table_name, get_current_user_id  # 导入get_current_user_id
 from ..decorators import login_required
 
 
@@ -14,6 +14,10 @@ def register_comment_routes(app):
     @login_required
     def submit_comment():
         try:
+            # 获取当前登录用户ID（从g对象中获取）
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
             data = request.get_json()
             music_id = data.get('musicId')
             comment = data.get('comment')
@@ -90,6 +94,10 @@ def register_comment_routes(app):
     @login_required
     def add_album_comment(album_id):
         try:
+            # 获取当前登录用户ID（从g对象中获取）
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
             data = request.get_json()
             comment = data.get('comment')
 

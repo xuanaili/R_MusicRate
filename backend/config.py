@@ -1,4 +1,4 @@
-# MusicRate/backend/config.py 全局配置文件 - 包含所有基础配置项
+# MusicRate\backend\config.py 全局配置文件 - 包含所有基础配置项
 import os
 import pymysql
 
@@ -21,7 +21,7 @@ MYSQL_CONFIG = {
 
 # ================= 本地图床配置 =================
 # 图片保存路径（自动创建文件夹）
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "album_covers")
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend/album_covers")
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 # 图片访问基础URL

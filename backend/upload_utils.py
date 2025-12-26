@@ -1,4 +1,4 @@
-# MusicRate/backend/upload_utils.py 本地图床工具 - 包含图片上传、访问接口
+# MusicRate\backend\upload_utils.py 本地图床工具 - 包含图片上传、访问接口
 from flask import send_from_directory, request, jsonify
 import os
 import uuid

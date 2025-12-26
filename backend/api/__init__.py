@@ -1,4 +1,4 @@
-# MusicRate/backend/api/__init__.py 接口模块初始化 - 统一注册所有业务接口
+# MusicRate\backend\api\__init__.py 接口模块初始化 - 统一注册所有业务接口
 from . import auth, album, album_pool, review, comment
 
 
