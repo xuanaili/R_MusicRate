@@ -10,9 +10,10 @@
       <label>密码：</label>
       <input v-model="password" type="password" placeholder="请输入密码">
     </div>
-    <button @click="handleLogin">登录</button>
+    <button @click="handleLogin" :disabled="loading">
+      {{ loading ? '登录中...' : '登录' }}
+    </button>
     <div class="error-tip" v-if="errorMsg">{{ errorMsg }}</div>
-    <!-- 新增：跳注册页的链接 -->
     <div class="go-register">
       没有账号？<span @click="goRegister">立即注册</span>
     </div>
@@ -21,48 +22,82 @@
 
 <script>
 export default {
-  name: 'LoginPage',  // 新增：多单词组件名
+  name: 'LoginPage',
   data() {
     return {
-      username: "",  // 绑定账号输入框
-      password: "",  // 绑定密码输入框
-      errorMsg: ""   // 登录失败提示
+      username: "",
+      password: "",
+      errorMsg: "",
+      loading: false  // 新增：登录加载状态，防止重复点击
     };
   },
   methods: {
     handleLogin() {
-      // 清空之前的错误提示
+      // 1. 清空之前的错误提示
       this.errorMsg = "";
-      // 校验账号密码是否为空
-      if (!this.username || !this.password) {
-        this.errorMsg = "账号和密码不能为空！";
+      // 2. 前端严格校验（去除空格，避免空字符串提交）
+      const username = this.username.trim();
+      const password = this.password.trim();
+
+      if (!username) {
+        this.errorMsg = "账号不能为空！";
         return;
       }
-      // 调用后端登录接口
+      if (!password) {
+        this.errorMsg = "密码不能为空！";
+        return;
+      }
+
+      // 3. 设置加载状态，防止重复提交
+      this.loading = true;
+
+      // 4. 调用后端登录接口
       this.$axios
-        .post("/api/login", {
-          username: this.username,
-          password: this.password
-        })
+        .post("/api/login", { username, password })
         .then(res => {
-          if (res.data.code === 200) {
-            // 登录成功：保存token到本地（localStorage），防止页面刷新丢失
+          this.loading = false; // 关闭加载
+          // 5. 处理后端响应（严格判断code）
+          if (res.data && res.data.code === 200) {
+            // 登录成功：保存token和用户名
             localStorage.setItem("token", res.data.data.token);
             localStorage.setItem("username", res.data.data.username);
             // 跳转到音乐评分页面
             this.$router.push("/music");
           } else {
-            this.errorMsg = res.data.msg;
+            // 后端返回非200的业务错误（如参数错误）
+            this.errorMsg = res.data?.msg || "登录失败，请重试！";
           }
         })
         .catch(err => {
+          this.loading = false; // 关闭加载
           console.error("登录失败：", err);
-          this.errorMsg = "登录失败，请检查后端是否启动！";
+          // 6. 精准捕获不同类型的错误
+          if (err.response) {
+            // 有响应但状态码非200（重点：捕获401账号密码错误）
+            const { code, msg } = err.response.data || {};
+            if (code === 401) {
+              this.errorMsg = msg || "账号或密码错误！";
+              // 清空密码框，提升体验
+              this.password = "";
+            } else if (code === 400) {
+              this.errorMsg = msg || "账号或密码格式错误！";
+            } else {
+              this.errorMsg = "服务器错误，请稍后重试！";
+            }
+          } else if (err.request) {
+            // 无响应（后端没启动/网络问题）
+            this.errorMsg = "连接服务器失败，请检查后端是否启动！";
+          } else {
+            // 其他错误（如请求配置错误）
+            this.errorMsg = "登录出错，请重试！";
+          }
         });
     },
-    // 跳注册页
-    goRegister(){
-    this.$router.push("/register");
+    goRegister() {
+      // 优化：跳转到注册页前，先判断是否已经在注册页（避免重复导航报错）
+      if (this.$route.path !== '/register') {
+        this.$router.push("/register");
+      }
     }
   }
 };
@@ -95,6 +130,13 @@ button {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  /* 禁用状态样式 */
+  opacity: 1;
+  transition: opacity 0.3s;
+}
+button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 .error-tip {
   color: red;

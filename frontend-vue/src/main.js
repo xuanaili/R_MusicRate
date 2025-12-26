@@ -1,6 +1,4 @@
 // MusicRate/frontend-vue/src/main.js
-
-
 import Vue from 'vue'
 import App from './App.vue'
 import axios from 'axios'
@@ -16,6 +14,17 @@ import SearchAlbumPool from '@/components/SearchAlbumPool.vue' // 补充.vue后�
 // 安装插件
 Vue.use(VueRouter)
 Vue.config.productionTip = false
+
+// ========== 核心修复1：拦截路由重复导航错误（解决登录/注册跳转崩溃） ==========
+const originalPush = VueRouter.prototype.push
+VueRouter.prototype.push = function push(location) {
+  return originalPush.call(this, location).catch(err => {
+    // 只忽略"重复导航"错误，其他错误正常抛出
+    if (err.name !== 'NavigationDuplicated') {
+      throw err
+    }
+  })
+}
 
 // ========== 1. 定义路由（修正所有路径问题） ==========
 const router = new VueRouter({
@@ -50,9 +59,14 @@ router.beforeEach((to, from, next) => {
   // 判断是否已登录（token存在）
   const hasToken = !!localStorage.getItem('token')
 
-  // 逻辑：访问需要登录的页面且无token → 跳登录页
+  // 逻辑优化：避免登录页/注册页重复跳转
   if (authRequired.includes(to.name) && !hasToken) {
-    next('/login')
+    // 只有当前不在登录页时，才跳登录页
+    if (from.name !== 'Login') {
+      next('/login')
+    } else {
+      next(false) // 阻止跳转，避免重复导航
+    }
   } else {
     next() // 其他情况正常放行
   }
@@ -75,14 +89,22 @@ axios.interceptors.request.use(
   error => Promise.reject(error)
 )
 
-// 响应拦截器：处理401
+// 响应拦截器：优化401处理（避免重复弹窗/跳转）
 axios.interceptors.response.use(
   response => response,
   error => {
-    if (error.response && error.response.status === 401) {
-      localStorage.clear()
-      alert(error.response.data.msg || '登录已过期，请重新登录')
-      router.replace('/login') // 改用replace，避免历史记录
+    if (error.response) {
+      const { status, data } = error.response
+      // 处理401未登录/登录过期
+      if (status === 401) {
+        // 清空本地存储
+        localStorage.clear()
+        // 只有当前不在登录页时，才提示并跳转
+        if (router.currentRoute.name !== 'Login') {
+          alert(data.msg || '登录已过期，请重新登录')
+          router.replace('/login') // 改用replace，避免历史记录
+        }
+      }
     }
     return Promise.reject(error)
   }
