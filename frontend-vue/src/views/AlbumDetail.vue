@@ -129,7 +129,7 @@
         </div>
       </div>
 
-      <!-- 平台评论 Tab（完全重构：多用户共享评论） -->
+      <!-- 平台评论 Tab（新增排序+屏蔽+置顶） -->
       <div v-if="activeTab === 'comments'" class="tab-content">
         <h2>{{ album.album_name || '未知专辑' }}——公共评论区</h2>
 
@@ -153,18 +153,79 @@
           </div>
         </div>
 
-        <!-- 公共评论列表（显示用户名、时间、点赞） -->
-        <div class="comments-list-container" v-if="publicComments.length > 0">
-          <div class="comment-item" v-for="comment in publicComments" :key="comment.id">
-            <!-- 评论头部：左上角显示用户名 -->
+        <!-- 排序选项 -->
+        <div class="sort-options" v-if="publicComments.length > 0">
+          <span class="sort-label">排序方式：</span>
+          <button
+            class="sort-btn"
+            :class="{active: sortType === 'time'}"
+            @click="changeSortType('time')"
+          >
+            最新时间
+          </button>
+          <button
+            class="sort-btn"
+            :class="{active: sortType === 'like'}"
+            @click="changeSortType('like')"
+          >
+            最多点赞
+          </button>
+        </div>
+
+        <!-- 公共评论列表（自己评论置顶 + 屏蔽功能） -->
+        <div class="comments-list-container" v-if="filteredComments.length > 0">
+          <!-- 自己的评论 置顶显示 -->
+          <div
+            class="comment-item my-comment"
+            v-if="myComment"
+            :key="myComment.id"
+          >
+            <div class="comment-header">
+              <span class="comment-username">{{ myComment.username }}</span>
+              <span class="my-tag">我的评论</span>
+              <!-- 管理员标识 -->
+              <span v-if="myComment.is_admin" class="admin-tag">管理员</span>
+            </div>
+            <div class="comment-content">{{ myComment.content }}</div>
+            <div class="comment-footer">
+              <span class="comment-time">{{ myComment.create_time }}</span>
+              <div class="comment-actions">
+                <button
+                  class="like-btn"
+                  @click="likePublicComment(myComment.id)"
+                  :class="{liked: myComment.like_user_ids.includes(currentUserId)}"
+                >
+                  👍 {{ myComment.like_count }}
+                </button>
+                <button
+                  class="delete-comment-btn"
+                  @click="deletePublicComment(myComment.id)"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 他人的评论 -->
+          <div
+            class="comment-item"
+            v-for="comment in otherComments"
+            :key="comment.id"
+          >
+            <!-- 屏蔽按钮：右上角灰色 -->
+            <button
+              class="block-btn"
+              @click="blockComment(comment.id)"
+              title="屏蔽这条评论"
+            >
+              🚫
+            </button>
             <div class="comment-header">
               <span class="comment-username">{{ comment.username }}</span>
-              <!-- 管理员标识 -->
               <span v-if="comment.is_admin" class="admin-tag">管理员</span>
             </div>
-            <!-- 评论内容 -->
             <div class="comment-content">{{ comment.content }}</div>
-            <!-- 评论底部：左下角时间 + 右下角点赞/删除 -->
             <div class="comment-footer">
               <span class="comment-time">{{ comment.create_time }}</span>
               <div class="comment-actions">
@@ -175,7 +236,6 @@
                 >
                   👍 {{ comment.like_count }}
                 </button>
-                <!-- 管理员/评论作者可删除 -->
                 <button
                   v-if="isAdmin || comment.user_id == currentUserId"
                   class="delete-comment-btn"
@@ -187,7 +247,14 @@
             </div>
           </div>
         </div>
+
         <p class="no-comment" v-else>暂无评论，快来抢沙发~</p>
+
+        <!-- 已屏蔽评论提示 -->
+        <div class="block-tip" v-if="blockedCommentIds.length > 0">
+          已屏蔽 <span>{{ blockedCommentIds.length }}</span> 条评论
+          <button class="unblock-all-btn" @click="unblockAllComments">取消全部屏蔽</button>
+        </div>
       </div>
     </main>
   </div>
@@ -201,40 +268,35 @@ export default {
       album: {},
       activeTab: 'base',
       newFeelingContent: '',
-      // 新增：公共评论相关
-      newCommentContent: '',       // 公共评论输入内容
-      publicComments: [],          // 多用户共享评论列表
-      currentUserId: localStorage.getItem('user_id') || '', // 当前用户ID（登录时存储）
-      isAdmin: localStorage.getItem('is_admin') === '1',    // 是否为管理员
-      albumPoolId: '',              // 公共专辑池ID（关键：初始化）
-      hasComment: false,           // 是否已对该专辑发表评论
-      existingCommentId: null      // 已发表的评论ID
+      // 公共评论相关
+      newCommentContent: '',
+      publicComments: [], // 原始评论列表
+      currentUserId: localStorage.getItem('user_id') || '',
+      isAdmin: localStorage.getItem('is_admin') === '1',
+      albumPoolId: '',
+      hasComment: false,
+      existingCommentId: null,
+      // 新增：排序 + 屏蔽 + 置顶相关
+      sortType: 'time', // 默认排序：time-最新时间 like-最多点赞
+      blockedCommentIds: [], // 已屏蔽的评论ID列表
+      myComment: null, // 自己的评论
+      otherComments: [] // 他人的评论
     };
   },
-  created() {
-    if (!localStorage.getItem('token')) {
-      this.$router.push('/login');
-      return;
+  computed: {
+    // 过滤后的评论列表（排除已屏蔽的）
+    filteredComments() {
+      return this.publicComments.filter(comment => !this.blockedCommentIds.includes(comment.id.toString()));
     }
-    // 初始化用户信息
-    this.currentUserId = localStorage.getItem('user_id');
-    this.isAdmin = localStorage.getItem('is_admin') === '1';
-
-    const albumId = this.$route.params.id || this.$route.query.id;
-    if (!albumId) {
-      alert('未找到专辑ID！');
-      this.$router.push('/music');
-      return;
-    }
-    // 先获取专辑详情，再获取/创建公共专辑ID（异步顺序保证）
-    this.getAlbumDetail(Number(albumId)).then(() => {
-      this.getAlbumPoolRealId().then(() => {
-        // 初始化时检查是否已评论
-        this.checkUserComment();
-      });
-    });
   },
   watch: {
+    // 修复：监听多个属性的正确写法
+    sortType() {
+      this.processComments();
+    },
+    filteredComments() {
+      this.processComments();
+    },
     album: {
       deep: true,
       handler(newVal) {
@@ -250,11 +312,72 @@ export default {
       }
     }
   },
+  created() {
+    if (!localStorage.getItem('token')) {
+      this.$router.push('/login');
+      return;
+    }
+    this.currentUserId = localStorage.getItem('user_id');
+    this.isAdmin = localStorage.getItem('is_admin') === '1';
+
+    const albumId = this.$route.params.id || this.$route.query.id;
+    if (!albumId) {
+      alert('未找到专辑ID！');
+      this.$router.push('/music');
+      return;
+    }
+    this.getAlbumDetail(Number(albumId)).then(() => {
+      this.getAlbumPoolRealId().then(() => {
+        // 从本地存储加载已屏蔽的评论ID
+        const savedBlockedIds = localStorage.getItem(`blocked_comments_${this.albumPoolId}`);
+        if (savedBlockedIds) {
+          this.blockedCommentIds = JSON.parse(savedBlockedIds);
+        }
+        this.checkUserComment();
+        this.getPublicComments();
+      });
+    });
+  },
   methods: {
-    // 获取公共专辑池ID：不存在则自动创建
+    // 处理评论数据：分离自己的评论 + 排序他人评论
+    processComments() {
+      // 1. 分离自己的评论和他人的评论
+      const myComment = this.filteredComments.find(comment => comment.user_id == this.currentUserId);
+      const otherComments = this.filteredComments.filter(comment => comment.user_id != this.currentUserId);
+
+      // 2. 对他人的评论进行排序
+      if (this.sortType === 'time') {
+        // 按时间倒序（最新的在前）
+        otherComments.sort((a, b) => new Date(b.create_time) - new Date(a.create_time));
+      } else if (this.sortType === 'like') {
+        // 按点赞数倒序（点赞多的在前）
+        otherComments.sort((a, b) => b.like_count - a.like_count);
+      }
+
+      this.myComment = myComment;
+      this.otherComments = otherComments;
+    },
+    // 切换排序方式
+    changeSortType(type) {
+      this.sortType = type;
+    },
+    // 屏蔽评论
+    blockComment(commentId) {
+      if (!this.blockedCommentIds.includes(commentId.toString())) {
+        this.blockedCommentIds.push(commentId.toString());
+        // 保存到本地存储，刷新页面不丢失
+        localStorage.setItem(`blocked_comments_${this.albumPoolId}`, JSON.stringify(this.blockedCommentIds));
+        alert('已屏蔽这条评论！');
+      }
+    },
+    // 取消全部屏蔽
+    unblockAllComments() {
+      this.blockedCommentIds = [];
+      localStorage.removeItem(`blocked_comments_${this.albumPoolId}`);
+    },
+    // 获取公共专辑池ID
     async getAlbumPoolRealId() {
       try {
-        // 校验专辑基础信息
         if (!this.album.album_name || !this.album.singer) {
           alert('专辑名称或歌手信息缺失，无法创建公共专辑！');
           return;
@@ -274,20 +397,14 @@ export default {
 
         if (res.data.code === 200) {
           this.albumPoolId = res.data.data.id;
-          this.getPublicComments(); // 自动加载评论列表
         } else if (res.data.code === 404) {
-          // 公共专辑不存在，自动创建
           await this.createAlbumPool();
-          if (this.albumPoolId) {
-            this.getPublicComments();
-          }
         }
       } catch (err) {
         console.error('获取专辑池ID失败：', err);
         alert('获取公共专辑ID失败：' + err.message);
       }
     },
-
     // 创建专辑到公共专辑池
     async createAlbumPool() {
       try {
@@ -317,8 +434,7 @@ export default {
         alert('创建公共专辑失败：' + err.message);
       }
     },
-
-    // 检查当前用户是否已对该专辑发表评论
+    // 检查当前用户是否已评论
     async checkUserComment() {
       if (!this.albumPoolId) return false;
       try {
@@ -343,8 +459,7 @@ export default {
         return false;
       }
     },
-
-    // 获取专辑详情（返回Promise，保证异步顺序）
+    // 获取专辑详情
     getAlbumDetail(albumId) {
       return new Promise((resolve, reject) => {
         this.$axios({
@@ -375,7 +490,6 @@ export default {
         });
       });
     },
-
     // 新增单条听后感
     addSingleReview() {
       if (!this.newFeelingContent.trim()) {
@@ -411,7 +525,6 @@ export default {
         alert('添加听后感失败！' + err.message);
       });
     },
-
     // 删除单条听后感
     deleteSingleReview(feelingId) {
       if (!confirm('确定要删除这条听后感吗？')) {
@@ -441,7 +554,6 @@ export default {
         alert('删除听后感失败！' + err.message);
       });
     },
-
     // 清空所有听后感
     deleteAllReview() {
       if (!confirm('确定要清空所有听后感吗？')) {
@@ -468,14 +580,11 @@ export default {
         alert('清空听后感失败！' + err.message);
       });
     },
-
     // 返回专辑列表
     goBack() {
       this.$router.push('/music');
     },
-
-    // ==================== 公共评论核心方法 ====================
-    // 1. 获取公共评论列表
+    // 获取公共评论列表
     getPublicComments() {
       if (!this.albumPoolId) {
         alert('公共专辑ID未初始化，请稍后重试！');
@@ -490,6 +599,8 @@ export default {
       }).then(res => {
         if (res.data.code === 200) {
           this.publicComments = res.data.data;
+          // 处理评论数据（置顶+排序）
+          this.processComments();
         } else {
           alert('获取公共评论失败：' + res.data.msg);
         }
@@ -498,8 +609,7 @@ export default {
         alert('获取公共评论失败！');
       });
     },
-
-    // 2. 发布公共评论（自动处理公共专辑ID + 重复评论校验）
+    // 发布公共评论
     async submitPublicComment() {
       const content = this.newCommentContent.trim();
       if (!content) {
@@ -507,7 +617,6 @@ export default {
         return;
       }
 
-      // 自动获取/创建公共专辑ID
       if (!this.albumPoolId) {
         await this.getAlbumPoolRealId();
         if (!this.albumPoolId) {
@@ -516,7 +625,6 @@ export default {
         }
       }
 
-      // 发布前检查是否已评论
       const hasComment = await this.checkUserComment();
       if (hasComment) {
         alert('你已对该专辑发表过评论，无法重复发布！');
@@ -540,8 +648,8 @@ export default {
         if (res.data.code === 200) {
           alert('公共评论发布成功！');
           this.newCommentContent = '';
-          this.hasComment = true; // 更新评论状态
-          this.getPublicComments(); // 刷新评论列表
+          this.hasComment = true;
+          this.getPublicComments();
         } else {
           alert('发布评论失败：' + res.data.msg);
         }
@@ -550,8 +658,7 @@ export default {
         alert(`发布失败：${err.response?.data?.msg || err.message}`);
       }
     },
-
-    // 3. 公共评论点赞/取消点赞
+    // 评论点赞
     likePublicComment(commentId) {
       this.$axios({
         url: `/api/album/pool/comment/like/${commentId}`,
@@ -570,6 +677,7 @@ export default {
               comment.like_user_ids = comment.like_user_ids.filter(id => id !== this.currentUserId);
             }
           }
+          this.processComments();
         } else {
           alert(res.data.msg);
         }
@@ -578,8 +686,7 @@ export default {
         alert('点赞失败！');
       });
     },
-
-    // 4. 删除公共评论（保留作者+管理员权限）
+    // 删除公共评论
     deletePublicComment(commentId) {
       if (!confirm('确定要删除这条评论吗？')) return;
       this.$axios({
@@ -591,12 +698,11 @@ export default {
       }).then(res => {
         if (res.data.code === 200) {
           alert('评论删除成功！');
-          // 如果删除的是自己的评论，重置评论状态
           if (commentId === this.existingCommentId) {
             this.hasComment = false;
             this.existingCommentId = null;
           }
-          this.getPublicComments(); // 刷新评论列表
+          this.getPublicComments();
         } else {
           alert('删除评论失败：' + res.data.msg);
         }
@@ -1010,16 +1116,56 @@ h5 {
   cursor: not-allowed;
 }
 
+/* 排序选项样式 */
+.sort-options {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 10px;
+  background-color: #f8f8f8;
+  border-radius: 4px;
+}
+
+.sort-label {
+  font-size: 14px;
+  color: #666;
+}
+
+.sort-btn {
+  padding: 4px 12px;
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.sort-btn.active {
+  background-color: #42b983;
+  color: #fff;
+  border-color: #42b983;
+}
+
 .comments-list-container {
   margin-top: 20px;
 }
 
+/* 评论项样式 */
 .comment-item {
   background: #fff;
   border: 1px solid #eee;
   border-radius: 8px;
   padding: 15px;
   margin-bottom: 15px;
+  position: relative;
+}
+
+/* 自己的评论特殊样式 */
+.comment-item.my-comment {
+  border: 2px solid #42b983;
+  background-color: #f0f8fb;
 }
 
 .comment-header {
@@ -1033,6 +1179,15 @@ h5 {
   font-weight: 600;
   color: #42b983;
   font-size: 14px;
+}
+
+/* 标签样式 */
+.my-tag {
+  background-color: #42b983;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
 }
 
 .admin-tag {
@@ -1095,5 +1250,51 @@ h5 {
 
 .delete-comment-btn:hover {
   background: #c0392b;
+}
+
+/* 屏蔽按钮样式：右上角灰色 */
+.block-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: #999;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.block-btn:hover {
+  opacity: 1;
+}
+
+/* 已屏蔽评论提示 */
+.block-tip {
+  margin-top: 20px;
+  padding: 10px;
+  background-color: #f8f8f8;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #666;
+  text-align: center;
+}
+
+.unblock-all-btn {
+  margin-left: 10px;
+  padding: 2px 8px;
+  background-color: #42b983;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
 }
 </style>
