@@ -50,6 +50,25 @@
           :music="music"
           @add-comment="handleAddComment"
         />
+
+        <!-- ========== 核心新增：同步开关区域 ========== -->
+        <div v-if="music.source_pool_id" class="sync-switch-container">
+          <label class="sync-switch">
+            <input
+              type="checkbox"
+              v-model="music.sync_pool_update"
+              @change="toggleSync(music.id, music.sync_pool_update)"
+              :disabled="music.is_customized"
+            >
+            <span class="slider round"></span>
+          </label>
+          <span class="sync-text">
+            {{ music.sync_pool_update ? '同步开启' : '同步关闭' }}
+            <span v-if="music.is_customized" class="customized-tag">（已自定义，无法同步）</span>
+          </span>
+        </div>
+        <!-- ========== 同步开关结束 ========== -->
+
         <!-- 关键修改2：删除按钮传参改为music.id -->
         <button
           @click="deleteAlbum(music.id)"
@@ -90,9 +109,9 @@
         下一页
       </button>
       <button
-        @click="changePage(pagination.total_pages)"
-        :disabled="pagination.page === pagination.total_pages || loading"
-        class="page-btn"
+          @click="changePage(pagination.total_pages)"
+          :disabled="pagination.page === pagination.total_pages || loading"
+          class="page-btn"
       >
         尾页
       </button>
@@ -100,12 +119,12 @@
       <!-- 跳转到指定页 -->
       <div class="jump-page">
         <input
-          type="number"
-          v-model="jumpPageNum"
-          min="1"
-          :max="pagination.total_pages"
-          placeholder="页码"
-          class="page-input"
+            type="number"
+            v-model="jumpPageNum"
+            min="1"
+            :max="pagination.total_pages"
+            placeholder="页码"
+            class="page-input"
         >
         <button @click="jumpToPage()" class="jump-btn">跳转</button>
       </div>
@@ -118,7 +137,7 @@ import MusicItem from '../components/MusicItem.vue'
 
 export default {
   name: 'MusicList',
-  components: { MusicItem },
+  components: {MusicItem},
   data() {
     return {
       musicList: [],
@@ -170,37 +189,99 @@ export default {
         },
         timeout: 5000
       })
-      .then(res => {
-        this.loading = false
-        if (res.data.code === 200) {
-          this.musicList = res.data.data.list || []
-          this.pagination = res.data.data.pagination || {
-            total: 0,
-            page: 1,
-            page_size: 10,
-            total_pages: 0
-          }
-          // 同步跳转页码输入框
-          this.jumpPageNum = this.pagination.page
-          console.log('✅ 拿到后端专辑数据：', this.musicList)
-          // 检查每个专辑是否有id字段
-          this.musicList.forEach(item => {
-            if (!item.id) {
-              console.warn('⚠️ 专辑数据缺少id字段：', item)
+          .then(res => {
+            this.loading = false
+            if (res.data.code === 200) {
+              this.musicList = res.data.data.list || []
+              // ========== 核心新增：处理同步开关和自定义标记的格式转换 ==========
+              this.musicList = this.musicList.map(item => ({
+                ...item,
+                // 数据库中是 1/0，转成布尔值方便开关使用
+                sync_pool_update: item.sync_pool_update === 1,
+                is_customized: item.is_customized === 1
+              }))
+              // ========== 格式转换结束 ==========
+
+              this.pagination = res.data.data.pagination || {
+                total: 0,
+                page: 1,
+                page_size: 10,
+                total_pages: 0
+              }
+              // 同步跳转页码输入框
+              this.jumpPageNum = this.pagination.page
+              console.log('✅ 拿到后端专辑数据：', this.musicList)
+              // 检查每个专辑是否有id字段
+              this.musicList.forEach(item => {
+                if (!item.id) {
+                  console.warn('⚠️ 专辑数据缺少id字段：', item)
+                }
+              })
+            } else {
+              alert('获取数据失败：' + res.data.msg)
+              this.musicList = []
             }
           })
-        } else {
-          alert('获取数据失败：' + res.data.msg)
-          this.musicList = []
+          .catch(err => {
+            this.loading = false
+            console.error('❌ 请求后端失败：', err)
+            alert('获取专辑数据失败！请检查后端是否启动，或重新登录')
+            this.$router.push('/login')
+          })
+    },
+
+    // ========== 核心新增：切换同步开关状态 ==========
+    toggleSync(albumId, status) {
+      // 禁用状态下不执行
+      if (this.musicList.find(item => item.id === albumId)?.is_customized) {
+        alert('该专辑已自定义修改，无法切换同步状态！')
+        return
+      }
+
+      this.loading = true
+      this.$axios({
+        url: '/api/album/sync/switch',
+        method: 'POST',
+        headers: {
+          'Authorization': localStorage.getItem('token') || '',
+          'Content-Type': 'application/json'
+        },
+        data: {
+          album_id: albumId,
+          sync_status: status ? 1 : 0  // 转成数据库的 1/0 格式
         }
       })
-      .catch(err => {
-        this.loading = false
-        console.error('❌ 请求后端失败：', err)
-        alert('获取专辑数据失败！请检查后端是否启动，或重新登录')
-        this.$router.push('/login')
-      })
+          .then(res => {
+            this.loading = false
+            if (res.data.code === 200) {
+              alert(res.data.msg)
+              // 局部更新，无需刷新整个列表（优化体验）
+              const index = this.musicList.findIndex(item => item.id === albumId)
+              if (index !== -1) {
+                this.musicList[index].sync_pool_update = status
+              }
+            } else {
+              alert('操作失败：' + res.data.msg)
+              // 回滚开关状态
+              const index = this.musicList.findIndex(item => item.id === albumId)
+              if (index !== -1) {
+                this.musicList[index].sync_pool_update = !status
+              }
+            }
+          })
+          .catch(err => {
+            this.loading = false
+            console.error('切换同步状态失败：', err)
+            alert('操作失败！请重试')
+            // 回滚开关状态
+            const index = this.musicList.findIndex(item => item.id === albumId)
+            if (index !== -1) {
+              this.musicList[index].sync_pool_update = !status
+            }
+          })
     },
+    // ========== 同步开关方法结束 ==========
+
     // 处理评论提交
     handleAddComment(data) {
       // 关键修改3：评论接口传参改为music.id（分表ID）
@@ -215,18 +296,18 @@ export default {
           content: data.comment
         }
       })
-      .then(resp => {
-        if (resp.data.code === 200) {
-          this.getMusicList()
-          alert('评论提交成功！')
-        } else {
-          alert('提交失败：' + resp.data.msg)
-        }
-      })
-      .catch(err => {
-        console.error('提交评论失败：', err)
-        alert('提交失败！')
-      })
+          .then(resp => {
+            if (resp.data.code === 200) {
+              this.getMusicList()
+              alert('评论提交成功！')
+            } else {
+              alert('提交失败：' + resp.data.msg)
+            }
+          })
+          .catch(err => {
+            console.error('提交评论失败：', err)
+            alert('提交失败！')
+          })
     },
     // 关键修改4：删除方法增加ID校验
     async deleteAlbum(albumId) {
@@ -303,11 +384,13 @@ body {
   font-family: "Microsoft YaHei", sans-serif;
   margin: 20px;
 }
+
 .container {
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
 }
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -315,6 +398,7 @@ body {
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
+
 .add-btn {
   background: #42b983;
   color: white;
@@ -323,20 +407,24 @@ body {
   border-radius: 4px;
   cursor: pointer;
 }
+
 .empty-tip {
   text-align: center;
   color: #999;
   padding: 50px 0;
 }
+
 .loading-tip {
   text-align: center;
   color: #666;
   padding: 30px 0;
 }
+
 /* 新增：专辑项容器 */
 .album-list {
   margin-top: 20px;
 }
+
 .album-item-wrapper {
   position: relative;
   margin-bottom: 20px;
@@ -344,6 +432,7 @@ body {
   border: 1px solid #eee;
   border-radius: 8px;
 }
+
 /* 新增：删除专辑按钮样式 */
 .delete-album-btn {
   position: absolute;
@@ -357,21 +446,25 @@ body {
   cursor: pointer;
   font-size: 12px;
 }
+
 .delete-album-btn:hover {
   background: #c0392b;
 }
+
 /* 排序样式 */
 .sort-container, .page-size-container {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+
 .sort-container select, .page-size-container select {
   padding: 6px 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
 }
+
 /* 分页样式 */
 .pagination {
   display: flex;
@@ -382,6 +475,7 @@ body {
   border-top: 1px solid #eee;
   flex-wrap: wrap;
 }
+
 .page-btn {
   padding: 6px 12px;
   border: 1px solid #ddd;
@@ -389,30 +483,36 @@ body {
   background: #fff;
   cursor: pointer;
 }
+
 .page-btn:disabled {
   background: #f5f5f5;
   color: #999;
   cursor: not-allowed;
 }
+
 .page-btn:hover:not(:disabled) {
   background: #f0f8fb;
   border-color: #42b983;
 }
+
 .page-info {
   color: #666;
   font-size: 14px;
 }
+
 .jump-page {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+
 .page-input {
   width: 60px;
   padding: 6px 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
 }
+
 .jump-btn {
   padding: 6px 12px;
   background: #42b983;
@@ -421,4 +521,84 @@ body {
   border-radius: 4px;
   cursor: pointer;
 }
+
+/* ========== 核心新增：同步开关样式 ========== */
+.sync-switch-container {
+  position: absolute;
+  top: 10px;
+  right: 100px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+/* 开关基础样式 */
+.sync-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 20px;
+}
+
+/* 隐藏原生复选框 */
+.sync-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* 滑块样式 */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 20px;
+}
+
+/* 滑块圆点 */
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+/* 选中状态 */
+input:checked + .slider {
+  background-color: #42b983;
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
+}
+
+/* 禁用状态 */
+input:disabled + .slider {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+/* 同步文本样式 */
+.sync-text {
+  color: #666;
+}
+
+/* 自定义标记样式 */
+.customized-tag {
+  color: #ff9800;
+  margin-left: 4px;
+}
+
+/* ========== 同步开关样式结束 ========== */
 </style>

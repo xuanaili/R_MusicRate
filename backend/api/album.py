@@ -98,6 +98,77 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取专辑出错：{str(e)}"}), 500
 
+    # 在album.py中新增接口（用户专辑管理）
+    @app.route('/api/album/sync/switch', methods=['POST'])
+    @login_required
+    def switch_album_sync():
+        try:
+            user_id = get_current_user_id()
+            if not user_id:
+                return jsonify({"code": 401, "msg": "未登录！"}), 401
+
+            data = request.get_json()
+            album_id = data.get('album_id')
+            sync_status = data.get('sync_status', 1)  # 1=开启，0=关闭
+
+            if not album_id:
+                return jsonify({"code": 400, "msg": "专辑ID不能为空！"}), 400
+
+            db = get_db()
+            cursor = db.cursor()
+            table_name = get_album_table_name(user_id)
+
+            # 更新同步开关
+            cursor.execute(f'''
+                UPDATE `{table_name}` 
+                SET sync_pool_update = %s 
+                WHERE id = %s
+            ''', (sync_status, album_id))
+
+            db.commit()
+            cursor.close()
+
+            return jsonify({
+                "code": 200,
+                "msg": f"{'开启' if sync_status else '关闭'}同步成功！",
+                "data": {"album_id": album_id, "sync_status": sync_status}
+            })
+        except Exception as e:
+            print(f"❌ 开关同步失败：{str(e)}")
+            return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 500
+
+    @app.route('/api/album/mark/customized', methods=['POST'])
+    @login_required
+    def mark_album_customized():
+        try:
+            user_id = get_current_user_id()
+            data = request.get_json()
+            album_id = data.get('album_id')
+
+            if not album_id:
+                return jsonify({"code": 400, "msg": "专辑ID不能为空！"}), 400
+
+            db = get_db()
+            cursor = db.cursor()
+            table_name = get_album_table_name(user_id)
+
+            # 标记为已自定义修改（后续不再同步模板更新）
+            cursor.execute(f'''
+                UPDATE `{table_name}` 
+                SET is_customized = 1 
+                WHERE id = %s
+            ''', (album_id,))
+
+            db.commit()
+            cursor.close()
+
+            return jsonify({
+                "code": 200,
+                "msg": "标记自定义修改成功！",
+                "data": {"album_id": album_id}
+            })
+        except Exception as e:
+            return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 500
     # 3. 补充专辑详情接口（关键：加OPTIONS，逻辑和列表一致）
     @app.route('/api/album/detail/<int:album_id>', methods=['GET', 'OPTIONS'])
     @login_required

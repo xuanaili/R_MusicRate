@@ -1,7 +1,18 @@
-<!-- MusicRate\frontend-vue\src\views\EditPoolAlbum.vue -->
 <template>
   <div class="edit-album-container">
     <h2>修改公共专辑模板</h2>
+
+    <!-- ========== 核心新增：同步结果提示 ========== -->
+    <div v-if="syncResult" class="sync-result">
+      <div class="sync-result-title">🔍 修改同步结果</div>
+      <div class="sync-result-content">
+        {{ syncResult.msg }}
+        <span v-if="syncResult.data?.sync_count" class="sync-count">
+          （同步更新了 {{ syncResult.data.sync_count }} 条用户数据）
+        </span>
+      </div>
+    </div>
+    <!-- ========== 同步结果提示结束 ========== -->
 
     <!-- 表单区域 -->
     <div class="album-form">
@@ -68,10 +79,19 @@
         >
       </div>
 
+      <!-- ========== 新增：同步说明提示 ========== -->
+      <div class="sync-tips">
+        📌 温馨提示：修改后会自动同步到「开启同步且未自定义修改」的用户专辑，已自定义的用户专辑不会被覆盖。
+      </div>
+      <!-- ========== 同步说明结束 ========== -->
+
       <!-- 操作按钮 -->
       <div class="form-actions">
-        <button @click="submitEdit" class="submit-btn">保存修改</button>
-        <button @click="goBack" class="cancel-btn">取消</button>
+        <button @click="submitEdit" class="submit-btn" :disabled="loading">
+          <span v-if="loading">保存中...</span>
+          <span v-else>保存修改</span>
+        </button>
+        <button @click="goBack" class="cancel-btn" :disabled="loading">取消</button>
       </div>
     </div>
   </div>
@@ -91,7 +111,10 @@ export default {
         tags: []
       },
       tagInput: '', // 标签输入框（逗号分隔）
-      loading: false
+      loading: false,
+      // ========== 核心新增：同步结果数据 ==========
+      syncResult: null // 存储同步结果
+      // ========== 同步结果数据结束 ==========
     }
   },
   created() {
@@ -191,6 +214,7 @@ export default {
       this.albumForm.tags = this.tagInput.split(',').map(tag => tag.trim()).filter(tag => tag);
 
       this.loading = true;
+      this.syncResult = null; // 清空之前的同步结果
       this.$axios({
         url: `/api/album/pool/update/${this.albumId}`,
         method: 'PUT',
@@ -203,7 +227,14 @@ export default {
       .then(res => {
         this.loading = false;
         if (res.data.code === 200) {
-          alert('修改专辑成功！');
+          // ========== 核心新增：存储同步结果 ==========
+          this.syncResult = res.data;
+          // ========== 存储同步结果结束 ==========
+
+          // 优化提示：显示同步数量
+          const syncCount = res.data.data?.sync_count || 0;
+          alert(`修改专辑成功！\n已同步更新 ${syncCount} 条用户数据（仅同步开启且未自定义的专辑）`);
+
           // 跳回专辑详情页
           this.$router.push(`/album/pool/detail/${this.albumId}`);
         } else {
@@ -310,4 +341,45 @@ export default {
   border-radius: 4px;
   cursor: pointer;
 }
+/* 禁用状态样式 */
+.submit-btn:disabled, .cancel-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+/* ========== 核心新增：同步结果样式 ========== */
+.sync-result {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background-color: #f0f8fb;
+  border: 1px solid #42b983;
+}
+.sync-result-title {
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+.sync-result-content {
+  color: #34495e;
+  font-size: 13px;
+}
+.sync-count {
+  color: #42b983;
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+/* ========== 同步提示样式 ========== */
+.sync-tips {
+  margin-bottom: 20px;
+  padding: 10px;
+  border-radius: 4px;
+  background-color: #f8f9fa;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+/* ========== 新增样式结束 ========== */
 </style>

@@ -176,6 +176,7 @@ def register_album_pool_routes(app):
             return jsonify({"code": 500, "msg": f"删除公共专辑失败：{str(e)}"}), 500
 
     # 新增：修改公共专辑接口（仅管理员可调用）
+    # 新增：修改公共专辑接口（仅管理员可调用）
     @app.route('/api/album/pool/update/<int:pool_id>', methods=['PUT', 'OPTIONS'])
     @login_required
     def update_pool_album(pool_id):
@@ -203,25 +204,26 @@ def register_album_pool_routes(app):
                 return jsonify({"code": 400, "msg": "修改数据不能为空！"}), 400
 
             # 3. 检查专辑是否存在
-            cursor.execute('SELECT id FROM album_pool WHERE id = %s', (pool_id,))
+            cursor.execute('SELECT * FROM album_pool WHERE id = %s', (pool_id,))
             album = cursor.fetchone()
             if not album:
                 cursor.close()
                 return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！"}), 404
 
-            # 4. 构造更新字段
+            # 4. 构造更新字段 + 记录修改日志
             update_fields = []
             params = []
-
-            # 支持修改的字段列表
-            allowed_fields = [
-                'album_name', 'singer', 'release_year', 'cover_img',
-                'tags', 'main_type', 'my_score'
-            ]
+            allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score']
+            update_log = []  # 记录字段修改前后的值
 
             for field in allowed_fields:
-                if field in data:
-                    # 处理JSON字段（tags/main_type）
+                if field in data and data[field] != album[field]:
+                    # 记录修改日志
+                    old_val = album[field] if album[field] is not None else ""
+                    new_val = data[field] if data[field] is not None else ""
+                    update_log.append(f"{field}：{old_val} → {new_val}")
+
+                    # 处理JSON字段（列表转JSON字符串）
                     if field in ['tags', 'main_type'] and isinstance(data[field], list):
                         update_fields.append(f"{field} = %s")
                         params.append(json.dumps(data[field]))
@@ -229,28 +231,99 @@ def register_album_pool_routes(app):
                         update_fields.append(f"{field} = %s")
                         params.append(data[field])
 
+            # 无更新字段直接返回
             if not update_fields:
                 cursor.close()
                 return jsonify({"code": 400, "msg": "没有需要更新的字段！"}), 400
 
-            # 5. 执行更新
-            update_sql = f"UPDATE album_pool SET {', '.join(update_fields)} WHERE id = %s"
-            params.append(pool_id)
+            # 5. 版本号递增 + 写入修改日志
+            current_version = album.get('version', 1)
+            new_version = current_version + 1
+            update_fields.append("version = %s")
+            params.append(new_version)
+            update_fields.append("update_log = %s")
+            params.append(json.dumps(update_log))
+            params.append(pool_id)  # WHERE 条件的 pool_id
 
+            # 6. 执行公共模板更新
+            update_sql = f"UPDATE album_pool SET {', '.join(update_fields)} WHERE id = %s"
             cursor.execute(update_sql, params)
-            db.commit()
+
+            # ========== 核心同步逻辑（修复所有已知问题） ==========
+            # 7. 获取所有用户专辑表（修复：字段名大写 TABLE_NAME）
+            cursor.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "albums_%"')
+            user_tables = cursor.fetchall()
+            sync_count = 0  # 累计同步成功的用户数据条数
+
+            for table in user_tables:
+                table_name = table['TABLE_NAME']  # 修复：大写字段名取值
+                try:
+                    # 处理JSON字段容错（避免解析失败）
+                    sync_tags = data.get('tags', [])
+                    if isinstance(sync_tags, str):
+                        try:
+                            sync_tags = json.loads(sync_tags)
+                        except:
+                            sync_tags = album.get('tags', [])
+                            if isinstance(sync_tags, str):
+                                sync_tags = json.loads(sync_tags) if sync_tags else []
+
+                    sync_main_type = data.get('main_type', [])
+                    if isinstance(sync_main_type, str):
+                        try:
+                            sync_main_type = json.loads(sync_main_type)
+                        except:
+                            sync_main_type = album.get('main_type', [])
+                            if isinstance(sync_main_type, str):
+                                sync_main_type = json.loads(sync_main_type) if sync_main_type else []
+
+                    # 8. 仅更新：关联当前模板 + 开启同步 + 未自定义的专辑
+                    sync_sql = f'''
+                        UPDATE `{table_name}` 
+                        SET album_name = %s, singer = %s, release_year = %s, cover_img = %s, 
+                            tags = %s, main_type = %s, my_score = %s
+                        WHERE source_pool_id = %s AND sync_pool_update = 1 AND is_customized = 0
+                    '''
+                    sync_params = [
+                        data.get('album_name', album['album_name']),
+                        data.get('singer', album['singer']),
+                        data.get('release_year', album['release_year']),
+                        data.get('cover_img', album['cover_img']),
+                        json.dumps(sync_tags),
+                        json.dumps(sync_main_type),
+                        data.get('my_score', album['my_score']),
+                        pool_id
+                    ]
+                    cursor.execute(sync_sql, sync_params)
+                    sync_count += cursor.rowcount  # 累加同步的记录数
+                except Exception as e:
+                    print(f"❌ 同步表 {table_name} 失败：{str(e)}")
+                    continue
+            # ========== 同步逻辑结束 ==========
+
+            db.commit()  # 提交事务
             cursor.close()
 
             return jsonify({
                 "code": 200,
-                "msg": f"成功修改ID为{pool_id}的公共专辑！"
+                "msg": f"成功修改ID为{pool_id}的公共专辑！同步更新了{sync_count}条用户数据",
+                "data": {
+                    "sync_count": sync_count,
+                    "new_version": new_version,
+                    "update_log": update_log
+                }
             })
         except Exception as e:
             print(f"❌ 修改公共专辑失败：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"修改公共专辑失败：{str(e)}"}), 500
+            # 异常时回滚事务，防止数据不一致
+            if 'db' in locals():
+                db.rollback()
+            if 'cursor' in locals():
+                cursor.close()
+            return jsonify({"code": 500, "msg": f"修改公共专辑失败：{str(e)}"})
 
-    # 4. 复制专辑接口（修复路由多写的<符号）
+    # 4. 复制专辑接口（修复路由多写的<符号 + 新增同步字段写入）
     @app.route('/api/album/pool/copy/<int:album_id>', methods=['POST'])
     @login_required
     def copy_album(album_id):
@@ -258,9 +331,12 @@ def register_album_pool_routes(app):
             current_user_id = get_current_user_id()
             if current_user_id is None:
                 return jsonify({"code": 401, "msg": "用户未登录！"}), 401
-            db = get_db()
-            cursor = db.cursor()
 
+            db = get_db()
+            # 关键：使用DictCursor，方便按字段名取值
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+
+            # 查询公共模板数据（用DictCursor获取字典格式）
             cursor.execute('SELECT * FROM album_pool WHERE id = %s', (album_id,))
             pool_album = cursor.fetchone()
             if not pool_album:
@@ -269,6 +345,7 @@ def register_album_pool_routes(app):
 
             table_name = get_album_table_name(current_user_id)
 
+            # 构造复制数据（新增同步相关字段）
             copy_album_data = {
                 "album_name": pool_album['album_name'],
                 "cover_img": pool_album['cover_img'],
@@ -277,7 +354,7 @@ def register_album_pool_routes(app):
                 "start_time": "",
                 "track_count": 0,
                 "track_duration": "",
-                "my_score": 0.0,
+                "my_score": pool_album['my_score'],  # 同步模板的评分
                 "burn_class": "",
                 "duration_type": "",
                 "tags": pool_album['tags'],
@@ -295,18 +372,25 @@ def register_album_pool_routes(app):
                     "update_time": ""
                 }),
                 "score": 0.0,
-                "comments": json.dumps([])
+                "comments": json.dumps([]),
+                # ========== 核心新增：同步相关字段 ==========
+                "source_pool_id": album_id,  # 关联公共模板ID
+                "sync_pool_update": 1,  # 默认开启同步
+                "is_customized": 0  # 默认未自定义
             }
 
+            # 插入SQL（新增3个同步字段）
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
                     track_count, track_duration, my_score, burn_class, duration_type,
                     tags, main_type, code, video_shared, mandopop_code,
-                    tracks, review, score, comments
+                    tracks, review, score, comments,
+                    source_pool_id, sync_pool_update, is_customized  -- 新增同步字段
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s  -- 同步字段对应的值
                 )
             ''', (
                 copy_album_data['album_name'],
@@ -327,7 +411,11 @@ def register_album_pool_routes(app):
                 copy_album_data['tracks'],
                 copy_album_data['review'],
                 copy_album_data['score'],
-                copy_album_data['comments']
+                copy_album_data['comments'],
+                # 同步字段的值
+                copy_album_data['source_pool_id'],
+                copy_album_data['sync_pool_update'],
+                copy_album_data['is_customized']
             ))
 
             new_copy_id = cursor.lastrowid
@@ -336,8 +424,12 @@ def register_album_pool_routes(app):
 
             return jsonify({
                 "code": 200,
-                "msg": "复制专辑副本成功！",
-                "data": {"copy_album_id": new_copy_id}
+                "msg": "复制专辑副本成功！已开启模板同步",
+                "data": {
+                    "copy_album_id": new_copy_id,
+                    "source_pool_id": album_id,  # 返回模板ID，方便前端验证
+                    "sync_pool_update": 1
+                }
             })
         except Exception as e:
             print(f"❌ 复制专辑出错：{str(e)}")
