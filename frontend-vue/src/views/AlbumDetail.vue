@@ -13,31 +13,6 @@
     <main class="main-content">
       <!-- 基础信息 Tab -->
       <div v-if="activeTab === 'base'" class="tab-content">
-        <h1>《{{ album.album_name || '未知专辑' }}》</h1>
-        <div class="base-info">
-          <p>专辑名: {{ album.album_name || '未知' }}</p>
-          <p>封面: {{ album.cover_img || album.album_name + '.jpg' || '未知.jpg' }}</p>
-          <p>歌手: {{ album.singer || '未知' }}</p>
-          <p>发行时间: "{{ album.release_year || '未知' }}"</p>
-          <p>开始时间: {{ album.start_time || '未知' }}</p>
-          <p>曲目数量: {{ album.track_count || 0 }}</p>
-          <p>曲目时长: "{{ album.track_duration || '0.00' }}"</p>
-          <p>我的评分: {{ album.my_score || 0.0 }}</p>
-          <p>刻录分类: {{ album.burn_class || '-' }}</p>
-          <p>时长类型: {{ album.duration_type || '-' }}</p>
-          <p>tags:</p>
-          <ul class="tags-list">
-            <li v-for="tag in (album.tags || [])" :key="tag">- {{ tag }}</li>
-          </ul>
-          <p>主要类型:</p>
-          <ul class="tags-list">
-            <li v-for="type in (album.main_type || [])" :key="type">- {{ type }}</li>
-          </ul>
-          <p>代号: "{{ album.code || '未知' }}"</p>
-          <p>视频已分享: {{ album.video_shared || '-' }}</p>
-          <p>Mandopop: "{{ album.mandopop_code || '未知' }}"</p>
-        </div>
-
         <div class="bookinfo-card">
           <h3>《{{ album.album_name || '未知专辑' }}》</h3>
           <div class="cover-preview">
@@ -133,38 +108,25 @@
       <div v-if="activeTab === 'comments'" class="tab-content">
         <h2>{{ album.album_name || '未知专辑' }}——评论</h2>
 
-        <h3>国外论坛</h3>
-        <div class="forum-group">
-          <h4>PF</h4>
-          <p>Review</p>
-          <h4>AOTY</h4>
-          <p>Review1</p>
-          <p>Review2</p>
-          <p>Review3</p>
-          <p>Review4</p>
-          <h4>RYM</h4>
-          <p>Review1</p>
-          <p>Review2</p>
-          <p>Review3</p>
-          <p>Review4</p>
+        <!-- 新增：专辑评论区 -->
+        <div class="album-comments">
+          <h3>专辑评论</h3>
+          <div class="comments-list">
+            <ul v-if="album.comments && album.comments.length > 0">
+              <li v-for="(comment, idx) in album.comments" :key="idx">{{ comment }}</li>
+            </ul>
+            <p v-else class="no-comment">暂无评论</p>
+          </div>
+          <div class="comment-input-area">
+            <input
+              v-model="newComment"
+              placeholder="输入评论"
+              class="comment-input"
+            >
+            <button @click="submitComment" class="comment-btn">提交评论</button>
+          </div>
         </div>
 
-        <h3>国内论坛</h3>
-        <div class="forum-group">
-          <h4>豆瓣</h4>
-          <div v-for="(comment, idx) in ((album.review || {}).comments || {}).douban || []" :key="idx">
-            <p>Review{{ idx+1 }}: {{ comment }}</p>
-          </div>
-          <h4>网易云</h4>
-          <div v-for="(comment, idx) in ((album.review || {}).comments || {}).netease || []" :key="idx">
-            <p>Review{{ idx+1 }}: {{ comment }}</p>
-          </div>
-          <h4>酷狗</h4>
-          <p>Review1</p>
-          <p>Review2</p>
-          <p>Review3</p>
-          <p>Review4</p>
-        </div>
 
         <div class="footer-tip">
           别忘记评分，写标签，以及记录读完时间
@@ -181,7 +143,8 @@ export default {
     return {
       album: {},
       activeTab: 'base',
-      reviewContent: ''
+      reviewContent: '',
+      newComment: '' // 新增：评论输入框绑定值
     };
   },
   created() {
@@ -223,6 +186,8 @@ export default {
           this.album = res.data.data;
           // 修复：默认review为空对象
           this.album.review = this.album.review || {};
+          // 确保comments字段存在
+          this.album.comments = this.album.comments || [];
           this.reviewContent = this.album.review.personal_feeling || '';
         } else {
           alert(res.data.msg);
@@ -293,6 +258,45 @@ export default {
         console.error('删除听后感失败：', err);
         alert('删除听后感失败！' + err.message);
       });
+    },
+    // 新增：提交评论方法
+    submitComment() {
+      const comment = this.newComment.trim()
+      if (!comment) {
+        alert('评论不能为空！')
+        return
+      }
+
+      // 方式1：如果后端有添加评论的接口，调用接口
+      this.$axios({
+        url: `http://127.0.0.1:5000/api/album/comment/add/${this.album.id}`,
+        method: 'POST',
+        headers: {
+          'Authorization': localStorage.getItem('token') || '',
+          'Content-Type': 'application/json;charset=utf-8'
+        },
+        data: {
+          comment: comment
+        }
+      })
+      .then((res) => {
+        if (res.data.code === 200) {
+          alert('评论提交成功！');
+          this.newComment = '';
+          this.getAlbumDetail(this.album.id); // 重新获取数据刷新评论列表
+        } else {
+          alert(res.data.msg);
+        }
+      })
+      .catch((err) => {
+        console.error('提交评论失败：', err);
+        alert('提交评论失败！' + err.message);
+      });
+
+      // 方式2：如果暂时没有后端接口，先本地添加（注释掉方式1，启用方式2）
+      // this.album.comments.push(comment);
+      // this.newComment = '';
+      // alert('评论提交成功！');
     },
     goBack() {
       this.$router.push('/music');
@@ -511,5 +515,57 @@ h5 {
   padding-top: 20px;
   border-top: 1px dashed #eee;
   font-size: 14px;
+}
+
+/* 新增：评论相关样式 */
+.album-comments {
+  margin: 20px 0;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+.comments-list {
+  margin: 15px 0;
+}
+.comments-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.comments-list li {
+  background: #fff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #555;
+}
+.no-comment {
+  color: #999;
+  font-size: 13px;
+  margin: 5px 0;
+}
+.comment-input-area {
+  margin-top: 15px;
+}
+.comment-input {
+  padding: 8px;
+  width: 250px;
+  margin-right: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.comment-btn {
+  padding: 8px 15px;
+  background: #42b983;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.comment-btn:hover {
+  background: #3aa876;
 }
 </style>

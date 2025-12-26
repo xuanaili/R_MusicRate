@@ -25,16 +25,6 @@
       <!-- 修复：判断tags是否存在后再join -->
       <p class="tags"><strong>标签：</strong>{{ (music.tags && music.tags.length > 0) ? music.tags.join('、') : '无' }}</p>
       <p class="score"><strong>评分：</strong>{{ music.score || 0 }}</p>
-
-      <div class="comments">
-        <p><strong>评论：</strong></p>
-        <ul v-if="music.comments && music.comments.length > 0">
-          <li v-for="(comment, idx) in music.comments" :key="idx">{{ comment }}</li>
-        </ul>
-        <p v-else class="no-comment">暂无评论</p>
-        <input v-model="newComment" placeholder="输入评论" class="comment-input">
-        <button @click="submitComment" class="comment-btn">提交评论</button>
-      </div>
     </div>
   </div>
 </template>
@@ -92,8 +82,8 @@ export default {
   background: #f9f9f9;
 }
 .cover {
-  width: 80px;
-  height: 80px;
+  width: 160px;
+  height: 160px;
   display: flex;
   align-items: center;
   justify-content: center;

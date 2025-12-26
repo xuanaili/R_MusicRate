@@ -754,6 +754,51 @@ def submit_comment():
         return jsonify({"code": 500, "msg": f"提交评论出错：{str(e)}"}), 500
 
 
+# 在后端代码末尾、启动服务之前添加
+# 10. 兼容的专辑评论添加接口（适配前端原有调用格式）
+@app.route('/api/album/comment/add/<int:album_id>', methods=['POST'])
+@login_required
+def add_album_comment(album_id):
+    try:
+        data = request.get_json()
+        comment = data.get('comment')
+
+        if not comment:
+            return jsonify({"code": 400, "msg": "评论内容不能为空！"}), 400
+
+        # 调用原有submit_comment的核心逻辑
+        table_name = get_album_table_name(current_user_id)
+        db = get_db()
+        cursor = db.cursor()
+
+        # 查询原有数据
+        cursor.execute(f'SELECT score, comments FROM `{table_name}` WHERE id = %s', (album_id,))
+        album = cursor.fetchone()
+        if not album:
+            cursor.close()
+            return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+
+        # 更新评论
+        comments = json.loads(album["comments"]) if album["comments"] else []
+        comments.append(comment)
+
+        # 保存更新（评分保持不变）
+        cursor.execute(f'''
+            UPDATE `{table_name}` SET comments = %s WHERE id = %s
+        ''', (json.dumps(comments), album_id))
+        db.commit()
+        cursor.close()
+
+        return jsonify({
+            "code": 200,
+            "msg": "评论提交成功！",
+            "data": {"comments": comments}
+        })
+    except Exception as e:
+        print(f"添加专辑评论出错：{str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"code": 500, "msg": f"添加评论失败：{str(e)}"}), 500
+
 # ========== 启动初始化 ==========
 with app.app_context():
     init_base_tables()
