@@ -2,7 +2,7 @@
   <div class="container">
     <h1>我的专辑列表（{{ username }}）</h1>
     <div class="header-actions">
-      <button @click="goAddAlbum" class="add-btn">添加新专辑</button>
+      <button @click="goToAlbumPool" class="add-btn">添加新专辑</button>
       <button @click="logout">退出登录</button>
 
       <!-- 排序功能 -->
@@ -44,14 +44,15 @@
 
     <!-- 循环渲染子组件 MusicItem -->
     <div v-else class="album-list">
-      <div v-for="music in musicList" :key="music.origin_id" class="album-item-wrapper">
+      <!-- 关键修改1：key和传参改为music.id（分表自增ID） -->
+      <div v-for="music in musicList" :key="music.id" class="album-item-wrapper">
         <MusicItem
           :music="music"
           @add-comment="handleAddComment"
         />
-        <!-- 新增：删除专辑按钮 -->
+        <!-- 关键修改2：删除按钮传参改为music.id -->
         <button
-          @click="deleteAlbum(music.origin_id)"
+          @click="deleteAlbum(music.id)"
           class="delete-album-btn"
         >
           删除专辑
@@ -155,7 +156,7 @@ export default {
     getMusicList() {
       this.loading = true
       this.$axios({
-        url: '/api/album/list',  // 修改：适配新的专辑列表接口
+        url: '/api/album/list',  // 保持不变，适配后端接口
         method: 'GET',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
@@ -182,6 +183,12 @@ export default {
           // 同步跳转页码输入框
           this.jumpPageNum = this.pagination.page
           console.log('✅ 拿到后端专辑数据：', this.musicList)
+          // 检查每个专辑是否有id字段
+          this.musicList.forEach(item => {
+            if (!item.id) {
+              console.warn('⚠️ 专辑数据缺少id字段：', item)
+            }
+          })
         } else {
           alert('获取数据失败：' + res.data.msg)
           this.musicList = []
@@ -196,17 +203,16 @@ export default {
     },
     // 处理评论提交
     handleAddComment(data) {
+      // 关键修改3：评论接口传参改为music.id（分表ID）
       this.$axios({
-        url: '/api/album/comment/add',  // 修改：适配新的评论接口
+        url: `/api/album/comment/add/${data.musicId}`,  // 改为路径传参
         method: 'POST',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json'
         },
         data: {
-          origin_id: data.musicId,  // 修改：用origin_id替代musicId
-          content: data.comment,
-          track_id: 0  // 专辑评论，track_id为0
+          content: data.comment
         }
       })
       .then(resp => {
@@ -222,32 +228,29 @@ export default {
         alert('提交失败！')
       })
     },
-    // 新增：删除专辑
-    deleteAlbum(originId) {
-      if (!confirm(`确定要删除ID为${originId}的专辑吗？此操作不可恢复！`)) {
+    // 关键修改4：删除方法增加ID校验
+    async deleteAlbum(albumId) {
+      // 第一步：校验ID有效性
+      if (!albumId || isNaN(albumId) || albumId <= 0) {
+        alert('无效的专辑ID！');
         return;
       }
-      this.$axios({
-        url: `/api/album/delete/${originId}`,  // 修改：适配新的删除接口
-        method: 'DELETE',
-        headers: {
-          'Authorization': localStorage.getItem('token') || '',
-          'Content-Type': 'application/json;charset=utf-8'
-        }
-      })
-      .then((res) => {
+      if (!confirm('确定删除该专辑吗？此操作仅删除你的副本，不会影响搜索池里的公共专辑')) return;
+
+      try {
+        const res = await this.$axios.delete(`/api/album/delete/${albumId}`);
         if (res.data.code === 200) {
-          alert('专辑删除成功！');
-          // 刷新列表（保持当前页）
-          this.getMusicList();
+          alert('删除成功！');
+          this.getMusicList(); // 重新加载列表
         } else {
-          alert(res.data.msg);
+          alert(res.data.msg || '删除失败');
         }
-      })
-      .catch((err) => {
-        console.error('删除专辑失败：', err);
-        alert('删除专辑失败！' + err.message);
-      });
+      } catch (error) {
+        console.error('删除失败：', error);
+        // 更友好的错误提示
+        const errMsg = error.response?.data?.msg || error.message || '网络错误，请重试';
+        alert(`删除出错：${errMsg}`);
+      }
     },
     // 切换页码
     changePage(newPage) {
@@ -272,9 +275,13 @@ export default {
       }
       this.changePage(num)
     },
-    // 跳转到添加专辑页面
+    // 废弃：原添加专辑方法
     goAddAlbum() {
       this.$router.push('/add-album')
+    },
+    // 新增：跳转到专辑搜索池页面
+    goToAlbumPool() {
+      this.$router.push('/album-pool');
     },
     // 退出登录
     logout() {

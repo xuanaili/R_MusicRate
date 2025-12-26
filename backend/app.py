@@ -28,6 +28,7 @@ MYSQL_CONFIG = {
 # 全局变量：当前登录用户ID
 current_user_id = None
 
+
 # ========== 数据库核心工具（适配MySQL+分表） ==========
 def get_db():
     """获取MySQL连接（Flask上下文隔离）"""
@@ -40,6 +41,7 @@ def get_db():
             raise e  # 抛出异常，让启动时能发现问题
     return db
 
+
 @app.teardown_appcontext
 def close_db(exception):
     """关闭MySQL连接"""
@@ -47,9 +49,11 @@ def close_db(exception):
     if db is not None:
         db.close()
 
+
 def get_album_table_name(user_id):
     """生成用户专属的专辑表名：albums_用户ID"""
     return f'albums_{user_id}'
+
 
 def create_user_album_table(user_id):
     """为新用户创建专属的专辑表"""
@@ -90,6 +94,7 @@ def create_user_album_table(user_id):
         print(f"创建用户专辑表失败：{str(e)}")
         raise e
 
+
 def check_and_create_user_album_table(user_id):
     """检查用户专辑表是否存在，不存在则创建"""
     try:
@@ -111,6 +116,7 @@ def check_and_create_user_album_table(user_id):
         print(f"检查/创建用户专辑表失败：{str(e)}")
         raise e
 
+
 def init_base_tables():
     """初始化基础表（仅users表，专辑表按用户动态创建）"""
     try:
@@ -126,15 +132,38 @@ def init_base_tables():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ''')
+
+        # ========== 修复：创建专辑搜索池表（解决TEXT索引长度问题） ==========
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS album_pool (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                album_name VARCHAR(100) NOT NULL,
+                cover_img VARCHAR(255) DEFAULT "",
+                singer VARCHAR(100) NOT NULL,
+                release_year INT NOT NULL,
+                main_type VARCHAR(50) DEFAULT "",  # 改VARCHAR更合适（短文本）
+                tags TEXT,
+                my_score FLOAT DEFAULT 0.0,
+                create_user INT NOT NULL COMMENT '创建用户ID',
+                create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                -- 修复：给TEXT字段的索引指定长度，VARCHAR字段无需指定
+                INDEX idx_album_name (album_name),
+                INDEX idx_singer (singer),
+                INDEX idx_tags (tags(50)),  # 指定索引长度为50（足够匹配关键词）
+                INDEX idx_main_type (main_type)  # VARCHAR字段直接索引
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑搜索池表';
+        ''')
+
         db.commit()
         cursor.close()
-        print("MySQL基础表（users）初始化成功！")
+        print("MySQL基础表（users + album_pool）初始化成功！")
 
         # 初始化默认admin用户（如果不存在）
         init_default_admin()
     except Exception as e:
         print(f"初始化基础表失败：{str(e)}")
         print(traceback.format_exc())
+
 
 def init_default_admin():
     """初始化默认admin用户，并创建其专属专辑表"""
@@ -161,6 +190,7 @@ def init_default_admin():
     except Exception as e:
         print(f"初始化admin用户失败：{str(e)}")
         print(traceback.format_exc())
+
 
 # ========== 登录校验装饰器（适配MySQL） ==========
 def login_required(func):
@@ -195,16 +225,19 @@ def login_required(func):
 
     return wrapper
 
+
 # ========== 自建本地图床（免费、直链永久有效） ==========
 # 1. 配置图片保存路径（自动创建文件夹）
 UPLOAD_FOLDER = "./album_covers"  # 图片保存在项目根目录的album_covers文件夹
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+
 # 2. 新增：提供图片访问的接口（用于前端显示封面）
 @app.route('/covers/<filename>')
 def serve_cover(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
+
 
 # 3. 上传图片接口（替换原有imgBB/SM.MS逻辑）
 @app.route('/api/upload_img', methods=['POST'])
@@ -236,6 +269,7 @@ def upload_img_proxy():
         print(f"上传失败：{str(e)}")
         return jsonify({"code": 500, "msg": f"上传失败：{str(e)}"}), 500
 
+
 # ========== 工具函数 ==========
 def get_next_id(table_name):
     """获取指定表的下一个自增ID"""
@@ -249,6 +283,7 @@ def get_next_id(table_name):
     except Exception as e:
         print(f"生成ID失败：{str(e)}")
         return 1
+
 
 # ========== 业务接口（全量适配MySQL+分表） ==========
 # 1. 注册接口（自动创建用户专属专辑表）
@@ -292,6 +327,7 @@ def register():
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"注册失败：{str(e)}"}), 500
 
+
 # 2. 登录接口
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -331,6 +367,7 @@ def login():
         print(f"登录出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"登录出错：{str(e)}"}), 500
+
 
 # 3. 获取专辑列表（读取用户专属表）- 保留分页和排序
 # ========== 新增：兼容前端的 /api/album/list 接口 ==========
@@ -426,10 +463,8 @@ def get_album_list():
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"获取专辑出错：{str(e)}"}), 500
 
+
 # 4. 添加专辑（写入用户专属表）- 整合重构后的review结构
-
-
-
 @app.route('/api/album/add', methods=['POST'])
 @login_required
 def add_album():
@@ -497,6 +532,26 @@ def add_album():
             new_album['comments']
         ))
         new_album_id = cursor.lastrowid
+
+        # ========== 新增：同步插入专辑搜索池 ==========
+        # 适配main_type字段类型变更（从TEXT改为VARCHAR）
+        main_type_str = json.dumps(data.get('main_type', [])) if data.get('main_type') else ""
+        cursor.execute('''
+            INSERT INTO album_pool (
+                album_name, cover_img, singer, release_year, 
+                main_type, tags, my_score, create_user
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            new_album['album_name'],
+            new_album['cover_img'],
+            new_album['singer'],
+            new_album['release_year'],
+            main_type_str,  # 存储JSON字符串（适配VARCHAR(50)）
+            new_album['tags'],  # 直接存储JSON字符串
+            new_album['my_score'],
+            current_user_id  # 记录创建用户ID
+        ))
+
         db.commit()
         cursor.close()
 
@@ -519,21 +574,52 @@ def add_album():
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"添加专辑失败：{str(e)}"}), 500
 
+
+@app.route('/api/album/pool/detail/<int:pool_id>', methods=['GET'])
+@login_required
+def get_pool_album_detail(pool_id):
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+        # 查album_pool表（公共表），而非用户分表
+        cursor.execute('SELECT * FROM album_pool WHERE id = %s', (pool_id,))
+        album = cursor.fetchone()
+        cursor.close()
+
+        if not album:
+            return jsonify({"code": 404, "msg": "未找到该公共专辑"}), 404
+
+        # 处理tags字段（JSON字符串转数组）
+        if album.get('tags'):
+            import json
+            album['tags'] = json.loads(album['tags'])
+
+        return jsonify({
+            "code": 200,
+            "msg": "获取成功",
+            "data": album
+        })
+    except Exception as e:
+        print(f"获取公共专辑详情失败：{str(e)}")
+        return jsonify({"code": 500, "msg": f"获取失败：{str(e)}"}), 500
+
 # 5. 删除专辑（删除用户专属表数据）
 @app.route('/api/album/delete/<int:album_id>', methods=['DELETE'])
 @login_required
 def delete_album(album_id):
     try:
+        # 关键点1：必须用当前登录用户的分表名（current_user_id）
         table_name = get_album_table_name(current_user_id)
         db = get_db()
         cursor = db.cursor()
 
-        # 删除指定专辑
+        # 关键点2：删除条件必须包含album_id（前端传的ID）
         cursor.execute(f'DELETE FROM `{table_name}` WHERE id = %s', (album_id,))
-        affected_rows = cursor.rowcount
+        affected_rows = cursor.rowcount  # 关键：获取受影响行数
         db.commit()
         cursor.close()
 
+        # 关键点3：判断是否真的删除成功（affected_rows > 0 才是成功）
         if affected_rows == 0:
             return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
 
@@ -545,6 +631,182 @@ def delete_album(album_id):
         print(f"删除专辑出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"删除专辑失败：{str(e)}"}), 500
+
+# ========== 新增：专辑搜索池 - 搜索接口 ==========
+@app.route('/api/album/pool/search', methods=['GET'])
+@login_required
+def search_album_pool():
+    try:
+        # 获取前端参数
+        keyword = request.args.get('keyword', '').strip()
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+
+        # 校验参数
+        if page < 1:
+            page = 1
+        if page_size < 1 or page_size > 50:
+            page_size = 10
+
+        db = get_db()
+        cursor = db.cursor()
+
+        # 1. 构建查询条件（模糊匹配专辑名/歌手/标签）
+        query = "SELECT * FROM album_pool WHERE 1=1"
+        params = []
+        if keyword:
+            query += " AND (album_name LIKE %s OR singer LIKE %s OR tags LIKE %s OR main_type LIKE %s)"
+            params.extend([f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%'])
+
+        # 2. 查询总条数（分页用）
+        count_query = query.replace("SELECT *", "SELECT COUNT(*) as total")
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()['total']
+
+        # 3. 计算分页偏移量
+        offset = (page - 1) * page_size
+
+        # 4. 带分页和模糊查询的主查询
+        query += " ORDER BY create_time DESC LIMIT %s OFFSET %s"
+        params.extend([page_size, offset])
+        cursor.execute(query, params)
+        album_list = cursor.fetchall()
+        cursor.close()
+
+        # 解析JSON字段（tags/main_type）
+        result_list = []
+        for album in album_list:
+            result_list.append({
+                "id": album['id'],
+                "album_name": album['album_name'],
+                "cover_img": album['cover_img'],
+                "singer": album['singer'],
+                "release_year": album['release_year'],
+                "main_type": json.loads(album['main_type']) if album['main_type'] else [],
+                "tags": json.loads(album['tags']) if album['tags'] else [],
+                "my_score": album['my_score'],
+                "create_user": album['create_user'],
+                "create_time": album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album['create_time'] else ''
+            })
+
+        # 构造分页信息
+        total_pages = (total + page_size - 1) // page_size
+        pagination = {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages
+        }
+
+        return jsonify({
+            "code": 200,
+            "msg": "搜索专辑池成功",
+            "data": {
+                "list": result_list,
+                "pagination": pagination
+            }
+        })
+    except Exception as e:
+        print(f"搜索专辑池出错：{str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"code": 500, "msg": f"搜索专辑池失败：{str(e)}"}), 500
+
+
+# ========== 新增：专辑搜索池 - 复制专辑接口 ==========
+@app.route('/api/album/pool/copy/<int:album_id>', methods=['POST'])
+@login_required
+def copy_album(album_id):
+    try:
+        db = get_db()
+        cursor = db.cursor()
+
+        # 1. 查询要复制的专辑池数据
+        cursor.execute('SELECT * FROM album_pool WHERE id = %s', (album_id,))
+        pool_album = cursor.fetchone()
+        if not pool_album:
+            cursor.close()
+            return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑副本！"}), 404
+
+        # 2. 获取当前用户的分表名
+        table_name = get_album_table_name(current_user_id)
+
+        # 3. 构造复制后的专辑数据（默认值适配用户分表结构）
+        copy_album_data = {
+            "album_name": pool_album['album_name'],
+            "cover_img": pool_album['cover_img'],
+            "singer": pool_album['singer'],
+            "release_year": pool_album['release_year'],
+            "start_time": "",
+            "track_count": 0,
+            "track_duration": "",
+            "my_score": 0.0,  # 副本默认评分为0，用户可自行修改
+            "burn_class": "",
+            "duration_type": "",
+            "tags": pool_album['tags'],  # 直接复用JSON字符串
+            "main_type": pool_album['main_type'],  # 直接复用JSON字符串（适配TEXT）
+            "code": "",
+            "video_shared": "",
+            "mandopop_code": "",
+            "tracks": json.dumps([]),
+            "review": json.dumps({
+                "feelings": [],
+                "single_score": 0.0,
+                "private_score": 0.0,
+                "final_score": 0.0,
+                "personal_feeling": "",
+                "update_time": ""
+            }),
+            "score": 0.0,
+            "comments": json.dumps([])
+        }
+
+        # 4. 插入到当前用户的分表
+        cursor.execute(f'''
+            INSERT INTO `{table_name}` (
+                album_name, cover_img, singer, release_year, start_time,
+                track_count, track_duration, my_score, burn_class, duration_type,
+                tags, main_type, code, video_shared, mandopop_code,
+                tracks, review, score, comments
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+        ''', (
+            copy_album_data['album_name'],
+            copy_album_data['cover_img'],
+            copy_album_data['singer'],
+            copy_album_data['release_year'],
+            copy_album_data['start_time'],
+            copy_album_data['track_count'],
+            copy_album_data['track_duration'],
+            copy_album_data['my_score'],
+            copy_album_data['burn_class'],
+            copy_album_data['duration_type'],
+            copy_album_data['tags'],
+            copy_album_data['main_type'],
+            copy_album_data['code'],
+            copy_album_data['video_shared'],
+            copy_album_data['mandopop_code'],
+            copy_album_data['tracks'],
+            copy_album_data['review'],
+            copy_album_data['score'],
+            copy_album_data['comments']
+        ))
+
+        new_copy_id = cursor.lastrowid
+        db.commit()
+        cursor.close()
+
+        return jsonify({
+            "code": 200,
+            "msg": "复制专辑副本成功！",
+            "data": {"copy_album_id": new_copy_id}
+        })
+    except Exception as e:
+        print(f"复制专辑出错：{str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"code": 500, "msg": f"复制专辑失败：{str(e)}"}), 500
+
 
 # 6. 新增：添加单条听后感（保留原有逻辑）
 @app.route('/api/album/review/add/<int:album_id>', methods=['POST'])
@@ -598,6 +860,7 @@ def add_single_review(album_id):
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"添加听后感失败：{str(e)}"}), 500
 
+
 # 7. 新增：删除单条听后感
 @app.route('/api/album/review/delete/single/<int:album_id>', methods=['POST'])
 @login_required
@@ -645,6 +908,7 @@ def delete_single_review(album_id):
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"删除听后感失败：{str(e)}"}), 500
 
+
 # 8. 修改：清空所有听后感
 @app.route('/api/album/review/delete/<int:album_id>', methods=['DELETE'])
 @login_required
@@ -680,6 +944,7 @@ def delete_all_review(album_id):
         print(f"清空听后感出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"清空听后感失败：{str(e)}"}), 500
+
 
 # 9. 编辑听后感（重构后的单条听后感编辑）
 @app.route('/api/album/review/edit/<int:album_id>', methods=['POST'])
@@ -723,6 +988,7 @@ def edit_review(album_id):
         print(f"编辑听后感出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"编辑听后感失败：{str(e)}"}), 500
+
 
 # 10. 获取专辑详情（读取用户专属表）
 @app.route('/api/album/detail/<int:album_id>', methods=['GET'])
@@ -774,6 +1040,7 @@ def get_album_detail(album_id):
         print(f"获取专辑详情出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 500
+
 
 # 11. 提交评论（更新用户专属表）
 @app.route('/api/music/comment', methods=['POST'])
@@ -849,6 +1116,7 @@ def submit_comment():
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"提交评论出错：{str(e)}"}), 500
 
+
 # 12. 兼容的专辑评论添加接口（适配前端原有调用格式）
 @app.route('/api/album/comment/add/<int:album_id>', methods=['POST'])
 @login_required
@@ -892,6 +1160,7 @@ def add_album_comment(album_id):
         print(f"添加专辑评论出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"添加评论失败：{str(e)}"}), 500
+
 
 # ========== 启动初始化 ==========
 with app.app_context():

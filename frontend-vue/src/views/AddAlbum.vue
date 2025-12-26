@@ -1,4 +1,5 @@
 <template>
+  <!-- 模板部分完全不变，无需修改 -->
   <div class="add-album-container">
     <h2>添加新专辑</h2>
     <!-- 专辑名 -->
@@ -154,7 +155,15 @@ export default {
           .then(res => {
             if (res.data.code === 200) {
               alert("专辑添加成功！");
-              this.$router.push("/music");
+              // 【可选优化】让用户选择跳回哪里
+              const goToPool = confirm("是否返回专辑搜索池？");
+              if (goToPool) {
+                this.$router.push("/album-pool"); // 跳回搜索池
+              } else {
+                this.$router.push("/music"); // 跳回我的专辑列表
+              }
+              // 如果不想加选择逻辑，保持原有代码即可：
+              // this.$router.push("/music");
             } else {
               this.errorMsg = res.data.msg;
             }
@@ -165,14 +174,17 @@ export default {
           });
     },
     goBack() {
-      this.$router.push("/music");
+      // 【核心修改点1】取消按钮从跳回/music改为跳回/album-pool
+      this.$router.push("/album-pool");
+      // 如果想保留原有逻辑（跳回我的专辑），就用下面这行：
+      // this.$router.push("/music");
     }
   }
 };
 </script>
 
 <style scoped>
-/* 样式不变，保留原有 */
+/* 样式部分完全不变，无需修改 */
 .add-album-container {
   width: 500px;
   margin: 50px auto;
