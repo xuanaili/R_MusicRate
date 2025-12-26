@@ -30,7 +30,7 @@ backend/*.log
 # 数据库文件（如果后续用SQLite）
 backend/*.db
 # 数据
-backend/album_covers
+backend/data/album_covers
 # ===================== 通用忽略项 =====================
 # PyCharm配置
 .idea/

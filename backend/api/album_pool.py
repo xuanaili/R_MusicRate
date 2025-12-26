@@ -1,11 +1,12 @@
 # MusicRate\backend\api\album_pool.py 专辑搜索池接口 - 搜索、复制、详情
-from flask import request, jsonify
+from flask import request, jsonify,g
 import json
 import traceback
 from ..db_utils import get_db, get_album_table_name, get_current_user_id  # 导入get_current_user_id
 from ..decorators import login_required
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 
+import pymysql.cursors  # 先导入游标类
 
 def register_album_pool_routes(app):
     """注册专辑搜索池相关路由（需传入Flask app实例）"""
@@ -16,7 +17,8 @@ def register_album_pool_routes(app):
     def get_pool_album_detail(pool_id):
         try:
             db = get_db()
-            cursor = db.cursor(dictionary=True)
+            # 修正后代码（pymysql 字典游标写法）
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
             # 查询公共专辑池表
             cursor.execute('SELECT * FROM album_pool WHERE id = %s', (pool_id,))
             album = cursor.fetchone()
@@ -119,6 +121,50 @@ def register_album_pool_routes(app):
             print(f"❌ 搜索专辑池出错：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"搜索专辑池失败：{str(e)}"}), 500
+
+    # 新增：删除公共专辑接口（需管理员权限）
+    @app.route('/api/album/pool/delete/<int:pool_id>', methods=['DELETE', 'OPTIONS'])
+    @login_required  # 确保用户已登录
+    def delete_pool_album(pool_id):
+        try:
+            if request.method == 'OPTIONS':
+                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+
+            # 1. 获取当前登录用户ID
+            current_user_id = getattr(g, 'current_user_id', None)
+            if not current_user_id:
+                return jsonify({"code": 401, "msg": "未登录或登录已过期！"}), 401
+
+            # 2. 校验是否为管理员
+            db = get_db()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+            cursor.execute('SELECT is_admin FROM users WHERE user_id = %s', (current_user_id,))
+            user = cursor.fetchone()
+
+            if not user or user['is_admin'] != 1:
+                cursor.close()
+                return jsonify({"code": 403, "msg": "无管理员权限，禁止删除！"}), 403
+
+            # 3. 检查专辑是否存在
+            cursor.execute('SELECT id FROM album_pool WHERE id = %s', (pool_id,))
+            album = cursor.fetchone()
+            if not album:
+                cursor.close()
+                return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！"}), 404
+
+            # 4. 执行删除
+            cursor.execute('DELETE FROM album_pool WHERE id = %s', (pool_id,))
+            db.commit()
+            cursor.close()
+
+            return jsonify({
+                "code": 200,
+                "msg": f"成功删除ID为{pool_id}的公共专辑！"
+            })
+        except Exception as e:
+            print(f"❌ 删除公共专辑失败：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"删除公共专辑失败：{str(e)}"}), 500
 
     # 3. 专辑搜索池 - 复制专辑接口
     @app.route('/api/album/pool/copy/<int:album_id>', methods=['POST'])

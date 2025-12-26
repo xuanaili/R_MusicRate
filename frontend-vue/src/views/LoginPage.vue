@@ -58,9 +58,11 @@ export default {
           this.loading = false; // 关闭加载
           // 5. 处理后端响应（严格判断code）
           if (res.data && res.data.code === 200) {
-            // 登录成功：保存token和用户名
+            // 登录成功：保存token和用户名,存储管理员标识
             localStorage.setItem("token", res.data.data.token);
             localStorage.setItem("username", res.data.data.username);
+            // 优化后：显式存储为字符串 "1"/"0"，确保类型统一
+            localStorage.setItem("is_admin", res.data.data.is_admin.toString());
             // 跳转到音乐评分页面
             this.$router.push("/music");
           } else {

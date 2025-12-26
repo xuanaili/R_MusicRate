@@ -20,7 +20,7 @@ def login_required(func):
             # MySQL验证token
             db = get_db()
             cursor = db.cursor()
-            cursor.execute('SELECT id, username FROM users WHERE token = %s', (token,))
+            cursor.execute('SELECT user_id, username FROM users WHERE token = %s', (token,))
             user = cursor.fetchone()
             cursor.close()
 
@@ -28,9 +28,9 @@ def login_required(func):
                 return jsonify({"code": 401, "msg": "登录已过期，请重新登录！"}), 401
 
             # 设置当前登录用户ID到Flask g对象（线程安全）
-            set_current_user_id(user["id"])
+            set_current_user_id(user["user_id"])
             # 检查并创建用户专辑表（确保表存在）
-            check_and_create_user_album_table(user["id"])
+            check_and_create_user_album_table(user["user_id"])
 
             # 执行原函数
             return func(*args, **kwargs)

@@ -5,7 +5,7 @@ import pymysql
 # ================= Flask 基础配置 =================
 SECRET_KEY = 'music-rate-secret-key'
 DEBUG = True
-HOST = '0.0.0.0'
+HOST = '127.0.0.1'
 PORT = 5000
 
 # ================= MySQL 数据库配置 =================
@@ -21,7 +21,7 @@ MYSQL_CONFIG = {
 
 # ================= 本地图床配置 =================
 # 图片保存路径（自动创建文件夹）
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend/album_covers")
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend/data/album_covers")
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 # 图片访问基础URL

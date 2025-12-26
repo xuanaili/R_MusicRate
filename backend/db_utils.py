@@ -1,13 +1,26 @@
-# MusicRate\backend\db_utils.py 数据库核心工具 - 包含连接、分表、表初始化等功能
+# MusicRate\backend\db_utils.py 数据库核心工具
 from flask import g
 import pymysql
 import traceback
+import bcrypt  # 新增：用于密码加密，需先安装 pip install bcrypt
+from datetime import datetime
 from .config import MYSQL_CONFIG, DEFAULT_ADMIN_USER, DEFAULT_ADMIN_PWD
 
 # 移除模块级别的 current_user_id 变量
 # current_user_id = None
 
-# ========== 新增：用户ID的获取/设置方法 ==========
+# ========== 新增：密码加密/验证工具函数 ==========
+def encrypt_password(password: str) -> str:
+    """密码加密（bcrypt）"""
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """验证密码是否匹配"""
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+# ========== 原有：用户ID的获取/设置方法 ==========
 def get_current_user_id():
     """获取当前登录用户ID（从Flask g对象中获取）"""
     return getattr(g, 'current_user_id', None)
@@ -100,22 +113,28 @@ def check_and_create_user_album_table(user_id):
         raise e
 
 def init_base_tables():
-    """初始化基础表（users + album_pool）"""
+    """初始化基础表（重构后的users + album_pool）"""
     try:
         db = get_db()
         cursor = db.cursor()
-        # 1. 创建用户表（核心基础表，不分表）
+        # ========== 核心修改：重构users表结构 ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                password VARCHAR(50) NOT NULL,
-                token VARCHAR(100) DEFAULT "",
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                user_id INT PRIMARY KEY AUTO_INCREMENT COMMENT '用户唯一标识',
+                username VARCHAR(50) UNIQUE NOT NULL COMMENT '用户名（禁用%^&）',
+                password VARCHAR(100) NOT NULL COMMENT '密码（bcrypt加密存储）',
+                level INT DEFAULT 0 COMMENT '等级/经验',
+                create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '开户日期',
+                last_login DATETIME COMMENT '最近登录时间',
+                is_vip TINYINT DEFAULT 0 COMMENT '是否VIP（0=否，1=是）',
+                is_admin TINYINT DEFAULT 0 COMMENT '是否管理员（0=否，1=是）',
+                donate_amount DECIMAL(10,2) DEFAULT 0.00 COMMENT '捐款数',
+                album_count INT DEFAULT 0 COMMENT '收藏专辑数',
+                token VARCHAR(100) DEFAULT "" COMMENT '登录令牌'  -- 保留原有token字段，兼容旧逻辑
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表（重构版）';
         ''')
 
-        # 2. 创建专辑搜索池表（解决TEXT索引长度问题）
+        # 2. 保留原有album_pool表结构（无需修改）
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS album_pool (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -138,9 +157,9 @@ def init_base_tables():
 
         db.commit()
         cursor.close()
-        print("✅ MySQL基础表（users + album_pool）初始化成功！")
+        print("✅ MySQL基础表（重构后users + album_pool）初始化成功！")
 
-        # 初始化默认admin用户
+        # 初始化默认admin用户（适配新表结构）
         init_default_admin()
     except Exception as e:
         print(f"❌ 初始化基础表失败：{str(e)}")
@@ -148,26 +167,29 @@ def init_base_tables():
         raise e
 
 def init_default_admin():
-    """初始化默认admin用户，并创建其专属专辑表"""
+    """初始化默认admin用户（适配新表结构），并创建其专属专辑表"""
     try:
         db = get_db()
         cursor = db.cursor()
         # 检查admin是否存在
-        cursor.execute('SELECT id FROM users WHERE username = %s', (DEFAULT_ADMIN_USER,))
+        cursor.execute('SELECT user_id FROM users WHERE username = %s', (DEFAULT_ADMIN_USER,))
         user = cursor.fetchone()
         if not user:
-            # 创建admin用户
+            # 创建admin用户（适配新表结构：密码加密、设置管理员权限）
+            encrypted_pwd = encrypt_password(DEFAULT_ADMIN_PWD)  # 密码加密存储
             cursor.execute('''
-                INSERT INTO users (username, password, token) 
-                VALUES (%s, %s, "")
-            ''', (DEFAULT_ADMIN_USER, DEFAULT_ADMIN_PWD))
+                INSERT INTO users (
+                    username, password, token, is_admin, 
+                    create_time, level, is_vip, donate_amount, album_count
+                ) VALUES (%s, %s, "", 1, %s, 10, 1, 0.00, 0)
+            ''', (DEFAULT_ADMIN_USER, encrypted_pwd, datetime.now()))
             admin_id = cursor.lastrowid
             db.commit()
             # 为admin创建专属专辑表
             create_user_album_table(admin_id)
-            print(f"✅ 默认admin用户创建成功（ID：{admin_id}），并生成专属专辑表！")
+            print(f"✅ 默认admin用户创建成功（ID：{admin_id}），密码已加密，权限为管理员！")
         else:
-            print(f"✅ 默认admin用户已存在（ID：{user['id']}），无需重复创建")
+            print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），无需重复创建")
         cursor.close()
     except Exception as e:
         print(f"❌ 初始化admin用户失败：{str(e)}")

@@ -1,3 +1,4 @@
+<!-- MusicRate\frontend-vue\src\components\SearchAlbumPool.vue -->
 <template>
   <div class="search-pool-container">
     <h2>专辑搜索池（所有用户的专辑副本）</h2>
@@ -39,32 +40,38 @@
         <div class="pool-actions">
           <button @click="copyAlbum(album.id)" class="copy-btn">复制为我的副本</button>
           <button @click="viewAlbumDetail(album.id)" class="detail-btn">查看详情</button>
+          <!-- 核心：仅管理员显示删除按钮 -->
+          <button
+            v-if="isAdmin"
+            @click="deletePoolAlbum(album.id)"
+            class="delete-btn"
+          >删除</button>
         </div>
       </div>
     </div>
 
     <!-- 分页控件 -->
     <div v-if="pagination.total > 0" class="pagination">
-      <button 
-        @click="changePage(1)" 
+      <button
+        @click="changePage(1)"
         :disabled="pagination.page === 1 || loading"
         class="page-btn"
       >首页</button>
-      <button 
-        @click="changePage(pagination.page - 1)" 
+      <button
+        @click="changePage(pagination.page - 1)"
         :disabled="pagination.page === 1 || loading"
         class="page-btn"
       >上一页</button>
       <span class="page-info">
         第 {{ pagination.page }} 页 / 共 {{ pagination.total_pages }} 页 (总 {{ pagination.total }} 条)
       </span>
-      <button 
-        @click="changePage(pagination.page + 1)" 
+      <button
+        @click="changePage(pagination.page + 1)"
         :disabled="pagination.page === pagination.total_pages || loading"
         class="page-btn"
       >下一页</button>
-      <button 
-        @click="changePage(pagination.total_pages)" 
+      <button
+        @click="changePage(pagination.total_pages)"
         :disabled="pagination.page === pagination.total_pages || loading"
         class="page-btn"
       >尾页</button>
@@ -87,7 +94,8 @@ export default {
         page: 1,
         page_size: 10,
         total_pages: 0
-      }
+      },
+      isAdmin: false          // 新增：是否为管理员
     }
   },
   created() {
@@ -96,6 +104,8 @@ export default {
       this.$router.push('/login');
       return;
     }
+    // 新增：获取用户是否为管理员（从localStorage读取，登录时已存储）
+    this.isAdmin = localStorage.getItem('is_admin') === '1';
     // 初始化加载所有专辑副本
     this.searchAlbums();
   },
@@ -120,11 +130,12 @@ export default {
         this.loading = false;
         if (res.data.code === 200) {
           this.searchResult = res.data.data.list || [];
-          this.pagination = res.data.data.pagination || {
-            total: 0,
-            page: 1,
-            page_size: 10,
-            total_pages: 0
+          // 修正：pagination赋值错误（原res.data.data.pagination改为直接取）
+          this.pagination = {
+            total: res.data.data.total || 0,
+            page: res.data.data.page || 1,
+            page_size: res.data.data.page_size || 10,
+            total_pages: Math.ceil((res.data.data.total || 0) / (res.data.data.page_size || 10))
           };
         } else {
           alert('搜索失败：' + res.data.msg);
@@ -137,7 +148,6 @@ export default {
         alert('搜索失败，请检查后端是否启动！');
       });
     },
-
 
     // 重置搜索
     resetSearch() {
@@ -183,11 +193,43 @@ export default {
       });
     },
 
-    // SearchAlbumPool.vue 的 methods 中
+    // 查看专辑详情
     viewAlbumDetail(poolId) {
-  // 跳转到公共专辑详情页，传递poolId（album_pool表的ID）
-  this.$router.push(`/album/pool/detail/${poolId}`);
-},
+      // 跳转到公共专辑详情页，传递poolId（album_pool表的ID）
+      this.$router.push(`/album/pool/detail/${poolId}`);
+    },
+
+    // 新增：删除专辑搜索池中的专辑（仅管理员可调用）
+    deletePoolAlbum(poolId) {
+      if (!this.isAdmin) {
+        alert('无权限执行此操作！');
+        return;
+      }
+      if (!confirm('确定要删除该专辑吗？删除后不可恢复！')) {
+        return;
+      }
+      this.$axios({
+        url: `/api/album/pool/delete/${poolId}`,
+        method: 'DELETE',
+        headers: {
+          'Authorization': localStorage.getItem('token') || '',
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(res => {
+        if (res.data.code === 200) {
+          alert('删除成功！');
+          // 重新加载列表
+          this.searchAlbums();
+        } else {
+          alert('删除失败：' + res.data.msg);
+        }
+      })
+      .catch(err => {
+        console.error('删除专辑失败：', err);
+        alert('删除失败！' + (err.response?.data?.msg || err.message));
+      });
+    },
 
     // 跳转到新增原创专辑页面
     goAddOriginalAlbum() {
@@ -198,6 +240,7 @@ export default {
 </script>
 
 <style scoped>
+/* 原有样式不变，新增删除按钮样式 */
 .search-pool-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -321,6 +364,20 @@ export default {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+}
+
+/* 新增：删除按钮样式（红色突出） */
+.delete-btn {
+  padding: 6px 12px;
+  background: #e53935;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.delete-btn:hover {
+  background: #d32f2f;
 }
 
 /* 分页样式 */
