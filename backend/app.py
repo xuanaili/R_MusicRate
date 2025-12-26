@@ -7,7 +7,7 @@ from functools import wraps
 import traceback
 import pymysql
 from pymysql.err import ProgrammingError
-
+import requests  # 先安装：pip install requests
 # ========== 基础配置 ==========
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -115,6 +115,7 @@ def check_and_create_user_album_table(user_id):
         print(f"检查/创建用户专辑表失败：{str(e)}")
         raise e
 
+
 def init_base_tables():
     """初始化基础表（仅users表，专辑表按用户动态创建）"""
     try:
@@ -139,6 +140,7 @@ def init_base_tables():
     except Exception as e:
         print(f"初始化基础表失败：{str(e)}")
         print(traceback.format_exc())
+
 
 def init_default_admin():
     """初始化默认admin用户，并创建其专属专辑表"""
@@ -200,6 +202,82 @@ def login_required(func):
 
     return wrapper
 
+
+# ========== 自建本地图床（免费、直链永久有效） ==========
+import os
+import uuid
+from flask import request, jsonify, send_from_directory
+
+# 1. 配置图片保存路径（自动创建文件夹）
+UPLOAD_FOLDER = "./album_covers"  # 图片保存在项目根目录的album_covers文件夹
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+
+# 2. 新增：提供图片访问的接口（用于前端显示封面）
+@app.route('/covers/<filename>')
+def serve_cover(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+
+# 3. 上传图片接口（替换原有imgBB/SM.MS逻辑）
+@app.route('/api/upload_img', methods=['POST'])
+def upload_img_proxy():
+    try:
+        # 接收前端上传的图片
+        if 'image' not in request.files:
+            return jsonify({"code": 400, "msg": "请上传图片文件"}), 400
+        image_file = request.files['image']
+
+        # 生成唯一文件名（避免重复）
+        ext = os.path.splitext(image_file.filename)[-1]  # 获取文件后缀（.jpg/.png）
+        filename = f"{uuid.uuid4()}{ext}"  # 用UUID生成唯一名
+        save_path = os.path.join(UPLOAD_FOLDER, filename)
+
+        # 保存图片到本地
+        image_file.save(save_path)
+
+        # 生成本地直链（前端能直接访问）
+        # 注意：替换成你的后端IP+端口（如http://127.0.0.1:5000）
+        img_url = f"http://127.0.0.1:5000/covers/{filename}"
+
+        return jsonify({
+            "code": 200,
+            "msg": "图片上传成功（本地图床）",
+            "data": {"img_url": img_url}
+        })
+
+    except Exception as e:
+        print(f"上传失败：{str(e)}")
+        return jsonify({"code": 500, "msg": f"上传失败：{str(e)}"}), 500
+# # ========== 新增：imgBB图片上传代理接口（无需API密钥） ==========
+#
+# # ========== imgBB图片上传代理接口（后端已添加） ==========
+# import requests, base64
+# @app.route('/api/upload_img', methods=['POST'])
+# def upload_img_proxy():
+#     try:
+#         if 'image' not in request.files:
+#             return jsonify({"code":400,"msg":"请上传图片文件"}),400
+#         image_file = request.files['image']
+#         # 转Base64
+#         image_base64 = base64.b64encode(image_file.stream.read()).decode('utf-8')
+#         data = {
+#             "key": "d4bb803abe0ee21576663eed9f462b88",
+#             "image": image_base64,
+#             "name": image_file.filename
+#         }
+#         # 后端转发到imgBB
+#         response = requests.post("https://api.imgbb.com/1/upload", data=data, timeout=15)
+#         response.raise_for_status()
+#         imgb_data = response.json()
+#         if imgb_data.get('success'):
+#             return jsonify({"code":200,"msg":"上传成功","data":{"img_url":imgb_data['data']['url']}})
+#         else:
+#             return jsonify({"code":500,"msg":imgb_data.get('error',{}).get('message','上传失败')}),500
+#     except Exception as e:
+#         return jsonify({"code":500,"msg":f"上传失败：{str(e)}"}),500
+
 # ========== 工具函数 ==========
 def get_next_id(table_name):
     """获取指定表的下一个自增ID"""
@@ -213,6 +291,7 @@ def get_next_id(table_name):
     except Exception as e:
         print(f"生成ID失败：{str(e)}")
         return 1
+
 
 # ========== 业务接口（全量适配MySQL+分表） ==========
 # 1. 注册接口（自动创建用户专属专辑表）
@@ -256,6 +335,7 @@ def register():
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"注册失败：{str(e)}"}), 500
 
+
 # 2. 登录接口
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -295,6 +375,7 @@ def login():
         print(f"登录出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"登录出错：{str(e)}"}), 500
+
 
 # 3. 获取专辑列表（读取用户专属表）
 @app.route('/api/music', methods=['GET'])
@@ -343,6 +424,7 @@ def get_album_list():
         print(f"获取专辑列表出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"获取专辑出错：{str(e)}"}), 500
+
 
 # 4. 添加专辑（写入用户专属表）
 @app.route('/api/album/add', methods=['POST'])
@@ -433,6 +515,7 @@ def add_album():
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"添加专辑失败：{str(e)}"}), 500
 
+
 # 5. 删除专辑（删除用户专属表数据）
 @app.route('/api/album/delete/<int:album_id>', methods=['DELETE'])
 @login_required
@@ -459,6 +542,7 @@ def delete_album(album_id):
         print(f"删除专辑出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"删除专辑失败：{str(e)}"}), 500
+
 
 # 6. 编辑听后感（更新用户专属表）
 @app.route('/api/album/review/edit/<int:album_id>', methods=['POST'])
@@ -503,6 +587,7 @@ def edit_review(album_id):
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"编辑听后感失败：{str(e)}"}), 500
 
+
 # 7. 删除听后感（清空用户专属表数据）
 @app.route('/api/album/review/delete/<int:album_id>', methods=['DELETE'])
 @login_required
@@ -540,6 +625,7 @@ def delete_review(album_id):
         print(f"删除听后感出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"删除听后感失败：{str(e)}"}), 500
+
 
 # 8. 获取专辑详情（读取用户专属表）
 @app.route('/api/album/detail/<int:album_id>', methods=['GET'])
@@ -591,6 +677,7 @@ def get_album_detail(album_id):
         print(f"获取专辑详情出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 500
+
 
 # 9. 提交评论（更新用户专属表）
 @app.route('/api/music/comment', methods=['POST'])
@@ -665,6 +752,7 @@ def submit_comment():
         print(f"提交评论出错：{str(e)}")
         print(traceback.format_exc())
         return jsonify({"code": 500, "msg": f"提交评论出错：{str(e)}"}), 500
+
 
 # ========== 启动初始化 ==========
 with app.app_context():
