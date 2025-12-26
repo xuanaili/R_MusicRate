@@ -13,7 +13,7 @@
         <p>歌手：{{ albumData.singer }}</p>
         <p>发行年份：{{ albumData.release_year }}</p>
         <p>标签：{{ albumData.tags?.join('、') || '无' }}</p>
-        <p>创建用户：{{ albumData.create_user || '未知' }}</p>
+        <p>创建用户：{{ albumData.create_user_name || '未知' }}</p>
         <p>创建时间：{{ albumData.create_time || '未知' }}</p>
       </div>
       <div class="actions">
