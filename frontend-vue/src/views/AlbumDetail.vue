@@ -12,60 +12,169 @@
     </aside>
 
     <main class="main-content">
-      <!-- 基础信息 Tab -->
+      <!-- 基础信息 Tab（全新优化） -->
       <div v-if="activeTab === 'base'" class="tab-content">
         <h1>《{{ album.album_name || '未知专辑' }}》</h1>
-        <div class="base-info">
-          <p>专辑名: {{ album.album_name || '未知' }}</p>
-          <p>封面: {{ album.cover_img || album.album_name + '.jpg' || '未知.jpg' }}</p>
-          <p>歌手: {{ album.singer || '未知' }}</p>
-          <p>发行时间: "{{ album.release_year || '未知' }}"</p>
-          <p>曲目数量: {{ album.track_count || 0 }}</p>
-          <p>曲目时长: "{{ album.track_duration || '0.00' }}"</p>
-          <p>我的评分: {{ album.my_score || 0.0 }}</p>
-          <p>刻录分类: {{ album.burn_class || '-' }}</p>
-          <p>tags:</p>
-          <ul class="tags-list">
-            <li v-for="tag in (album.tags || [])" :key="tag">- {{ tag }}</li>
-          </ul>
+
+        <!-- 全新基础信息卡片：分区布局 -->
+        <div class="new-base-info-card">
+          <!-- 左上：封面（放大） -->
+          <div class="info-section cover-section">
+            <img v-if="album.cover_img" :src="album.cover_img" alt="专辑封面" class="big-cover-img">
+            <div v-else class="cover-placeholder">{{ album.album_name || '未知' }}</div>
+          </div>
+
+          <!-- 右上：专辑名/歌手/发行时间 -->
+          <div class="info-section meta-section">
+            <h2 class="meta-album-name">{{ album.album_name || '未知专辑' }}</h2>
+            <div class="meta-item">
+              <span class="meta-label">歌手：</span>
+              <span class="meta-value">{{ album.singer || '未知' }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">发行时间：</span>
+              <span class="meta-value">{{ album.release_year || '未知' }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">曲目数量：</span>
+              <span class="meta-value">{{ album.track_count || 0 }}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">我的评分：</span>
+              <span class="meta-value">{{ album.my_score || 0.0 }}</span>
+            </div>
+          </div>
+
+          <!-- 左下：我的分类（标签选择器） -->
+          <div class="info-section my-tags-section">
+            <h3 class="section-title">我的分类</h3>
+            <!-- 标签搜索选择框 -->
+            <div class="tag-select-container">
+              <input
+                v-model="tagSearchInput"
+                @input="filterTagOptions"
+                placeholder="搜索标签（如Pop、Rock）"
+                class="tag-search-input"
+              >
+              <!-- 可选标签列表 -->
+              <div class="tag-options" v-if="filteredTagOptions.length > 0 || tagSearchInput.trim()">
+                <div
+                  class="tag-option"
+                  v-for="tag in filteredTagOptions"
+                  :key="tag"
+                  @click="addMyTag(tag)"
+                  :disabled="selectedMyTags.length >= 5"
+                >
+                  {{ tag }}
+                </div>
+              </div>
+            </div>
+            <!-- 已选标签 -->
+            <div class="selected-tags">
+              <div
+                class="selected-tag"
+                v-for="(tag, idx) in selectedMyTags"
+                :key="idx"
+              >
+                {{ tag }}
+                <span class="tag-close" @click="removeMyTag(idx)">×</span>
+              </div>
+            </div>
+            <div class="tag-tip" v-if="selectedMyTags.length >= 5">
+              最多只能选择5个标签
+            </div>
+            <button
+              class="save-tags-btn"
+              @click="saveMyTags"
+              :disabled="!selectedMyTags.length"
+            >
+              保存我的分类
+            </button>
+          </div>
+
+          <!-- 右下：分类统计（气泡图） -->
+          <div class="info-section tag-chart-section">
+            <h3 class="section-title">全网分类统计</h3>
+            <!-- 气泡图容器 -->
+            <div class="chart-container">
+              <div v-if="chartData.length > 0" class="bubble-chart">
+                <div
+                  class="bubble"
+                  v-for="(item, idx) in chartData"
+                  :key="idx"
+                  :style="{
+                    width: `${item.size}px`,
+                    height: `${item.size}px`,
+                    left: `${item.x}%`,
+                    top: `${item.y}%`,
+                    backgroundColor: item.color
+                  }"
+                >
+                  <div class="bubble-label">{{ item.tag }}</div>
+                  <div class="bubble-value">{{ item.percent }}%</div>
+                </div>
+              </div>
+              <div v-else class="no-chart-data">
+                暂无足够的分类数据（需≥10%占比）
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div class="bookinfo-card">
-          <h3>《{{ album.album_name || '未知专辑' }}》</h3>
-          <div class="cover-preview">
-            <img v-if="album.cover_img" :src="album.cover_img" alt="专辑封面" class="cover-img">
-            <span v-else>[{{ album.album_name || '未知' }}.jpg]</span>
+        <!-- 保留原有基础信息（可选隐藏） -->
+        <div class="old-base-info" style="margin-top: 30px; display: none;">
+          <div class="base-info">
+            <p>专辑名: {{ album.album_name || '未知' }}</p>
+            <p>封面: {{ album.cover_img || album.album_name + '.jpg' || '未知.jpg' }}</p>
+            <p>歌手: {{ album.singer || '未知' }}</p>
+            <p>发行时间: "{{ album.release_year || '未知' }}"</p>
+            <p>曲目数量: {{ album.track_count || 0 }}</p>
+            <p>曲目时长: "{{ album.track_duration || '0.00' }}"</p>
+            <p>我的评分: {{ album.my_score || 0.0 }}</p>
+            <p>刻录分类: {{ album.burn_class || '-' }}</p>
+            <p>tags:</p>
+            <ul class="tags-list">
+              <li v-for="tag in (album.tags || [])" :key="tag">- {{ tag }}</li>
+            </ul>
           </div>
-          <table class="info-table">
-            <tr>
-              <th>作者</th>
-              <td>{{ album.singer || '未知' }}</td>
-            </tr>
-            <tr>
-              <th>发行时间</th>
-              <td>{{ album.release_year || '未知' }}</td>
-            </tr>
-            <tr>
-              <th>曲目数量</th>
-              <td>{{ album.track_count || 0 }}</td>
-            </tr>
-            <tr>
-              <th>曲目时长</th>
-              <td>{{ album.track_duration || '0.00' }}</td>
-            </tr>
-            <tr>
-              <th>分类</th>
-              <td>{{ (album.tags && album.tags.length > 0) ? album.tags.join('、') : '无' }}</td>
-            </tr>
-            <tr>
-              <th>评分</th>
-              <td>{{ album.my_score || 0.0 }}</td>
-            </tr>
-          </table>
+
+          <div class="bookinfo-card">
+            <h3>《{{ album.album_name || '未知专辑' }}》</h3>
+            <div class="cover-preview">
+              <img v-if="album.cover_img" :src="album.cover_img" alt="专辑封面" class="cover-img">
+              <span v-else>[{{ album.album_name || '未知' }}.jpg]</span>
+            </div>
+            <table class="info-table">
+              <tr>
+                <th>作者</th>
+                <td>{{ album.singer || '未知' }}</td>
+              </tr>
+              <tr>
+                <th>发行时间</th>
+                <td>{{ album.release_year || '未知' }}</td>
+              </tr>
+              <tr>
+                <th>曲目数量</th>
+                <td>{{ album.track_count || 0 }}</td>
+              </tr>
+              <tr>
+                <th>曲目时长</th>
+                <td>{{ album.track_duration || '0.00' }}</td>
+              </tr>
+              <tr>
+                <th>分类</th>
+                <td>{{ (album.tags && album.tags.length > 0) ? album.tags.join('、') : '无' }}</td>
+              </tr>
+              <tr>
+                <th>评分</th>
+                <td>{{ album.my_score || 0.0 }}</td>
+              </tr>
+            </table>
+          </div>
         </div>
       </div>
 
-      <!-- 曲目列表 Tab -->
+      <!-- 曲目列表 Tab（保留原有） -->
       <div v-if="activeTab === 'tracks'" class="tab-content">
         <h2>内容</h2>
         <h3>简介</h3>
@@ -83,7 +192,7 @@
         </div>
       </div>
 
-      <!-- 听后感 Tab -->
+      <!-- 听后感 Tab（保留原有） -->
       <div v-if="activeTab === 'review'" class="tab-content">
         <h2>{{ album.album_name || '未知专辑' }}——听后感</h2>
         <div class="audio-link">[{{ album.album_name || '未知' }}.mp3]</div>
@@ -129,7 +238,7 @@
         </div>
       </div>
 
-      <!-- 平台评论 Tab（新增排序+屏蔽+置顶） -->
+      <!-- 平台评论 Tab（保留原有） -->
       <div v-if="activeTab === 'comments'" class="tab-content">
         <h2>{{ album.album_name || '未知专辑' }}——公共评论区</h2>
 
@@ -280,7 +389,14 @@ export default {
       sortType: 'time', // 默认排序：time-最新时间 like-最多点赞
       blockedCommentIds: [], // 已屏蔽的评论ID列表
       myComment: null, // 自己的评论
-      otherComments: [] // 他人的评论
+      otherComments: [], // 他人的评论
+      // ========== 新增：标签选择器相关 ==========
+      tagSearchInput: '', // 标签搜索输入框
+      allTagOptions: ['Pop', 'Rock', 'Jazz', 'Classical', 'Hip-hop', 'Electronic', 'Folk', 'R&B', 'Country', 'Metal'], // 固定标签列表
+      filteredTagOptions: [], // 过滤后的标签选项
+      selectedMyTags: [], // 已选的我的分类标签
+      // ========== 新增：气泡图相关 ==========
+      chartData: [] // 气泡图数据
     };
   },
   computed: {
@@ -309,6 +425,10 @@ export default {
             }];
           }
         }
+        // 初始化我的分类标签
+        if (newVal.tags && Array.isArray(newVal.tags)) {
+          this.selectedMyTags = [...newVal.tags].slice(0, 5); // 最多5个
+        }
       }
     }
   },
@@ -319,6 +439,9 @@ export default {
     }
     this.currentUserId = localStorage.getItem('user_id');
     this.isAdmin = localStorage.getItem('is_admin') === '1';
+
+    // 初始化标签选项
+    this.filteredTagOptions = [...this.allTagOptions];
 
     const albumId = this.$route.params.id || this.$route.query.id;
     if (!albumId) {
@@ -335,10 +458,124 @@ export default {
         }
         this.checkUserComment();
         this.getPublicComments();
+        // 获取分类统计数据（气泡图）
+        this.getTagStatistics();
       });
     });
   },
   methods: {
+    // ========== 新增：标签选择器方法 ==========
+    // 过滤标签选项
+    filterTagOptions() {
+      const keyword = this.tagSearchInput.trim().toLowerCase();
+      if (!keyword) {
+        this.filteredTagOptions = [...this.allTagOptions];
+      } else {
+        this.filteredTagOptions = this.allTagOptions.filter(tag =>
+          tag.toLowerCase().includes(keyword) && !this.selectedMyTags.includes(tag)
+        );
+      }
+    },
+    // 添加我的标签
+    addMyTag(tag) {
+      if (this.selectedMyTags.length < 5 && !this.selectedMyTags.includes(tag)) {
+        this.selectedMyTags.push(tag);
+        // 更新过滤后的选项（移除已选标签）
+        this.filteredTagOptions = this.filteredTagOptions.filter(t => t !== tag);
+      }
+    },
+    // 移除我的标签
+    removeMyTag(index) {
+      const removedTag = this.selectedMyTags.splice(index, 1)[0];
+      // 恢复到可选列表
+      if (removedTag && !this.filteredTagOptions.includes(removedTag)) {
+        this.filteredTagOptions.push(removedTag);
+        this.filteredTagOptions.sort(); // 排序
+      }
+    },
+    // 保存我的标签
+    saveMyTags() {
+      this.$axios({
+        url: `/api/album/update/tags/${this.album.id}`,
+        method: 'PUT',
+        headers: {
+          'Authorization': localStorage.getItem('token') || '',
+          'Content-Type': 'application/json'
+        },
+        data: {
+          tags: this.selectedMyTags
+        }
+      }).then(res => {
+        if (res.data.code === 200) {
+          alert('我的分类标签保存成功！');
+          this.album.tags = [...this.selectedMyTags];
+          // 重新获取统计数据
+          this.getTagStatistics();
+        } else {
+          alert('保存失败：' + res.data.msg);
+        }
+      }).catch(err => {
+        console.error('保存标签失败：', err);
+        alert('保存标签失败！' + err.message);
+      });
+    },
+
+    // ========== 新增：气泡图相关方法 ==========
+    // 获取标签统计数据
+    getTagStatistics() {
+      if (!this.albumPoolId) return;
+
+      // 模拟接口返回数据（实际项目中替换为真实接口）
+      // 真实场景：后端统计所有用户该专辑的标签，过滤<10%的标签
+      setTimeout(() => {
+        // 模拟数据：标签、占比、气泡大小、位置、颜色
+        const mockData = [
+          { tag: 'Pop', percent: 45, size: 120, x: 20, y: 30, color: '#42b983' },
+          { tag: 'Rock', percent: 25, size: 80, x: 50, y: 20, color: '#e53935' },
+          { tag: 'Jazz', percent: 15, size: 60, x: 70, y: 50, color: '#007acc' },
+          { tag: 'R&B', percent: 12, size: 50, x: 30, y: 60, color: '#9c27b0' }
+        ];
+
+        // 过滤占比<10%的标签
+        this.chartData = mockData.filter(item => item.percent >= 10);
+
+        // 真实接口调用示例：
+        /*
+        this.$axios({
+          url: `/api/album/pool/tag/statistics/${this.albumPoolId}`,
+          method: 'GET',
+          headers: { 'Authorization': localStorage.getItem('token') || '' }
+        }).then(res => {
+          if (res.data.code === 200) {
+            // 处理返回的统计数据，生成气泡图参数
+            this.chartData = res.data.data.map(item => {
+              // 随机位置（避免重叠）
+              const x = 10 + Math.random() * 80;
+              const y = 10 + Math.random() * 80;
+              // 气泡大小：占比*2 + 40
+              const size = item.percent * 2 + 40;
+              // 随机颜色
+              const colors = ['#42b983', '#e53935', '#007acc', '#9c27b0', '#ff9800', '#607d8b'];
+              const color = colors[Math.floor(Math.random() * colors.length)];
+
+              return {
+                tag: item.tag,
+                percent: item.percent,
+                size,
+                x,
+                y,
+                color
+              };
+            });
+          }
+        }).catch(err => {
+          console.error('获取标签统计失败：', err);
+        });
+        */
+      }, 500);
+    },
+
+    // ========== 原有方法（保留） ==========
     // 处理评论数据：分离自己的评论 + 排序他人评论
     processComments() {
       // 1. 分离自己的评论和他人的评论
@@ -811,6 +1048,243 @@ h5 {
   color: #666;
 }
 
+/* ========== 新增：全新基础信息卡片样式 ========== */
+.new-base-info-card {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 20px;
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+  min-height: 600px;
+}
+
+.info-section {
+  padding: 15px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #eee;
+}
+
+.section-title {
+  font-size: 16px;
+  color: #42b983;
+  margin-bottom: 15px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+/* 左上：封面区域 */
+.cover-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.big-cover-img {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.cover-placeholder {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  background: #f5f5f5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #999;
+  font-size: 14px;
+}
+
+/* 右上：元信息区域 */
+.meta-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.meta-album-name {
+  font-size: 24px;
+  color: #222;
+  margin-bottom: 20px;
+}
+
+.meta-item {
+  display: flex;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+.meta-label {
+  width: 80px;
+  color: #666;
+  font-weight: 600;
+}
+
+.meta-value {
+  color: #333;
+}
+
+/* 左下：我的分类标签区域 */
+.my-tags-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.tag-select-container {
+  position: relative;
+  margin-bottom: 15px;
+}
+
+.tag-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.tag-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.tag-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.tag-option:hover {
+  background: #f0f8fb;
+}
+
+.tag-option:disabled {
+  color: #999;
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+
+.selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 15px 0;
+}
+
+.selected-tag {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: #42b983;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.tag-close {
+  margin-left: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.tag-tip {
+  font-size: 12px;
+  color: #e53935;
+  margin-bottom: 15px;
+}
+
+.save-tags-btn {
+  padding: 8px 16px;
+  background: #42b983;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.save-tags-btn:disabled {
+  background: #999;
+  cursor: not-allowed;
+}
+
+/* 右下：气泡图区域 */
+.tag-chart-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-container {
+  flex: 1;
+  position: relative;
+  background: #f8f8f8;
+  border-radius: 4px;
+  overflow: hidden;
+  min-height: 250px;
+}
+
+.bubble-chart {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+}
+
+.bubble:hover {
+  transform: scale(1.05);
+}
+
+.bubble-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.bubble-value {
+  font-size: 12px;
+}
+
+.no-chart-data {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #999;
+  font-size: 14px;
+}
+
+/* ========== 原有样式（保留） ========== */
 .base-info {
   margin-bottom: 30px;
   font-size: 14px;
