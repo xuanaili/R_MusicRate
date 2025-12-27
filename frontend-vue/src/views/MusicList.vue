@@ -51,8 +51,8 @@
           @add-comment="handleAddComment"
         />
 
-        <!-- ========== 核心新增：同步开关区域 ========== -->
-        <div v-if="music.source_pool_id" class="sync-switch-container">
+        <!-- ========== 核心新增：同步开关区域（已注释） ========== -->
+        <!-- <div v-if="music.source_pool_id" class="sync-switch-container">
           <label class="sync-switch">
             <input
               type="checkbox"
@@ -66,7 +66,7 @@
             {{ music.sync_pool_update ? '同步开启' : '同步关闭' }}
             <span v-if="music.is_customized" class="customized-tag">（已自定义，无法同步）</span>
           </span>
-        </div>
+        </div> -->
         <!-- ========== 同步开关结束 ========== -->
 
         <!-- 关键修改2：删除按钮传参改为music.id -->
@@ -193,13 +193,13 @@ export default {
             this.loading = false
             if (res.data.code === 200) {
               this.musicList = res.data.data.list || []
-              // ========== 核心新增：处理同步开关和自定义标记的格式转换 ==========
-              this.musicList = this.musicList.map(item => ({
-                ...item,
-                // 数据库中是 1/0，转成布尔值方便开关使用
-                sync_pool_update: item.sync_pool_update === 1,
-                is_customized: item.is_customized === 1
-              }))
+              // ========== 核心新增：处理同步开关和自定义标记的格式转换（已注释） ==========
+              // this.musicList = this.musicList.map(item => ({
+              //   ...item,
+              //   // 数据库中是 1/0，转成布尔值方便开关使用
+              //   sync_pool_update: item.sync_pool_update === 1,
+              //   is_customized: item.is_customized === 1
+              // }))
               // ========== 格式转换结束 ==========
 
               this.pagination = res.data.data.pagination || {
@@ -230,56 +230,56 @@ export default {
           })
     },
 
-    // ========== 核心新增：切换同步开关状态 ==========
-    toggleSync(albumId, status) {
-      // 禁用状态下不执行
-      if (this.musicList.find(item => item.id === albumId)?.is_customized) {
-        alert('该专辑已自定义修改，无法切换同步状态！')
-        return
-      }
+    // ========== 核心新增：切换同步开关状态（已注释） ==========
+    // toggleSync(albumId, status) {
+    //   // 禁用状态下不执行
+    //   if (this.musicList.find(item => item.id === albumId)?.is_customized) {
+    //     alert('该专辑已自定义修改，无法切换同步状态！')
+    //     return
+    //   }
 
-      this.loading = true
-      this.$axios({
-        url: '/api/album/sync/switch',
-        method: 'POST',
-        headers: {
-          'Authorization': localStorage.getItem('token') || '',
-          'Content-Type': 'application/json'
-        },
-        data: {
-          album_id: albumId,
-          sync_status: status ? 1 : 0  // 转成数据库的 1/0 格式
-        }
-      })
-          .then(res => {
-            this.loading = false
-            if (res.data.code === 200) {
-              alert(res.data.msg)
-              // 局部更新，无需刷新整个列表（优化体验）
-              const index = this.musicList.findIndex(item => item.id === albumId)
-              if (index !== -1) {
-                this.musicList[index].sync_pool_update = status
-              }
-            } else {
-              alert('操作失败：' + res.data.msg)
-              // 回滚开关状态
-              const index = this.musicList.findIndex(item => item.id === albumId)
-              if (index !== -1) {
-                this.musicList[index].sync_pool_update = !status
-              }
-            }
-          })
-          .catch(err => {
-            this.loading = false
-            console.error('切换同步状态失败：', err)
-            alert('操作失败！请重试')
-            // 回滚开关状态
-            const index = this.musicList.findIndex(item => item.id === albumId)
-            if (index !== -1) {
-              this.musicList[index].sync_pool_update = !status
-            }
-          })
-    },
+    //   this.loading = true
+    //   this.$axios({
+    //     url: '/api/album/sync/switch',
+    //     method: 'POST',
+    //     headers: {
+    //       'Authorization': localStorage.getItem('token') || '',
+    //       'Content-Type': 'application/json'
+    //     },
+    //     data: {
+    //       album_id: albumId,
+    //       sync_status: status ? 1 : 0  // 转成数据库的 1/0 格式
+    //     }
+    //   })
+    //       .then(res => {
+    //         this.loading = false
+    //         if (res.data.code === 200) {
+    //           alert(res.data.msg)
+    //           // 局部更新，无需刷新整个列表（优化体验）
+    //           const index = this.musicList.findIndex(item => item.id === albumId)
+    //           if (index !== -1) {
+    //             this.musicList[index].sync_pool_update = status
+    //           }
+    //         } else {
+    //           alert('操作失败：' + res.data.msg)
+    //           // 回滚开关状态
+    //           const index = this.musicList.findIndex(item => item.id === albumId)
+    //           if (index !== -1) {
+    //             this.musicList[index].sync_pool_update = !status
+    //           }
+    //         }
+    //       })
+    //       .catch(err => {
+    //         this.loading = false
+    //         console.error('切换同步状态失败：', err)
+    //         alert('操作失败！请重试')
+    //         // 回滚开关状态
+    //         const index = this.musicList.findIndex(item => item.id === albumId)
+    //         if (index !== -1) {
+    //           this.musicList[index].sync_pool_update = !status
+    //         }
+    //       })
+    // },
     // ========== 同步开关方法结束 ==========
 
     // 处理评论提交
@@ -522,8 +522,8 @@ body {
   cursor: pointer;
 }
 
-/* ========== 核心新增：同步开关样式 ========== */
-.sync-switch-container {
+/* ========== 核心新增：同步开关样式（已注释） ========== */
+/* .sync-switch-container {
   position: absolute;
   top: 10px;
   right: 100px;
@@ -534,7 +534,7 @@ body {
 }
 
 /* 开关基础样式 */
-.sync-switch {
+/* .sync-switch {
   position: relative;
   display: inline-block;
   width: 40px;
@@ -542,14 +542,14 @@ body {
 }
 
 /* 隐藏原生复选框 */
-.sync-switch input {
+/* .sync-switch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
 
 /* 滑块样式 */
-.slider {
+/* .slider {
   position: absolute;
   cursor: pointer;
   top: 0;
@@ -562,7 +562,7 @@ body {
 }
 
 /* 滑块圆点 */
-.slider:before {
+/* .slider:before {
   position: absolute;
   content: "";
   height: 16px;
@@ -575,7 +575,7 @@ body {
 }
 
 /* 选中状态 */
-input:checked + .slider {
+/* input:checked + .slider {
   background-color: #42b983;
 }
 
@@ -584,21 +584,20 @@ input:checked + .slider:before {
 }
 
 /* 禁用状态 */
-input:disabled + .slider {
+/* input:disabled + .slider {
   background-color: #999;
   cursor: not-allowed;
 }
 
 /* 同步文本样式 */
-.sync-text {
+/* .sync-text {
   color: #666;
 }
 
 /* 自定义标记样式 */
-.customized-tag {
+/* .customized-tag {
   color: #ff9800;
   margin-left: 4px;
-}
-
+} */
 /* ========== 同步开关样式结束 ========== */
 </style>

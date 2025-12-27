@@ -2,9 +2,10 @@ from flask import request, jsonify, g
 import json
 import traceback
 import random
+import os  # 新增：文件操作模块
 from ..db_utils import get_db, get_album_table_name, get_current_user_id
 from ..decorators import login_required
-from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE
+from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, UPLOAD_FOLDER  # 新增：导入上传文件夹配置
 
 import pymysql.cursors
 
@@ -238,7 +239,7 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"搜索专辑池失败：{str(e)}"}), 500
 
-    # 3. 删除公共专辑接口（修复路由多写的<符号）
+    # 3. 删除公共专辑接口（核心修复：适配本地图床URL解析 + 删除本地封面图片）
     @app.route('/api/album/pool/delete/<int:pool_id>', methods=['DELETE', 'OPTIONS'])
     @login_required
     def delete_pool_album(pool_id):
@@ -252,33 +253,66 @@ def register_album_pool_routes(app):
 
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+
+            # 检查管理员权限
             cursor.execute('SELECT is_admin FROM users WHERE user_id = %s', (current_user_id,))
             user = cursor.fetchone()
-
             if not user or user['is_admin'] != 1:
                 cursor.close()
                 return jsonify({"code": 403, "msg": "无管理员权限，禁止删除！"}), 403
 
-            cursor.execute('SELECT id FROM album_pool WHERE id = %s', (pool_id,))
+            # 查询专辑信息（重点获取cover_img字段）
+            cursor.execute('SELECT id, cover_img FROM album_pool WHERE id = %s', (pool_id,))
             album = cursor.fetchone()
             if not album:
                 cursor.close()
                 return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！"}), 404
 
+            # ========== 核心修复：解析本地图床URL，提取文件名并删除 ==========
+            cover_img_url = album.get('cover_img', '')
+            if cover_img_url and cover_img_url.strip():
+                try:
+                    # 从URL中提取文件名（适配你的本地图床URL格式：http://127.0.0.1:5000/covers/xxx.jpg）
+                    # 方法1：按/分割取最后一段
+                    filename = cover_img_url.split('/')[-1]
+                    # 方法2（备选）：如果URL包含参数，用os.path.basename
+                    # filename = os.path.basename(cover_img_url)
+
+                    # 拼接本地图片路径（和你的upload_utils.py保持一致）
+                    from ..config import UPLOAD_FOLDER  # 导入你的上传目录配置
+                    full_img_path = os.path.join(UPLOAD_FOLDER, filename)
+
+                    # 检查文件是否存在，存在则删除
+                    if os.path.exists(full_img_path):
+                        os.remove(full_img_path)
+                        print(f"✅ 成功删除本地图床封面图片：{full_img_path}")
+                    else:
+                        print(f"⚠️ 本地图片不存在：{full_img_path}")
+                except Exception as e:
+                    # 图片删除失败不影响专辑删除，仅打印日志
+                    print(f"❌ 解析/删除封面图片失败：{str(e)}")
+                    print(traceback.format_exc())
+
+            # 删除数据库中的专辑记录
             cursor.execute('DELETE FROM album_pool WHERE id = %s', (pool_id,))
             db.commit()
             cursor.close()
 
             return jsonify({
                 "code": 200,
-                "msg": f"成功删除ID为{pool_id}的公共专辑！"
+                "msg": f"成功删除ID为{pool_id}的公共专辑！已清理相关封面图片（如有）"
             })
         except Exception as e:
             print(f"❌ 删除公共专辑失败：{str(e)}")
             print(traceback.format_exc())
+            # 异常时回滚事务
+            if 'db' in locals():
+                db.rollback()
+            if 'cursor' in locals():
+                cursor.close()
             return jsonify({"code": 500, "msg": f"删除公共专辑失败：{str(e)}"}), 500
 
-    # 4. 修改公共专辑接口（仅管理员可调用，新增tracks字段支持 + 核心修复tracks同步置空问题）
+    # 4. 修改公共专辑接口（核心重构：防重复 + 强制同步核心字段）
     @app.route('/api/album/pool/update/<int:pool_id>', methods=['PUT', 'OPTIONS'])
     @login_required
     def update_pool_album(pool_id):
@@ -286,7 +320,6 @@ def register_album_pool_routes(app):
             if request.method == 'OPTIONS':
                 return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
 
-            # 1. 校验管理员权限
             current_user_id = getattr(g, 'current_user_id', None)
             if not current_user_id:
                 return jsonify({"code": 401, "msg": "未登录或登录已过期！"}), 401
@@ -299,169 +332,195 @@ def register_album_pool_routes(app):
                 cursor.close()
                 return jsonify({"code": 403, "msg": "无管理员权限，禁止修改！"}), 403
 
-            # 2. 获取前端提交的修改数据
             data = request.get_json()
             if not data:
                 cursor.close()
                 return jsonify({"code": 400, "msg": "修改数据不能为空！"}), 400
 
-            # 3. 检查专辑是否存在
+            # 查询原专辑信息
             cursor.execute('SELECT * FROM album_pool WHERE id = %s', (pool_id,))
             album = cursor.fetchone()
             if not album:
                 cursor.close()
                 return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！"}), 404
 
-            # 4. 构造更新字段 + 记录修改日志（新增tracks字段支持）
+            # ========== 核心新增：修改时防重复校验（专辑名+歌手+发行时间） ==========
+            # 提取要修改的核心字段
+            new_album_name = data.get('album_name', album['album_name']).strip()
+            new_singer = data.get('singer', album['singer']).strip()
+            new_release_year = int(data.get('release_year', album['release_year']))
+
+            # 校验是否和其他公共专辑重复（排除自身ID）
+            cursor.execute('''
+                SELECT id FROM album_pool 
+                WHERE album_name = %s AND singer = %s AND release_year = %s AND id != %s
+            ''', (new_album_name, new_singer, new_release_year, pool_id))
+            duplicate_album = cursor.fetchone()
+            if duplicate_album:
+                cursor.close()
+                return jsonify({
+                    "code": 409,
+                    "msg": f"公共专辑池中已存在【{new_album_name} - {new_singer} ({new_release_year})】，无法修改！",
+                    "data": {"duplicate_pool_id": duplicate_album['id']}
+                }), 409
+
             update_fields = []
             params = []
-            # 允许修改的字段新增tracks
             allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score',
                               'tracks']
-            update_log = []  # 记录字段修改前后的值
+            update_log = []
 
-            # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
             def safe_json_loads(s):
-                if s is None or s == "":
+                if not s:
                     return None
                 try:
                     return json.loads(s)
-                except (json.JSONDecodeError, TypeError):
+                except:
                     return None
 
-            # ========== 核心修复1：预处理tracks，过滤空值 ==========
-            # 解析公共专辑原有tracks
+            # 预处理tracks
             original_pool_tracks = safe_json_loads(album.get('tracks')) or []
-            # 解析前端提交的tracks
-            new_pool_tracks = data.get('tracks')
-            # 过滤空值：确保是有效非空数组
+            new_pool_tracks = data.get('tracks', original_pool_tracks)
             if isinstance(new_pool_tracks, list):
                 new_pool_tracks = [track.strip() for track in new_pool_tracks if track and track.strip()]
-            else:
-                # 非数组格式，用原有值
-                new_pool_tracks = original_pool_tracks
+            sync_tracks = json.dumps(new_pool_tracks) if new_pool_tracks else album.get('tracks', '[]')
 
+            # 构造公共专辑更新语句
             for field in allowed_fields:
                 if field == 'tracks':
-                    # tracks字段单独处理：只在前端传了有效非空tracks时才更新
-                    if new_pool_tracks and new_pool_tracks != original_pool_tracks:
+                    if new_pool_tracks != original_pool_tracks:
                         old_val = json.dumps(original_pool_tracks)
-                        new_val = json.dumps(new_pool_tracks)
+                        new_val = sync_tracks
                         update_log.append(f"{field}：{old_val} → {new_val}")
-                        update_fields.append(f"{field} = %s")
-                        params.append(json.dumps(new_pool_tracks))
-                elif field in data and data[field] != album[field]:
-                    # 其他字段原有逻辑
-                    old_val = album[field] if album[field] is not None else ""
-                    new_val = data[field] if data[field] is not None else ""
+                        update_fields.append(f"`{field}` = %s")
+                        params.append(sync_tracks)
+                elif field in data and str(data[field]).strip() != str(album.get(field, '')).strip():
+                    old_val = album.get(field, '')
+                    new_val = data[field]
                     update_log.append(f"{field}：{old_val} → {new_val}")
-
-                    # 处理JSON字段（列表转JSON字符串）
-                    if field in ['tags', 'main_type'] and isinstance(data[field], list):
-                        update_fields.append(f"{field} = %s")
-                        params.append(json.dumps(data[field]))
+                    if field in ['tags', 'main_type'] and isinstance(new_val, list):
+                        update_fields.append(f"`{field}` = %s")
+                        params.append(json.dumps(new_val))
                     else:
-                        update_fields.append(f"{field} = %s")
-                        params.append(data[field])
+                        update_fields.append(f"`{field}` = %s")
+                        params.append(new_val)
 
-            # 无更新字段直接返回
             if not update_fields:
                 cursor.close()
                 return jsonify({"code": 400, "msg": "没有需要更新的字段！"}), 400
 
-            # 5. 版本号递增 + 写入修改日志
+            # 版本号+更新日志
             current_version = album.get('version', 1)
             new_version = current_version + 1
-            update_fields.append("version = %s")
-            params.append(new_version)
-            update_fields.append("update_log = %s")
-            params.append(json.dumps(update_log))
-            params.append(pool_id)  # WHERE 条件的 pool_id
+            update_fields.extend(["`version` = %s", "`update_log` = %s"])
+            params.extend([new_version, json.dumps(update_log)])
+            params.append(pool_id)
 
-            # 6. 执行公共模板更新
-            update_sql = f"UPDATE album_pool SET {', '.join(update_fields)} WHERE id = %s"
+            # 执行公共专辑更新
+            update_sql = f"UPDATE `album_pool` SET {', '.join(update_fields)} WHERE `id` = %s"
             cursor.execute(update_sql, params)
 
-            # ========== 核心同步逻辑（修复tracks同步置空问题） ==========
-            # 7. 获取所有用户专辑表（修复：字段名大写 TABLE_NAME）
+            # ========== 核心修复：强制同步逻辑（解决参数不匹配） ==========
             cursor.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "albums_%"')
             user_tables = cursor.fetchall()
-            sync_count = 0  # 累计同步成功的用户数据条数
+            sync_count = 0
 
-            # 准备同步数据（确保tracks是JSON字符串且非空）
-            sync_tracks = json.dumps(new_pool_tracks) if new_pool_tracks else album.get('tracks')
+            # 提取强制同步的核心字段值
+            force_sync_fields = {
+                "album_name": new_album_name,
+                "singer": new_singer,
+                "release_year": new_release_year
+            }
 
             for table in user_tables:
-                table_name = table['TABLE_NAME']  # 修复：大写字段名取值
+                table_name = table['TABLE_NAME']
                 try:
-                    # 先查询该表中需要同步的用户专辑（获取原有tracks，避免空覆盖）
+                    # 查询所有关联该公共池的用户专辑
                     cursor.execute(f'''
-                        SELECT id FROM `{table_name}` 
-                        WHERE source_pool_id = %s AND sync_pool_update = 1 AND is_customized = 0
+                        SELECT `id` FROM `{table_name}` 
+                        WHERE `source_pool_id` = %s
                     ''', (pool_id,))
                     user_albums = cursor.fetchall()
 
                     for user_album in user_albums:
                         user_album_id = user_album['id']
-                        # 构造用户专辑更新字段
-                        user_update_fields = [
-                            'album_name = %s',
-                            'singer = %s',
-                            'release_year = %s',
-                            'cover_img = %s',
-                            'tags = %s',
-                            'main_type = %s',
-                            'my_score = %s'
-                        ]
-                        user_params = [
-                            data.get('album_name', album['album_name']),
-                            data.get('singer', album['singer']),
-                            data.get('release_year', album['release_year']),
-                            data.get('cover_img', album['cover_img']),
-                            json.dumps(safe_json_loads(data.get('tags', album.get('tags'))) or []),
-                            json.dumps(safe_json_loads(data.get('main_type', album.get('main_type'))) or []),
-                            data.get('my_score', album['my_score'])
-                        ]
 
-                        # ========== 核心修复2：tracks非空才同步 ==========
-                        if sync_tracks and sync_tracks != "[]":
-                            user_update_fields.append('tracks = %s')
-                            user_params.append(sync_tracks)
+                        # ========== 修复点1：分情况构造SQL，避免参数不匹配 ==========
+                        # 情况1：需要同步tracks
+                        if sync_tracks and sync_tracks != '[]':
+                            user_update_sql = f'''
+                                UPDATE `{table_name}` 
+                                SET 
+                                    `album_name` = %s,
+                                    `singer` = %s,
+                                    `release_year` = %s,
+                                    `cover_img` = %s,
+                                    `tags` = %s,
+                                    `main_type` = %s,
+                                    `my_score` = %s,
+                                    `tracks` = %s
+                                WHERE `id` = %s
+                            '''
+                            user_params = [
+                                force_sync_fields['album_name'],
+                                force_sync_fields['singer'],
+                                force_sync_fields['release_year'],
+                                data.get('cover_img', album['cover_img']),
+                                json.dumps(safe_json_loads(data.get('tags', album.get('tags'))) or []),
+                                json.dumps(safe_json_loads(data.get('main_type', album.get('main_type'))) or []),
+                                data.get('my_score', album['my_score']),
+                                sync_tracks,  # tracks参数
+                                user_album_id
+                            ]
+                        # 情况2：不需要同步tracks
+                        else:
+                            user_update_sql = f'''
+                                UPDATE `{table_name}` 
+                                SET 
+                                    `album_name` = %s,
+                                    `singer` = %s,
+                                    `release_year` = %s,
+                                    `cover_img` = %s,
+                                    `tags` = %s,
+                                    `main_type` = %s,
+                                    `my_score` = %s
+                                WHERE `id` = %s
+                            '''
+                            user_params = [
+                                force_sync_fields['album_name'],
+                                force_sync_fields['singer'],
+                                force_sync_fields['release_year'],
+                                data.get('cover_img', album['cover_img']),
+                                json.dumps(safe_json_loads(data.get('tags', album.get('tags'))) or []),
+                                json.dumps(safe_json_loads(data.get('main_type', album.get('main_type'))) or []),
+                                data.get('my_score', album['my_score']),
+                                user_album_id
+                            ]
 
-                        # 加入WHERE条件
-                        user_update_fields.append('id = %s')
-                        user_params.append(user_album_id)
-
-                        # 执行单条更新（避免批量更新的空覆盖问题）
-                        user_update_sql = f'''
-                            UPDATE `{table_name}` 
-                            SET {', '.join(user_update_fields)}
-                            WHERE id = %s
-                        '''
+                        # 执行更新（参数数量和占位符完全匹配）
                         cursor.execute(user_update_sql, user_params)
                         sync_count += 1
 
                 except Exception as e:
-                    print(f"❌ 同步表 {table_name} 失败：{str(e)}")
+                    print(f"❌ 同步用户表 {table_name} 失败：{str(e)}")
                     continue
-            # ========== 同步逻辑结束 ==========
 
-            db.commit()  # 提交事务
+            db.commit()
             cursor.close()
 
             return jsonify({
                 "code": 200,
-                "msg": f"成功修改ID为{pool_id}的公共专辑！同步更新了{sync_count}条用户数据",
+                "msg": f"成功修改ID为{pool_id}的公共专辑！强制同步{sync_count}条用户数据（专辑名/歌手/发行时间已强制更新）",
                 "data": {
                     "sync_count": sync_count,
                     "new_version": new_version,
-                    "update_log": update_log
+                    "update_log": update_log,
+                    "force_sync_fields": force_sync_fields
                 }
             })
         except Exception as e:
             print(f"❌ 修改公共专辑失败：{str(e)}")
             print(traceback.format_exc())
-            # 异常时回滚事务，防止数据不一致
             if 'db' in locals():
                 db.rollback()
             if 'cursor' in locals():

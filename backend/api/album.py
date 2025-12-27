@@ -6,6 +6,7 @@ from ..decorators import login_required
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, VALID_SORT_FIELDS
 import pymysql
 
+
 def register_album_routes(app):
     """注册专辑基础操作路由（需传入Flask app实例）"""
 
@@ -319,7 +320,7 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 500
 
-    # 4. 添加专辑接口（核心修改：补充tracks写入album_pool）
+    # 4. 添加专辑接口（核心修改：防重复校验 + 补充tracks写入album_pool）
     @app.route('/api/album/add', methods=['POST', 'OPTIONS'])
     @login_required
     def add_album():
@@ -336,6 +337,42 @@ def register_album_routes(app):
                 if not data.get(field):
                     return jsonify({"code": 400, "msg": f"{field}不能为空！"}), 400
 
+            # ========== 核心新增：防重复校验（专辑名+歌手+发行时间） ==========
+            album_name = data.get('album_name').strip()
+            singer = data.get('singer').strip()
+            release_year = int(data.get('release_year'))
+
+            db = get_db()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+
+            # 1. 校验公共专辑池是否已存在
+            cursor.execute('''
+                SELECT id FROM album_pool 
+                WHERE album_name = %s AND singer = %s AND release_year = %s
+            ''', (album_name, singer, release_year))
+            existing_pool_album = cursor.fetchone()
+            if existing_pool_album:
+                cursor.close()
+                return jsonify({
+                    "code": 409,
+                    "msg": f"公共专辑池中已存在【{album_name} - {singer} ({release_year})】，无法重复创建！",
+                    "data": {"pool_id": existing_pool_album['id']}
+                }), 409
+
+            # 2. 校验用户私有表是否已存在
+            cursor.execute(f'''
+                SELECT id FROM `{table_name}` 
+                WHERE album_name = %s AND singer = %s AND release_year = %s
+            ''', (album_name, singer, release_year))
+            existing_user_album = cursor.fetchone()
+            if existing_user_album:
+                cursor.close()
+                return jsonify({
+                    "code": 409,
+                    "msg": f"你的专辑中已存在【{album_name} - {singer} ({release_year})】，无法重复添加！",
+                    "data": {"album_id": existing_user_album['id']}
+                }), 409
+
             # ========== 核心修改1：处理tracks默认值（兼容MySQL TEXT无默认值） ==========
             def get_default_tracks_value(tracks_data):
                 if not tracks_data:
@@ -349,10 +386,10 @@ def register_album_routes(app):
                     return json.dumps([])
 
             new_album = {
-                "album_name": data.get('album_name').strip(),
+                "album_name": album_name,
                 "cover_img": data.get('cover_img', '').strip(),
-                "singer": data.get('singer').strip(),
-                "release_year": int(data.get('release_year')),
+                "singer": singer,
+                "release_year": release_year,
                 "start_time": data.get('start_time', ''),
                 "track_count": int(data.get('track_count', 0)),
                 "track_duration": data.get('track_duration', ''),
@@ -374,34 +411,14 @@ def register_album_routes(app):
                     "update_time": ""
                 }) or "",
                 "score": float(data.get('score', 0.0)),
-                "comments": json.dumps([]) or ""
+                "comments": json.dumps([]) or "",
+                # ========== 核心新增：同步相关字段默认值（和copy逻辑一致） ==========
+                "source_pool_id": 0,  # 先初始化，后续赋值为刚创建的公共专辑池ID
+                "sync_pool_update": 1,  # 默认开启同步
+                "is_customized": 0  # 默认未自定义
             }
 
-            db = get_db()
-            cursor = db.cursor()
-            # 插入用户专属表（原有逻辑不变）
-            cursor.execute(f'''
-                INSERT INTO `{table_name}` (
-                    album_name, cover_img, singer, release_year, start_time,
-                    track_count, track_duration, my_score, burn_class, duration_type,
-                    tags, main_type, code, video_shared, mandopop_code,
-                    tracks, review, score, comments
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s
-                )
-            ''', (
-                new_album['album_name'], new_album['cover_img'], new_album['singer'],
-                new_album['release_year'], new_album['start_time'], new_album['track_count'],
-                new_album['track_duration'], new_album['my_score'], new_album['burn_class'],
-                new_album['duration_type'], new_album['tags'], new_album['main_type'],
-                new_album['code'], new_album['video_shared'], new_album['mandopop_code'],
-                new_album['tracks'], new_album['review'], new_album['score'],
-                new_album['comments']
-            ))
-            new_album_id = cursor.lastrowid
-
-            # ========== 核心修改2：插入album_pool时补充tracks字段 ==========
+            # ========== 核心修改2：先插入公共专辑池，获取pool_id ==========
             main_type_str = json.dumps(data.get('main_type', [])) if data.get('main_type') else ""
             tracks_str = get_default_tracks_value(data.get('tracks', []))  # 处理默认值
             cursor.execute('''
@@ -420,6 +437,38 @@ def register_album_routes(app):
                 new_album['my_score'],
                 current_user_id
             ))
+            # 获取刚创建的公共专辑池ID
+            new_pool_id = cursor.lastrowid
+            # 给source_pool_id赋值
+            new_album['source_pool_id'] = new_pool_id
+
+            # ========== 核心修改3：插入用户专属表时，新增source_pool_id等同步字段 ==========
+            cursor.execute(f'''
+                INSERT INTO `{table_name}` (
+                    album_name, cover_img, singer, release_year, start_time,
+                    track_count, track_duration, my_score, burn_class, duration_type,
+                    tags, main_type, code, video_shared, mandopop_code,
+                    tracks, review, score, comments,
+                    source_pool_id, sync_pool_update, is_customized  -- 新增同步字段
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s  -- 同步字段对应的值
+                )
+            ''', (
+                new_album['album_name'], new_album['cover_img'], new_album['singer'],
+                new_album['release_year'], new_album['start_time'], new_album['track_count'],
+                new_album['track_duration'], new_album['my_score'], new_album['burn_class'],
+                new_album['duration_type'], new_album['tags'], new_album['main_type'],
+                new_album['code'], new_album['video_shared'], new_album['mandopop_code'],
+                new_album['tracks'], new_album['review'], new_album['score'],
+                new_album['comments'],
+                # 同步字段的值
+                new_album['source_pool_id'],
+                new_album['sync_pool_update'],
+                new_album['is_customized']
+            ))
+            new_album_id = cursor.lastrowid
 
             db.commit()
             cursor.close()
@@ -440,6 +489,11 @@ def register_album_routes(app):
         except Exception as e:
             print(f"❌ 添加专辑出错：{str(e)}")
             print(traceback.format_exc())
+            # 异常时回滚事务
+            if 'db' in locals():
+                db.rollback()
+            if 'cursor' in locals():
+                cursor.close()
             return jsonify({"code": 500, "msg": f"添加专辑失败：{str(e)}"}), 500
 
     # 5. 删除专辑（删除用户专属表数据）
