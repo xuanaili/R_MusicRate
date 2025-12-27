@@ -1,7 +1,7 @@
-# MusicRate\backend\api\album_pool.py 专辑搜索池接口 - 搜索、复制、详情
 from flask import request, jsonify, g
 import json
 import traceback
+import random
 from ..db_utils import get_db, get_album_table_name, get_current_user_id
 from ..decorators import login_required
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE
@@ -11,6 +11,89 @@ import pymysql.cursors
 
 def register_album_pool_routes(app):
     """注册专辑搜索池相关路由"""
+
+    # ========== 修复：获取专辑标签统计接口（气泡图用） - 修正数据来源 ==========
+    @app.route('/api/album/<int:album_pool_id>/tag-statistics', methods=['GET', 'OPTIONS'])
+    @login_required
+    def get_tag_statistics(album_pool_id):
+        try:
+            db = get_db()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+
+            # 修复：从所有用户的专辑表中统计标签（而非仅user_album_relation）
+            # 步骤1：获取所有用户专辑表
+            cursor.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "albums_%"')
+            user_tables = cursor.fetchall()
+
+            # 步骤2：统计所有用户对该专辑的标签
+            tag_count = {}
+            total_tags = 0
+
+            # 先查公共专辑池的基础标签
+            cursor.execute('SELECT tags FROM album_pool WHERE id = %s', (album_pool_id,))
+            pool_album = cursor.fetchone()
+            if pool_album and pool_album['tags']:
+                try:
+                    pool_tags = json.loads(pool_album['tags'])
+                    for tag in pool_tags:
+                        tag = tag.strip()
+                        if tag:
+                            tag_count[tag] = tag_count.get(tag, 0) + 1
+                            total_tags += 1
+                except:
+                    pass
+
+            # 遍历所有用户表统计标签
+            for table in user_tables:
+                table_name = table['TABLE_NAME']
+                try:
+                    # 查询该用户表中关联到当前专辑池的专辑
+                    cursor.execute(f'''
+                        SELECT tags FROM `{table_name}` 
+                        WHERE source_pool_id = %s AND tags IS NOT NULL
+                    ''', (album_pool_id,))
+                    user_albums = cursor.fetchall()
+                    print(album_pool_id)
+                    for album in user_albums:
+                        if album['tags']:
+                            try:
+                                tags = json.loads(album['tags'])
+                                for tag in tags:
+                                    tag = tag.strip()
+                                    if tag:
+                                        tag_count[tag] = tag_count.get(tag, 0) + 1
+                                        total_tags += 1
+                            except:
+                                continue
+                except Exception as e:
+                    print(f"统计用户表 {table_name} 失败：{str(e)}")
+                    continue
+
+            # 步骤3：计算占比，过滤<10%的标签
+            result = []
+            if total_tags > 0:
+                for tag, count in tag_count.items():
+                    percent = (count / total_tags) * 100
+                    if percent >= 10:
+                        # 计算气泡大小（按占比动态调整）
+                        size = int(percent * 2 + 40)
+                        # 随机生成颜色
+                        color = f"#{random.randint(0, 0xFFFFFF):06x}"
+                        result.append({
+                            "tag": tag,
+                            "count": count,
+                            "percent": round(percent, 1),
+                            "size": size,
+                            "color": color
+                        })
+
+            cursor.close()
+            print(f"专辑{album_pool_id}标签统计结果：{result}")
+            return jsonify({"code": 200, "msg": "成功", "data": result})
+        except Exception as e:
+            print(f"❌ 标签统计失败：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"统计失败：{str(e)}"}), 500
 
     # 1. 获取专辑搜索池详情（完整修复：新增tracks字段返回+JSON容错）
     @app.route('/api/album/pool/detail/<int:pool_id>', methods=['GET'])
@@ -233,7 +316,8 @@ def register_album_pool_routes(app):
             update_fields = []
             params = []
             # 允许修改的字段新增tracks
-            allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score', 'tracks']
+            allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score',
+                              'tracks']
             update_log = []  # 记录字段修改前后的值
 
             # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
@@ -352,6 +436,7 @@ def register_album_pool_routes(app):
                         user_update_sql = f'''
                             UPDATE `{table_name}` 
                             SET {', '.join(user_update_fields)}
+                            WHERE id = %s
                         '''
                         cursor.execute(user_update_sql, user_params)
                         sync_count += 1
@@ -510,8 +595,8 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"复制专辑失败：{str(e)}"}), 500
 
-    # 6. 获取专辑池ID接口（无需修改）
-    @app.route('/api/album_pool/get_id', methods=['GET'])
+    # 6. 获取专辑池ID接口（修正路由路径，和前端保持一致）
+    @app.route('/api/album_pool/get_id', methods=['GET', 'OPTIONS'])
     @login_required
     def get_album_pool_id():
         try:

@@ -1,11 +1,10 @@
-# MusicRate\backend\api\album.py 专辑基础操作接口 - 增删改查、列表、详情
 from flask import request, jsonify
 import json
 import traceback
 from ..db_utils import get_db, get_album_table_name, get_current_user_id
 from ..decorators import login_required
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, VALID_SORT_FIELDS
-
+import pymysql
 
 def register_album_routes(app):
     """注册专辑基础操作路由（需传入Flask app实例）"""
@@ -38,7 +37,7 @@ def register_album_routes(app):
 
             table_name = get_album_table_name(current_user_id)
             db = get_db()
-            cursor = db.cursor()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
             cursor.execute(f'SELECT COUNT(*) as total FROM `{table_name}`')
             total = cursor.fetchone()['total']
@@ -90,7 +89,11 @@ def register_album_routes(app):
                     "review": safe_json_loads(album["review"]) if safe_json_loads(album["review"]) is not None else {},
                     "score": album["score"],
                     # 修复comments解析
-                    "comments": safe_json_loads(album["comments"])
+                    "comments": safe_json_loads(album["comments"]),
+                    # 新增：同步相关字段（用于前端展示同步状态）
+                    "source_pool_id": album.get("source_pool_id"),
+                    "sync_pool_update": album.get("sync_pool_update", 1),
+                    "is_customized": album.get("is_customized", 0)
                 }
                 album_list.append(album_dict)
 
@@ -185,6 +188,70 @@ def register_album_routes(app):
         except Exception as e:
             return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 500
 
+    # ========== 优化：保存用户专辑标签接口 - 同步更新统计 ==========
+    @app.route('/api/album/update/tags/<int:album_id>', methods=['PUT', 'OPTIONS'])
+    @login_required
+    def update_album_tags(album_id):
+        try:
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+
+            data = request.get_json()
+            tags = data.get('tags', [])
+
+            # 校验标签：最多5个，去重，过滤空值
+            tags = list(set([tag.strip() for tag in tags if tag.strip()]))[:5]
+            tags_json = json.dumps(tags)
+
+            # 更新用户私有专辑的标签
+            table_name = get_album_table_name(current_user_id)
+            db = get_db()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+
+            # 检查专辑是否存在
+            cursor.execute(f'SELECT id, source_pool_id FROM `{table_name}` WHERE id = %s', (album_id,))
+            album = cursor.fetchone()
+            if not album:
+                cursor.close()
+                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+
+            # 更新用户专辑标签
+            cursor.execute(f'''
+                UPDATE `{table_name}` 
+                SET tags = %s 
+                WHERE id = %s
+            ''', (tags_json, album_id))
+
+            # 同步更新到公共专辑关联表（如果关联了公共专辑）
+            pool_id = album.get('source_pool_id')
+            if pool_id:
+                cursor.execute('''
+                    SELECT id FROM user_album_relation 
+                    WHERE user_id = %s AND album_pool_id = %s
+                ''', (current_user_id, pool_id))
+                relation = cursor.fetchone()
+                if relation:
+                    cursor.execute('''
+                        UPDATE user_album_relation 
+                        SET tags = %s 
+                        WHERE id = %s
+                    ''', (tags_json, relation['id']))
+                else:
+                    # 没有关联记录则新增
+                    cursor.execute('''
+                        INSERT INTO user_album_relation (user_id, album_pool_id, tags)
+                        VALUES (%s, %s, %s)
+                    ''', (current_user_id, pool_id, tags_json))
+
+            db.commit()
+            cursor.close()
+            return jsonify({"code": 200, "msg": "标签保存成功", "data": {"tags": tags}})
+        except Exception as e:
+            print(f"❌ 保存标签失败：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"保存标签失败：{str(e)}"}), 500
+
     # 3. 补充专辑详情接口（关键：加OPTIONS，逻辑和列表一致）
     @app.route('/api/album/detail/<int:album_id>', methods=['GET', 'OPTIONS'])
     @login_required
@@ -196,7 +263,7 @@ def register_album_routes(app):
 
             table_name = get_album_table_name(current_user_id)
             db = get_db()
-            cursor = db.cursor()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
             cursor.execute(f'SELECT * FROM `{table_name}` WHERE id = %s', (album_id,))
             album = cursor.fetchone()
@@ -235,7 +302,11 @@ def register_album_routes(app):
                 "tracks": safe_json_loads(album["tracks"]),
                 "review": safe_json_loads(album["review"]) if safe_json_loads(album["review"]) is not None else {},
                 "score": album["score"],
-                "comments": safe_json_loads(album["comments"])
+                "comments": safe_json_loads(album["comments"]),
+                # 新增：同步相关字段
+                "source_pool_id": album.get("source_pool_id"),
+                "sync_pool_update": album.get("sync_pool_update", 1),
+                "is_customized": album.get("is_customized", 0)
             }
 
             return jsonify({
