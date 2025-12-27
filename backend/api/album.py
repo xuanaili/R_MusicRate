@@ -16,7 +16,7 @@ def register_album_routes(app):
     def album_list_compatible():
         return get_album_list()
 
-    # 2. 获取专辑列表（完全保留你原来的逻辑）
+    # 2. 获取专辑列表（完全保留你原来的逻辑 + 修复JSON解析容错）
     @app.route('/api/music', methods=['GET', 'OPTIONS'])  # 仅加OPTIONS
     @login_required
     def get_album_list():
@@ -25,7 +25,7 @@ def register_album_routes(app):
             if current_user_id is None:
                 return jsonify({"code": 401, "msg": "用户未登录！"}), 401
 
-            # 以下所有代码完全保留你原来的版本，一字不改
+            # 以下所有代码完全保留你原来的版本，仅修改JSON解析部分
             page = int(request.args.get('page', DEFAULT_PAGE))
             page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
             sort_by = request.args.get('sort_by', 'album_name')
@@ -53,6 +53,16 @@ def register_album_routes(app):
             albums = cursor.fetchall()
             cursor.close()
 
+            # ========== 核心修复：新增JSON解析容错函数 ==========
+            def safe_json_loads(s):
+                """安全解析JSON字符串，兼容空值/空字符串/非法JSON"""
+                if not s:  # None/空字符串/空值
+                    return []
+                try:
+                    return json.loads(s)
+                except (json.JSONDecodeError, TypeError):
+                    return []
+
             album_list = []
             for album in albums:
                 album_dict = {
@@ -67,15 +77,20 @@ def register_album_routes(app):
                     "my_score": album["my_score"],
                     "burn_class": album["burn_class"],
                     "duration_type": album["duration_type"],
-                    "tags": json.loads(album["tags"] or "") if album["tags"] is not None else [],
-                    "main_type": json.loads(album["main_type"] or "") if album["main_type"] is not None else [],
+                    # 修复tags解析
+                    "tags": safe_json_loads(album["tags"]),
+                    # 修复main_type解析（核心错误点）
+                    "main_type": safe_json_loads(album["main_type"]),
                     "code": album["code"],
                     "video_shared": album["video_shared"],
                     "mandopop_code": album["mandopop_code"],
-                    "tracks": json.loads(album["tracks"] or "") if album["tracks"] is not None else [],
-                    "review": json.loads(album["review"] or "") if album["review"] is not None else {},
+                    # 修复tracks解析
+                    "tracks": safe_json_loads(album["tracks"]),
+                    # 修复review解析（注意review是字典，容错为{}）
+                    "review": safe_json_loads(album["review"]) if safe_json_loads(album["review"]) is not None else {},
                     "score": album["score"],
-                    "comments": json.loads(album["comments"] or "") if album["comments"] is not None else []
+                    # 修复comments解析
+                    "comments": safe_json_loads(album["comments"])
                 }
                 album_list.append(album_dict)
 
@@ -169,6 +184,7 @@ def register_album_routes(app):
             })
         except Exception as e:
             return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 500
+
     # 3. 补充专辑详情接口（关键：加OPTIONS，逻辑和列表一致）
     @app.route('/api/album/detail/<int:album_id>', methods=['GET', 'OPTIONS'])
     @login_required
@@ -189,7 +205,16 @@ def register_album_routes(app):
             if not album:
                 return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
 
-            # 解析逻辑和列表完全一致
+            # ========== 新增容错函数 ==========
+            def safe_json_loads(s):
+                if not s:
+                    return []
+                try:
+                    return json.loads(s)
+                except (json.JSONDecodeError, TypeError):
+                    return []
+
+            # 解析逻辑和列表完全一致（使用容错函数）
             album_dict = {
                 "id": album["id"],
                 "album_name": album["album_name"],
@@ -202,15 +227,15 @@ def register_album_routes(app):
                 "my_score": album["my_score"],
                 "burn_class": album["burn_class"],
                 "duration_type": album["duration_type"],
-                "tags": json.loads(album["tags"] or "") if album["tags"] is not None else [],
-                "main_type": json.loads(album["main_type"] or "") if album["main_type"] is not None else [],
+                "tags": safe_json_loads(album["tags"]),
+                "main_type": safe_json_loads(album["main_type"]),
                 "code": album["code"],
                 "video_shared": album["video_shared"],
                 "mandopop_code": album["mandopop_code"],
-                "tracks": json.loads(album["tracks"] or "") if album["tracks"] is not None else [],
-                "review": json.loads(album["review"] or "") if album["review"] is not None else {},
+                "tracks": safe_json_loads(album["tracks"]),
+                "review": safe_json_loads(album["review"]) if safe_json_loads(album["review"]) is not None else {},
                 "score": album["score"],
-                "comments": json.loads(album["comments"] or "") if album["comments"] is not None else []
+                "comments": safe_json_loads(album["comments"])
             }
 
             return jsonify({
@@ -223,11 +248,10 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 500
 
-    # 4. 添加专辑接口（仅加OPTIONS，其他保留你原来的逻辑）
+    # 4. 添加专辑接口（核心修改：补充tracks写入album_pool）
     @app.route('/api/album/add', methods=['POST', 'OPTIONS'])
     @login_required
     def add_album():
-        # 完全保留你原来的add_album代码，一字不改
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
@@ -236,10 +260,22 @@ def register_album_routes(app):
             data = request.get_json()
             table_name = get_album_table_name(current_user_id)
 
-            required_fields = ['album_name', 'singer', 'release_year', 'main_type']
+            required_fields = ['album_name', 'singer', 'release_year']
             for field in required_fields:
                 if not data.get(field):
                     return jsonify({"code": 400, "msg": f"{field}不能为空！"}), 400
+
+            # ========== 核心修改1：处理tracks默认值（兼容MySQL TEXT无默认值） ==========
+            def get_default_tracks_value(tracks_data):
+                if not tracks_data:
+                    return json.dumps([])
+                if isinstance(tracks_data, list):
+                    return json.dumps(tracks_data)
+                try:
+                    json.loads(tracks_data)
+                    return tracks_data
+                except:
+                    return json.dumps([])
 
             new_album = {
                 "album_name": data.get('album_name').strip(),
@@ -272,6 +308,7 @@ def register_album_routes(app):
 
             db = get_db()
             cursor = db.cursor()
+            # 插入用户专属表（原有逻辑不变）
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
@@ -293,12 +330,14 @@ def register_album_routes(app):
             ))
             new_album_id = cursor.lastrowid
 
+            # ========== 核心修改2：插入album_pool时补充tracks字段 ==========
             main_type_str = json.dumps(data.get('main_type', [])) if data.get('main_type') else ""
+            tracks_str = get_default_tracks_value(data.get('tracks', []))  # 处理默认值
             cursor.execute('''
                 INSERT INTO album_pool (
                     album_name, cover_img, singer, release_year, 
-                    main_type, tags, my_score, create_user
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    main_type, tags, tracks, my_score, create_user
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 new_album['album_name'],
                 new_album['cover_img'],
@@ -306,6 +345,7 @@ def register_album_routes(app):
                 new_album['release_year'],
                 main_type_str,
                 new_album['tags'],
+                tracks_str,  # 新增：写入tracks字段
                 new_album['my_score'],
                 current_user_id
             ))

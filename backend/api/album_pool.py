@@ -12,7 +12,7 @@ import pymysql.cursors
 def register_album_pool_routes(app):
     """注册专辑搜索池相关路由"""
 
-    # 1. 获取专辑搜索池详情（修复路由多写的<符号 + 字段名错误）
+    # 1. 获取专辑搜索池详情（完整修复：新增tracks字段返回+JSON容错）
     @app.route('/api/album/pool/detail/<int:pool_id>', methods=['GET'])
     @login_required
     def get_pool_album_detail(pool_id):
@@ -20,7 +20,7 @@ def register_album_pool_routes(app):
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # 核心修复：用u.username（不是u.user_name）匹配users表的用户名字段
+            # 核心修复：用u.username匹配users表的用户名字段
             cursor.execute('''
                 SELECT ap.*, u.username as create_user_name 
                 FROM album_pool ap
@@ -33,11 +33,20 @@ def register_album_pool_routes(app):
             if not album:
                 return jsonify({"code": 404, "msg": "未找到该公共专辑"}), 404
 
-            # 处理JSON字段
-            if album.get('tags'):
-                album['tags'] = json.loads(album['tags'])
-            if album.get('main_type'):
-                album['main_type'] = json.loads(album['main_type'])
+            # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
+            def safe_json_loads(s):
+                if s is None or s == "":
+                    return None
+                try:
+                    return json.loads(s)
+                except (json.JSONDecodeError, TypeError):
+                    return None
+
+            # 处理所有JSON字段（包含tracks）
+            album['tags'] = safe_json_loads(album.get('tags')) or []
+            album['main_type'] = safe_json_loads(album.get('main_type')) or []
+            # 核心：处理tracks字段（兼容字典/数组/空值）
+            album['tracks'] = safe_json_loads(album.get('tracks')) or []
 
             # 无匹配用户时，显示"未知用户"
             if not album.get('create_user_name'):
@@ -53,7 +62,7 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取失败：{str(e)}"}), 500
 
-    # 2. 专辑搜索池 - 搜索接口（修复字段名错误）
+    # 2. 专辑搜索池 - 搜索接口（完整修复：新增tracks字段返回）
     @app.route('/api/album/pool/search', methods=['GET'])
     @login_required
     def search_album_pool():
@@ -79,8 +88,8 @@ def register_album_pool_routes(app):
             """
             params = []
             if keyword:
-                query += " AND (ap.album_name LIKE %s OR ap.singer LIKE %s OR ap.tags LIKE %s OR ap.main_type LIKE %s)"
-                params.extend([f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%'])
+                query += " AND (ap.album_name LIKE %s OR ap.singer LIKE %s OR ap.tags LIKE %s OR ap.main_type LIKE %s OR ap.tracks LIKE %s)"
+                params.extend([f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%'])
 
             # 查询总条数（修复字段名引用）
             count_query = query.replace("SELECT ap.*, u.username as create_user_name", "SELECT COUNT(*) as total")
@@ -94,7 +103,16 @@ def register_album_pool_routes(app):
             album_list = cursor.fetchall()
             cursor.close()
 
-            # 解析结果
+            # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
+            def safe_json_loads(s):
+                if s is None or s == "":
+                    return None
+                try:
+                    return json.loads(s)
+                except (json.JSONDecodeError, TypeError):
+                    return None
+
+            # 解析结果（新增tracks字段）
             result_list = []
             for album in album_list:
                 # 无用户名时显示"未知用户"
@@ -106,12 +124,14 @@ def register_album_pool_routes(app):
                     "cover_img": album['cover_img'],
                     "singer": album['singer'],
                     "release_year": album['release_year'],
-                    "main_type": json.loads(album['main_type']) if album['main_type'] else [],
-                    "tags": json.loads(album['tags']) if album['tags'] else [],
+                    "main_type": safe_json_loads(album.get('main_type')) or [],
+                    "tags": safe_json_loads(album.get('tags')) or [],
+                    "tracks": safe_json_loads(album.get('tracks')) or [],  # 新增tracks字段
                     "my_score": album['my_score'],
                     "create_user": album['create_user'],  # 保留原user_id
                     "create_user_name": create_user_name,  # 新增：用户名
-                    "create_time": album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album['create_time'] else ''
+                    "create_time": album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album.get(
+                        'create_time') else ''
                 })
 
             total_pages = (total + page_size - 1) // page_size
@@ -175,8 +195,7 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"删除公共专辑失败：{str(e)}"}), 500
 
-    # 新增：修改公共专辑接口（仅管理员可调用）
-    # 新增：修改公共专辑接口（仅管理员可调用）
+    # 4. 修改公共专辑接口（仅管理员可调用，新增tracks字段支持 + 核心修复tracks同步置空问题）
     @app.route('/api/album/pool/update/<int:pool_id>', methods=['PUT', 'OPTIONS'])
     @login_required
     def update_pool_album(pool_id):
@@ -210,15 +229,45 @@ def register_album_pool_routes(app):
                 cursor.close()
                 return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！"}), 404
 
-            # 4. 构造更新字段 + 记录修改日志
+            # 4. 构造更新字段 + 记录修改日志（新增tracks字段支持）
             update_fields = []
             params = []
-            allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score']
+            # 允许修改的字段新增tracks
+            allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score', 'tracks']
             update_log = []  # 记录字段修改前后的值
 
+            # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
+            def safe_json_loads(s):
+                if s is None or s == "":
+                    return None
+                try:
+                    return json.loads(s)
+                except (json.JSONDecodeError, TypeError):
+                    return None
+
+            # ========== 核心修复1：预处理tracks，过滤空值 ==========
+            # 解析公共专辑原有tracks
+            original_pool_tracks = safe_json_loads(album.get('tracks')) or []
+            # 解析前端提交的tracks
+            new_pool_tracks = data.get('tracks')
+            # 过滤空值：确保是有效非空数组
+            if isinstance(new_pool_tracks, list):
+                new_pool_tracks = [track.strip() for track in new_pool_tracks if track and track.strip()]
+            else:
+                # 非数组格式，用原有值
+                new_pool_tracks = original_pool_tracks
+
             for field in allowed_fields:
-                if field in data and data[field] != album[field]:
-                    # 记录修改日志
+                if field == 'tracks':
+                    # tracks字段单独处理：只在前端传了有效非空tracks时才更新
+                    if new_pool_tracks and new_pool_tracks != original_pool_tracks:
+                        old_val = json.dumps(original_pool_tracks)
+                        new_val = json.dumps(new_pool_tracks)
+                        update_log.append(f"{field}：{old_val} → {new_val}")
+                        update_fields.append(f"{field} = %s")
+                        params.append(json.dumps(new_pool_tracks))
+                elif field in data and data[field] != album[field]:
+                    # 其他字段原有逻辑
                     old_val = album[field] if album[field] is not None else ""
                     new_val = data[field] if data[field] is not None else ""
                     update_log.append(f"{field}：{old_val} → {new_val}")
@@ -249,53 +298,64 @@ def register_album_pool_routes(app):
             update_sql = f"UPDATE album_pool SET {', '.join(update_fields)} WHERE id = %s"
             cursor.execute(update_sql, params)
 
-            # ========== 核心同步逻辑（修复所有已知问题） ==========
+            # ========== 核心同步逻辑（修复tracks同步置空问题） ==========
             # 7. 获取所有用户专辑表（修复：字段名大写 TABLE_NAME）
             cursor.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "albums_%"')
             user_tables = cursor.fetchall()
             sync_count = 0  # 累计同步成功的用户数据条数
 
+            # 准备同步数据（确保tracks是JSON字符串且非空）
+            sync_tracks = json.dumps(new_pool_tracks) if new_pool_tracks else album.get('tracks')
+
             for table in user_tables:
                 table_name = table['TABLE_NAME']  # 修复：大写字段名取值
                 try:
-                    # 处理JSON字段容错（避免解析失败）
-                    sync_tags = data.get('tags', [])
-                    if isinstance(sync_tags, str):
-                        try:
-                            sync_tags = json.loads(sync_tags)
-                        except:
-                            sync_tags = album.get('tags', [])
-                            if isinstance(sync_tags, str):
-                                sync_tags = json.loads(sync_tags) if sync_tags else []
-
-                    sync_main_type = data.get('main_type', [])
-                    if isinstance(sync_main_type, str):
-                        try:
-                            sync_main_type = json.loads(sync_main_type)
-                        except:
-                            sync_main_type = album.get('main_type', [])
-                            if isinstance(sync_main_type, str):
-                                sync_main_type = json.loads(sync_main_type) if sync_main_type else []
-
-                    # 8. 仅更新：关联当前模板 + 开启同步 + 未自定义的专辑
-                    sync_sql = f'''
-                        UPDATE `{table_name}` 
-                        SET album_name = %s, singer = %s, release_year = %s, cover_img = %s, 
-                            tags = %s, main_type = %s, my_score = %s
+                    # 先查询该表中需要同步的用户专辑（获取原有tracks，避免空覆盖）
+                    cursor.execute(f'''
+                        SELECT id FROM `{table_name}` 
                         WHERE source_pool_id = %s AND sync_pool_update = 1 AND is_customized = 0
-                    '''
-                    sync_params = [
-                        data.get('album_name', album['album_name']),
-                        data.get('singer', album['singer']),
-                        data.get('release_year', album['release_year']),
-                        data.get('cover_img', album['cover_img']),
-                        json.dumps(sync_tags),
-                        json.dumps(sync_main_type),
-                        data.get('my_score', album['my_score']),
-                        pool_id
-                    ]
-                    cursor.execute(sync_sql, sync_params)
-                    sync_count += cursor.rowcount  # 累加同步的记录数
+                    ''', (pool_id,))
+                    user_albums = cursor.fetchall()
+
+                    for user_album in user_albums:
+                        user_album_id = user_album['id']
+                        # 构造用户专辑更新字段
+                        user_update_fields = [
+                            'album_name = %s',
+                            'singer = %s',
+                            'release_year = %s',
+                            'cover_img = %s',
+                            'tags = %s',
+                            'main_type = %s',
+                            'my_score = %s'
+                        ]
+                        user_params = [
+                            data.get('album_name', album['album_name']),
+                            data.get('singer', album['singer']),
+                            data.get('release_year', album['release_year']),
+                            data.get('cover_img', album['cover_img']),
+                            json.dumps(safe_json_loads(data.get('tags', album.get('tags'))) or []),
+                            json.dumps(safe_json_loads(data.get('main_type', album.get('main_type'))) or []),
+                            data.get('my_score', album['my_score'])
+                        ]
+
+                        # ========== 核心修复2：tracks非空才同步 ==========
+                        if sync_tracks and sync_tracks != "[]":
+                            user_update_fields.append('tracks = %s')
+                            user_params.append(sync_tracks)
+
+                        # 加入WHERE条件
+                        user_update_fields.append('id = %s')
+                        user_params.append(user_album_id)
+
+                        # 执行单条更新（避免批量更新的空覆盖问题）
+                        user_update_sql = f'''
+                            UPDATE `{table_name}` 
+                            SET {', '.join(user_update_fields)}
+                        '''
+                        cursor.execute(user_update_sql, user_params)
+                        sync_count += 1
+
                 except Exception as e:
                     print(f"❌ 同步表 {table_name} 失败：{str(e)}")
                     continue
@@ -323,7 +383,7 @@ def register_album_pool_routes(app):
                 cursor.close()
             return jsonify({"code": 500, "msg": f"修改公共专辑失败：{str(e)}"})
 
-    # 4. 复制专辑接口（修复路由多写的<符号 + 新增同步字段写入）
+    # 5. 复制专辑接口（修复路由多写的<符号 + 新增同步字段 + tracks同步）
     @app.route('/api/album/pool/copy/<int:album_id>', methods=['POST'])
     @login_required
     def copy_album(album_id):
@@ -345,24 +405,38 @@ def register_album_pool_routes(app):
 
             table_name = get_album_table_name(current_user_id)
 
-            # 构造复制数据（新增同步相关字段）
+            # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
+            def safe_json_loads(s):
+                if s is None or s == "":
+                    return None
+                try:
+                    return json.loads(s)
+                except (json.JSONDecodeError, TypeError):
+                    return None
+
+            # ========== 修复：过滤tracks空值，确保复制的tracks有效 ==========
+            pool_tracks = safe_json_loads(pool_album.get('tracks')) or []
+            pool_tracks = [track.strip() for track in pool_tracks if track and track.strip()]
+            tracks_json = json.dumps(pool_tracks) if pool_tracks else json.dumps([])
+
+            # 构造复制数据（新增tracks字段同步）
             copy_album_data = {
                 "album_name": pool_album['album_name'],
                 "cover_img": pool_album['cover_img'],
                 "singer": pool_album['singer'],
                 "release_year": pool_album['release_year'],
                 "start_time": "",
-                "track_count": 0,
+                "track_count": len(pool_tracks),  # 同步track_count（基于有效tracks）
                 "track_duration": "",
                 "my_score": pool_album['my_score'],  # 同步模板的评分
                 "burn_class": "",
                 "duration_type": "",
                 "tags": pool_album['tags'],
                 "main_type": pool_album['main_type'],
+                "tracks": tracks_json,  # 修复：使用过滤后的tracks
                 "code": "",
                 "video_shared": "",
                 "mandopop_code": "",
-                "tracks": json.dumps([]),
                 "review": json.dumps({
                     "feelings": [],
                     "single_score": 0.0,
@@ -373,13 +447,13 @@ def register_album_pool_routes(app):
                 }),
                 "score": 0.0,
                 "comments": json.dumps([]),
-                # ========== 核心新增：同步相关字段 ==========
+                # 核心新增：同步相关字段
                 "source_pool_id": album_id,  # 关联公共模板ID
                 "sync_pool_update": 1,  # 默认开启同步
                 "is_customized": 0  # 默认未自定义
             }
 
-            # 插入SQL（新增3个同步字段）
+            # 插入SQL（新增tracks和同步字段）
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
@@ -408,7 +482,7 @@ def register_album_pool_routes(app):
                 copy_album_data['code'],
                 copy_album_data['video_shared'],
                 copy_album_data['mandopop_code'],
-                copy_album_data['tracks'],
+                copy_album_data['tracks'],  # 新增tracks参数
                 copy_album_data['review'],
                 copy_album_data['score'],
                 copy_album_data['comments'],
@@ -436,7 +510,7 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"复制专辑失败：{str(e)}"}), 500
 
-    # 5. 获取专辑池ID接口（无需修改）
+    # 6. 获取专辑池ID接口（无需修改）
     @app.route('/api/album_pool/get_id', methods=['GET'])
     @login_required
     def get_album_pool_id():

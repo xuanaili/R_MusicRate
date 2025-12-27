@@ -1,5 +1,4 @@
 <template>
-  <!-- 模板部分完全不变，无需修改 -->
   <div class="add-album-container">
     <h2>添加新专辑</h2>
     <!-- 专辑名 -->
@@ -7,7 +6,7 @@
       <label>专辑名：</label>
       <input v-model="album.album_name" type="text" placeholder="请输入专辑名">
     </div>
-    <!-- 封面图片：改回cover_img -->
+    <!-- 封面图片 -->
     <div class="form-item">
       <label>封面图片：</label>
       <div
@@ -32,26 +31,40 @@
       <label>发行年份：</label>
       <input v-model="album.release_year" type="number" placeholder="如：2024">
     </div>
-    <!-- 主类型（后端必填） -->
+
+    <!-- 核心：单曲列表（优化交互） -->
     <div class="form-item">
-      <label>主类型：</label>
-      <input v-model="album.main_type" type="text" placeholder="如：华语">
+      <label>单曲列表：</label>
+      <!-- 循环渲染单曲输入框 -->
+      <div class="song-item" v-for="(song, index) in album.songs" :key="index">
+        <div class="song-input-wrapper">
+          <span class="song-index">{{ index + 1 }}.</span>
+          <input
+            v-model="song.song_name"
+            type="text"
+            placeholder="请输入单曲名"
+            class="song-input"
+          >
+        </div>
+        <!-- 至少保留1个输入框才显示删除按钮 -->
+        <button
+          v-if="album.songs.length > 1"
+          @click="removeSong(index)"
+          class="btn-delete-song"
+        >
+          ×
+        </button>
+      </div>
+      <!-- 添加单曲按钮（优化样式，更突出） -->
+      <button @click="addSong" class="btn-add-song">+ 添加单曲</button>
     </div>
-    <!-- 标签（多个用逗号分隔） -->
-    <div class="form-item">
-      <label>标签（多个用逗号分隔）：</label>
-      <input v-model="tagInput" type="text" placeholder="如：经典,治愈">
-    </div>
-    <!-- 评分 -->
-    <div class="form-item">
-      <label>评分（0-10）：</label>
-      <input v-model="album.my_score" type="number" step="0.1" min="0" max="10" placeholder="如：8.5">
-    </div>
+
     <!-- 按钮区 -->
     <div class="btn-group">
-      <button @click="submitAlbum">提交专辑</button>
-      <button @click="goBack" class="cancel-btn">取消</button>
+      <button @click="submitAlbum" class="btn-submit">提交专辑</button>
+      <button @click="goBack" class="btn-cancel">取消</button>
     </div>
+    <!-- 错误提示 -->
     <div class="error-tip" v-if="errorMsg">{{ errorMsg }}</div>
   </div>
 </template>
@@ -61,27 +74,51 @@ export default {
   name: 'AddAlbum',
   data() {
     return {
-      // 改回后端实际字段
+      // 仅保留核心字段
       album: {
         album_name: "",
-        cover_img: "",  // 改回cover_img
+        cover_img: "",
         singer: "",
         release_year: "",
-        main_type: "",  // 后端必填字段
-        tags: [],
-        my_score: 0.0
+        // 单曲列表：初始1个空输入框
+        songs: [{ song_name: "" }]
       },
-      tagInput: "",
       errorMsg: "",
       isUploading: false
     };
   },
   created() {
+    // 登录校验：未登录跳转到登录页
     if (!localStorage.getItem('token')) {
       this.$router.push('/login');
     }
   },
   methods: {
+    // ========== 单曲列表核心方法 ==========
+    // 添加单曲输入框
+    addSong() {
+      this.album.songs.push({ song_name: "" });
+      // 清除之前的错误提示
+      this.errorMsg = "";
+      // 可选：新增后自动聚焦到新输入框（提升体验）
+      this.$nextTick(() => {
+        const inputs = document.querySelectorAll('.song-input');
+        if (inputs.length > 0) {
+          inputs[inputs.length - 1].focus();
+        }
+      });
+    },
+    // 删除指定索引的单曲输入框
+    removeSong(index) {
+      if (this.album.songs.length <= 1) {
+        this.errorMsg = "至少保留1首单曲！";
+        return;
+      }
+      this.album.songs.splice(index, 1);
+      this.errorMsg = "";
+    },
+
+    // ========== 封面上传相关方法 ==========
     handleDragOver(e) {
       e.preventDefault();
     },
@@ -103,7 +140,7 @@ export default {
       const file = e.target.files[0];
       if (file && file.type.startsWith('image/')) {
         this.uploadToImgBed(file);
-        e.target.value = "";
+        e.target.value = ""; // 清空文件选择器，避免重复选择同一文件无反应
       } else {
         this.errorMsg = "请选择有效的图片文件！";
       }
@@ -121,7 +158,7 @@ export default {
           timeout: 15000
         });
         if (res.data.code === 200) {
-          this.album.cover_img = res.data.data.img_url; // 改回cover_img
+          this.album.cover_img = res.data.data.img_url;
           alert("图片上传成功！已自动填充封面链接～");
         } else {
           this.errorMsg = "图片上传失败：" + res.data.msg;
@@ -133,16 +170,43 @@ export default {
         this.isUploading = false;
       }
     },
+
+    // ========== 提交专辑方法 ==========
     submitAlbum() {
       this.errorMsg = "";
-      // 处理标签
-      this.album.tags = this.tagInput ? this.tagInput.split(',').map(tag => tag.trim()) : [];
-      // 校验后端必填字段
-      if (!this.album.album_name || !this.album.singer || !this.album.release_year || !this.album.main_type) {
-        this.errorMsg = "专辑名、歌手、发行年份、主类型不能为空！";
+      // 1. 基础字段校验
+      if (!this.album.album_name.trim()) {
+        this.errorMsg = "专辑名不能为空！";
         return;
       }
-      // 调用后端实际添加接口
+      if (!this.album.singer.trim()) {
+        this.errorMsg = "歌手名不能为空！";
+        return;
+      }
+      if (!this.album.release_year || isNaN(this.album.release_year)) {
+        this.errorMsg = "请输入有效的发行年份！";
+        return;
+      }
+
+      // 2. 单曲列表校验：过滤空值并检查至少1首有效单曲
+      const validSongs = this.album.songs
+        .map(song => song.song_name.trim())
+        .filter(name => name); // 过滤空字符串
+      if (validSongs.length === 0) {
+        this.errorMsg = "至少填写1首单曲名！";
+        return;
+      }
+
+      // 3. 构造提交数据
+      const submitData = {
+        album_name: this.album.album_name.trim(),
+        cover_img: this.album.cover_img.trim(),
+        singer: this.album.singer.trim(),
+        release_year: Number(this.album.release_year),
+        tracks: validSongs // 仅传递有效单曲名数组
+      };
+
+      // 4. 调用后端接口
       this.$axios({
         url: "/api/album/add",
         method: "POST",
@@ -150,47 +214,39 @@ export default {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json'
         },
-        data: this.album
+        data: submitData
       })
-          .then(res => {
-            if (res.data.code === 200) {
-              alert("专辑添加成功！");
-              // 【可选优化】让用户选择跳回哪里
-              const goToPool = confirm("是否返回专辑搜索池？");
-              if (goToPool) {
-                this.$router.push("/album-pool"); // 跳回搜索池
-              } else {
-                this.$router.push("/music"); // 跳回我的专辑列表
-              }
-              // 如果不想加选择逻辑，保持原有代码即可：
-              // this.$router.push("/music");
-            } else {
-              this.errorMsg = res.data.msg;
-            }
-          })
-          .catch(err => {
-            console.error("添加专辑失败：", err);
-            this.errorMsg = "添加失败，请检查后端是否启动！";
-          });
+      .then(res => {
+        if (res.data.code === 200) {
+          alert("专辑添加成功！");
+          // 提交成功后跳回专辑列表
+          this.$router.push("/music");
+        } else {
+          this.errorMsg = res.data.msg;
+        }
+      })
+      .catch(err => {
+        console.error("添加专辑失败：", err);
+        this.errorMsg = "添加失败，请检查后端是否启动或网络连接！";
+      });
     },
+
+    // 取消按钮：返回上一页
     goBack() {
-      // 【核心修改点1】取消按钮从跳回/music改为跳回/album-pool
-      this.$router.push("/album-pool");
-      // 如果想保留原有逻辑（跳回我的专辑），就用下面这行：
-      // this.$router.push("/music");
+      this.$router.go(-1); // 通用返回，比固定路由更灵活
     }
   }
 };
 </script>
 
 <style scoped>
-/* 样式部分完全不变，无需修改 */
 .add-album-container {
   width: 500px;
   margin: 50px auto;
   padding: 20px;
   border: 1px solid #eee;
   border-radius: 8px;
+  background: #fff;
 }
 
 .form-item {
@@ -200,19 +256,21 @@ export default {
 
 .form-item label {
   display: block;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
   font-weight: 600;
+  color: #333;
 }
 
 .form-item input {
   width: 100%;
-  padding: 8px;
+  padding: 10px;
   box-sizing: border-box;
   border: 1px solid #ddd;
   border-radius: 4px;
+  font-size: 14px;
 }
 
-/* 新增：图片上传区域样式 */
+/* 封面上传区域 */
 .upload-area {
   width: 100%;
   height: 120px;
@@ -225,46 +283,121 @@ export default {
   cursor: pointer;
   margin-bottom: 10px;
   transition: border-color 0.3s;
+  background: #f9f9f9;
 }
 
 .upload-area:hover {
   border-color: #42b983;
 }
 
-/* 封面预览图样式 */
 .preview-img {
   width: 100%;
   height: 100%;
-  object-fit: contain; /* 保持图片比例，不拉伸 */
+  object-fit: contain;
 }
 
+/* 单曲列表样式优化 */
+.song-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.song-input-wrapper {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 8px;
+}
+
+.song-index {
+  color: #666;
+  font-weight: 600;
+  width: 20px;
+  text-align: center;
+}
+
+.song-input {
+  flex: 1;
+  padding: 8px !important;
+  border: 1px solid #ddd !important;
+}
+
+.btn-delete-song {
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  padding: 0 !important;
+  background: #ff4444 !important;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-add-song {
+  padding: 10px 16px;
+  background: #42b983;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 8px;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.btn-add-song:hover {
+  background: #359469;
+}
+
+/* 按钮区样式优化 */
 .btn-group {
   margin-top: 20px;
   display: flex;
   gap: 10px;
 }
 
-.btn-group button {
+.btn-submit {
   flex: 1;
-  padding: 10px;
+  padding: 12px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-}
-
-.btn-group button:first-child {
   background: #42b983;
   color: white;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.cancel-btn {
+.btn-cancel {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
   background: #999;
   color: white;
+  font-size: 14px;
 }
 
+/* 错误提示 */
 .error-tip {
-  color: red;
+  color: #ff4444;
   margin-top: 10px;
   text-align: center;
+  font-size: 14px;
+  padding: 8px;
+  border-radius: 4px;
+  background: #fff5f5;
 }
 </style>

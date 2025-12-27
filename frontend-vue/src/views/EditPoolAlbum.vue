@@ -2,7 +2,7 @@
   <div class="edit-album-container">
     <h2>修改公共专辑模板</h2>
 
-    <!-- ========== 核心新增：同步结果提示 ========== -->
+    <!-- 同步结果提示 -->
     <div v-if="syncResult" class="sync-result">
       <div class="sync-result-title">🔍 修改同步结果</div>
       <div class="sync-result-content">
@@ -12,7 +12,6 @@
         </span>
       </div>
     </div>
-    <!-- ========== 同步结果提示结束 ========== -->
 
     <!-- 表单区域 -->
     <div class="album-form">
@@ -20,23 +19,40 @@
       <div class="form-item">
         <label>专辑名：</label>
         <input
-          v-model="albumForm.album_name"
-          type="text"
-          placeholder="请输入专辑名"
-          class="form-input"
-          required
+            v-model="album.album_name"
+            type="text"
+            placeholder="请输入专辑名"
+            class="form-input"
+            required
         >
+      </div>
+
+      <!-- 封面图片 -->
+      <div class="form-item">
+        <label>封面图片：</label>
+        <div
+            class="upload-area"
+            @drop="handleDrop"
+            @dragover="handleDragOver"
+            @click="chooseFile"
+        >
+          <span v-if="!album.cover_img">拖拽图片到这里，或点击上传</span>
+          <img v-else :src="album.cover_img" class="preview-img" alt="封面预览">
+        </div>
+        <input type="file" ref="fileInput" accept="image/*" style="display: none" @change="handleFileChange">
+        <input v-model="album.cover_img" type="text" placeholder="可选：输入图片URL" style="margin-top: 10px"
+               class="form-input">
       </div>
 
       <!-- 歌手 -->
       <div class="form-item">
         <label>歌手：</label>
         <input
-          v-model="albumForm.singer"
-          type="text"
-          placeholder="请输入歌手名"
-          class="form-input"
-          required
+            v-model="album.singer"
+            type="text"
+            placeholder="请输入歌手名"
+            class="form-input"
+            required
         >
       </div>
 
@@ -44,54 +60,66 @@
       <div class="form-item">
         <label>发行年份：</label>
         <input
-          v-model="albumForm.release_year"
-          type="number"
-          placeholder="请输入发行年份"
-          class="form-input"
+            v-model="album.release_year"
+            type="number"
+            placeholder="如：2024"
+            class="form-input"
         >
-      </div>
-
-      <!-- 封面图片 -->
-      <div class="form-item">
-        <label>封面图片：</label>
-        <div class="upload-area">
-          <input
-            type="file"
-            accept="image/*"
-            @change="uploadCover"
-            class="file-input"
-          >
-          <div v-if="albumForm.cover_img" class="preview-img">
-            <img :src="albumForm.cover_img" alt="封面预览">
-          </div>
-          <div v-else class="no-preview">暂无封面</div>
-        </div>
       </div>
 
       <!-- 标签 -->
       <div class="form-item">
         <label>标签（多个用逗号分隔）：</label>
         <input
-          v-model="tagInput"
-          type="text"
-          placeholder="例如：流行,华语,2020"
-          class="form-input"
+            v-model="tagInput"
+            type="text"
+            placeholder="例如：流行,华语,2020"
+            class="form-input"
         >
       </div>
 
-      <!-- ========== 新增：同步说明提示 ========== -->
+      <!-- 核心：单曲列表（和添加专辑一致的交互） -->
+      <div class="form-item">
+        <label>单曲列表：</label>
+        <!-- 循环渲染单曲输入框 -->
+        <div class="song-item" v-for="(song, index) in album.songs" :key="index">
+          <div class="song-input-wrapper">
+            <span class="song-index">{{ index + 1 }}.</span>
+            <input
+                v-model="song.song_name"
+                type="text"
+                placeholder="请输入单曲名"
+                class="song-input form-input"
+            >
+          </div>
+          <!-- 至少保留1个输入框才显示删除按钮 -->
+          <button
+              v-if="album.songs.length > 1"
+              @click="removeSong(index)"
+              class="btn-delete-song"
+          >
+            ×
+          </button>
+        </div>
+        <!-- 添加单曲按钮 -->
+        <button @click="addSong" class="btn-add-song">+ 添加单曲</button>
+      </div>
+
+      <!-- 同步说明提示 -->
       <div class="sync-tips">
         📌 温馨提示：修改后会自动同步到「开启同步且未自定义修改」的用户专辑，已自定义的用户专辑不会被覆盖。
       </div>
-      <!-- ========== 同步说明结束 ========== -->
+
+      <!-- 错误提示 -->
+      <div class="error-tip" v-if="errorMsg">{{ errorMsg }}</div>
 
       <!-- 操作按钮 -->
-      <div class="form-actions">
-        <button @click="submitEdit" class="submit-btn" :disabled="loading">
+      <div class="form-actions btn-group">
+        <button @click="submitEdit" class="submit-btn btn-submit" :disabled="loading || isUploading">
           <span v-if="loading">保存中...</span>
           <span v-else>保存修改</span>
         </button>
-        <button @click="goBack" class="cancel-btn" :disabled="loading">取消</button>
+        <button @click="goBack" class="cancel-btn btn-cancel" :disabled="loading || isUploading">取消</button>
       </div>
     </div>
   </div>
@@ -103,18 +131,19 @@ export default {
   data() {
     return {
       albumId: '', // 公共专辑ID
-      albumForm: {
-        album_name: '',
-        singer: '',
-        release_year: '',
-        cover_img: '',
-        tags: []
+      // 专辑表单（和添加专辑结构一致）
+      album: {
+        album_name: "",
+        cover_img: "",
+        singer: "",
+        release_year: "",
+        songs: [{song_name: ""}] // 单曲列表
       },
       tagInput: '', // 标签输入框（逗号分隔）
       loading: false,
-      // ========== 核心新增：同步结果数据 ==========
-      syncResult: null // 存储同步结果
-      // ========== 同步结果数据结束 ==========
+      isUploading: false,
+      syncResult: null, // 存储同步结果
+      errorMsg: "" // 错误提示
     }
   },
   created() {
@@ -135,6 +164,84 @@ export default {
     this.getAlbumData();
   },
   methods: {
+    // ========== 单曲列表核心方法（和添加专辑一致） ==========
+    // 添加单曲输入框
+    addSong() {
+      this.album.songs.push({song_name: ""});
+      this.errorMsg = "";
+      // 新增后自动聚焦
+      this.$nextTick(() => {
+        const inputs = document.querySelectorAll('.song-input');
+        if (inputs.length > 0) {
+          inputs[inputs.length - 1].focus();
+        }
+      });
+    },
+    // 删除指定索引的单曲输入框
+    removeSong(index) {
+      if (this.album.songs.length <= 1) {
+        this.errorMsg = "至少保留1首单曲！";
+        return;
+      }
+      this.album.songs.splice(index, 1);
+      this.errorMsg = "";
+    },
+
+    // ========== 封面上传相关方法（和添加专辑一致） ==========
+    handleDragOver(e) {
+      e.preventDefault();
+    },
+    handleDrop(e) {
+      e.preventDefault();
+      if (this.isUploading) return;
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        this.uploadToImgBed(file);
+      } else {
+        this.errorMsg = "请拖拽有效的图片文件！";
+      }
+    },
+    chooseFile() {
+      this.$refs.fileInput.click();
+    },
+    handleFileChange(e) {
+      if (this.isUploading) return;
+      const file = e.target.files[0];
+      if (file && file.type.startsWith('image/')) {
+        this.uploadToImgBed(file);
+        e.target.value = ""; // 清空文件选择器
+      } else {
+        this.errorMsg = "请选择有效的图片文件！";
+      }
+    },
+    async uploadToImgBed(file) {
+      this.isUploading = true;
+      this.errorMsg = "";
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+        const res = await this.$axios.post('/api/upload_img', formData, {
+          headers: {
+            'Authorization': localStorage.getItem('token') || '',
+            'Content-Type': 'multipart/form-data'
+          },
+          timeout: 15000
+        });
+        if (res.data.code === 200) {
+          this.album.cover_img = res.data.data.img_url || res.data.data.url; // 兼容两种返回格式
+          alert("图片上传成功！已自动填充封面链接～");
+        } else {
+          this.errorMsg = "图片上传失败：" + res.data.msg;
+        }
+      } catch (err) {
+        console.error("上传失败：", err);
+        this.errorMsg = "图片上传失败！检查后端是否启动";
+      } finally {
+        this.isUploading = false;
+      }
+    },
+
+    // ========== 原有核心逻辑 ==========
     // 获取原有专辑数据
     getAlbumData() {
       this.loading = true;
@@ -142,76 +249,79 @@ export default {
         url: `/api/album/pool/detail/${this.albumId}`,
         method: 'GET',
         headers: {
-          'Authorization': localStorage.getItem('token') || ''
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
         }
       })
-      .then(res => {
-        this.loading = false;
-        if (res.data.code === 200) {
-          const data = res.data.data;
-          this.albumForm = {
-            album_name: data.album_name || '',
-            singer: data.singer || '',
-            release_year: data.release_year || '',
-            cover_img: data.cover_img || '',
-            tags: data.tags || []
-          };
-          // 标签数组转逗号分隔字符串
-          this.tagInput = this.albumForm.tags.join(',');
-        } else {
-          alert('加载专辑数据失败：' + res.data.msg);
-          this.goBack();
-        }
-      })
-      .catch(err => {
-        this.loading = false;
-        console.error('加载专辑数据失败：', err);
-        alert('加载数据失败！');
-        this.goBack();
-      });
+          .then(res => {
+            this.loading = false;
+            if (res.data.code === 200) {
+              const data = res.data.data;
+              // 基础信息赋值
+              this.album = {
+                album_name: data.album_name || "",
+                cover_img: data.cover_img || "",
+                singer: data.singer || "",
+                release_year: data.release_year || "",
+                // 处理单曲列表：后端返回的tracks转成输入框格式
+                songs: data.tracks && Array.isArray(data.tracks)
+                    ? data.tracks.map(song => ({song_name: song}))
+                    : [{song_name: ""}]
+              };
+              // 标签数组转逗号分隔字符串
+              this.tagInput = (data.tags && Array.isArray(data.tags)) ? data.tags.join(',') : '';
+            } else {
+              alert('加载专辑数据失败：' + res.data.msg);
+              this.goBack();
+            }
+          })
+          .catch(err => {
+            this.loading = false;
+            console.error('加载专辑数据失败：', err);
+            alert('加载数据失败！');
+            this.goBack();
+          });
     },
 
-    // 上传封面图片
-    uploadCover(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      this.$axios({
-        url: '/api/upload_img',
-        method: 'POST',
-        headers: {
-          'Authorization': localStorage.getItem('token') || '',
-          'Content-Type': 'multipart/form-data'
-        },
-        data: formData
-      })
-      .then(res => {
-        if (res.data.code === 200) {
-          this.albumForm.cover_img = res.data.data.url;
-          alert('封面上传成功！');
-        } else {
-          alert('封面上传失败：' + res.data.msg);
-        }
-      })
-      .catch(err => {
-        console.error('上传封面失败：', err);
-        alert('上传封面失败！');
-      });
-    },
-
-    // 提交修改
+    // 提交修改（保留同步逻辑）
     submitEdit() {
-      // 验证必填项
-      if (!this.albumForm.album_name || !this.albumForm.singer) {
-        alert('专辑名和歌手为必填项！');
+      // 清除之前的错误提示
+      this.errorMsg = "";
+
+      // 1. 基础字段校验
+      if (!this.album.album_name.trim()) {
+        this.errorMsg = "专辑名不能为空！";
+        return;
+      }
+      if (!this.album.singer.trim()) {
+        this.errorMsg = "歌手名不能为空！";
+        return;
+      }
+      if (this.album.release_year && isNaN(this.album.release_year)) {
+        this.errorMsg = "请输入有效的发行年份！";
         return;
       }
 
-      // 处理标签（字符串转数组）
-      this.albumForm.tags = this.tagInput.split(',').map(tag => tag.trim()).filter(tag => tag);
+      // 2. 单曲列表校验
+      const validSongs = this.album.songs
+          .map(song => song.song_name.trim())
+          .filter(name => name);
+      if (validSongs.length === 0) {
+        this.errorMsg = "至少填写1首单曲名！";
+        return;
+      }
+
+      // 3. 处理标签（字符串转数组）
+      const tags = this.tagInput.split(',').map(tag => tag.trim()).filter(tag => tag);
+
+      // 4. 构造提交数据
+      const submitData = {
+        album_name: this.album.album_name.trim(),
+        cover_img: this.album.cover_img.trim(),
+        singer: this.album.singer.trim(),
+        release_year: this.album.release_year ? Number(this.album.release_year) : '',
+        tags: tags,
+        tracks: validSongs // 单曲列表转数组
+      };
 
       this.loading = true;
       this.syncResult = null; // 清空之前的同步结果
@@ -219,33 +329,32 @@ export default {
         url: `/api/album/pool/update/${this.albumId}`,
         method: 'PUT',
         headers: {
-          'Authorization': localStorage.getItem('token') || '',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
           'Content-Type': 'application/json'
         },
-        data: this.albumForm
+        data: submitData
       })
-      .then(res => {
-        this.loading = false;
-        if (res.data.code === 200) {
-          // ========== 核心新增：存储同步结果 ==========
-          this.syncResult = res.data;
-          // ========== 存储同步结果结束 ==========
+          .then(res => {
+            this.loading = false;
+            if (res.data.code === 200) {
+              // 存储同步结果
+              this.syncResult = res.data;
 
-          // 优化提示：显示同步数量
-          const syncCount = res.data.data?.sync_count || 0;
-          alert(`修改专辑成功！\n已同步更新 ${syncCount} 条用户数据（仅同步开启且未自定义的专辑）`);
+              // 优化提示：显示同步数量
+              const syncCount = res.data.data?.sync_count || 0;
+              alert(`修改专辑成功！\n已同步更新 ${syncCount} 条用户数据（仅同步开启且未自定义的专辑）`);
 
-          // 跳回专辑详情页
-          this.$router.push(`/album/pool/detail/${this.albumId}`);
-        } else {
-          alert('修改失败：' + res.data.msg);
-        }
-      })
-      .catch(err => {
-        this.loading = false;
-        console.error('修改专辑失败：', err);
-        alert('修改失败！' + (err.response?.data?.msg || err.message));
-      });
+              // 跳回专辑详情页
+              this.$router.push(`/album/pool/detail/${this.albumId}`);
+            } else {
+              this.errorMsg = '修改失败：' + res.data.msg;
+            }
+          })
+          .catch(err => {
+            this.loading = false;
+            console.error('修改专辑失败：', err);
+            this.errorMsg = '修改失败！' + (err.response?.data?.msg || err.message);
+          });
     },
 
     // 返回上一页
@@ -257,97 +366,179 @@ export default {
 </script>
 
 <style scoped>
+/* 基础布局继承添加专辑样式 */
 .edit-album-container {
-  max-width: 800px;
-  margin: 0 auto;
+  width: 500px;
+  margin: 50px auto;
   padding: 20px;
-}
-.album-form {
-  margin-top: 30px;
   border: 1px solid #eee;
-  padding: 20px;
   border-radius: 8px;
-  background: #f9f9f9;
+  background: #fff;
 }
+
+.album-form {
+  margin-top: 20px;
+}
+
 .form-item {
-  margin-bottom: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  margin: 15px 0;
+  text-align: left;
 }
+
 .form-item label {
-  font-size: 14px;
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
   color: #333;
-  font-weight: 500;
 }
+
 .form-input {
-  padding: 8px 12px;
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
 }
+
+/* 封面上传区域（和添加专辑一致） */
 .upload-area {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.file-input {
-  padding: 5px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-.preview-img {
-  width: 150px;
-  height: 150px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.preview-img img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.no-preview {
-  width: 150px;
-  height: 150px;
-  border: 1px dashed #ddd;
+  height: 120px;
+  border: 2px dashed #ddd;
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #999;
-  font-size: 12px;
+  cursor: pointer;
+  margin-bottom: 10px;
+  transition: border-color 0.3s;
+  background: #f9f9f9;
 }
-.form-actions {
+
+.upload-area:hover {
+  border-color: #42b983;
+}
+
+.preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 单曲列表样式（和添加专辑一致） */
+.song-item {
   display: flex;
-  gap: 20px;
-  justify-content: center;
-  margin-top: 30px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  background: #fafafa;
 }
-.submit-btn {
-  padding: 8px 30px;
+
+.song-input-wrapper {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 8px;
+}
+
+.song-index {
+  color: #666;
+  font-weight: 600;
+  width: 20px;
+  text-align: center;
+}
+
+.song-input {
+  flex: 1;
+  padding: 8px !important;
+  border: 1px solid #ddd !important;
+}
+
+.btn-delete-song {
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  padding: 0 !important;
+  background: #ff4444 !important;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-add-song {
+  padding: 10px 16px;
   background: #42b983;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  margin-top: 8px;
+  font-size: 14px;
+  transition: background 0.2s;
 }
-.cancel-btn {
-  padding: 8px 30px;
-  background: #999;
-  color: white;
+
+.btn-add-song:hover {
+  background: #359469;
+}
+
+/* 按钮区样式（和添加专辑一致） */
+.btn-group {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.btn-submit {
+  flex: 1;
+  padding: 12px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  background: #42b983;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
 }
+
+.btn-cancel {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #999;
+  color: white;
+  font-size: 14px;
+}
+
 /* 禁用状态样式 */
-.submit-btn:disabled, .cancel-btn:disabled {
+.btn-submit:disabled, .btn-cancel:disabled {
   background: #ccc;
   cursor: not-allowed;
 }
 
-/* ========== 核心新增：同步结果样式 ========== */
+/* 错误提示（和添加专辑一致） */
+.error-tip {
+  color: #ff4444;
+  margin-top: 10px;
+  text-align: center;
+  font-size: 14px;
+  padding: 8px;
+  border-radius: 4px;
+  background: #fff5f5;
+}
+
+/* 同步结果提示样式 */
 .sync-result {
   margin-bottom: 20px;
   padding: 12px 16px;
@@ -355,23 +546,26 @@ export default {
   background-color: #f0f8fb;
   border: 1px solid #42b983;
 }
+
 .sync-result-title {
   font-weight: 600;
   color: #2c3e50;
   margin-bottom: 4px;
   font-size: 14px;
 }
+
 .sync-result-content {
   color: #34495e;
   font-size: 13px;
 }
+
 .sync-count {
   color: #42b983;
   font-weight: 600;
   margin-left: 8px;
 }
 
-/* ========== 同步提示样式 ========== */
+/* 同步提示样式 */
 .sync-tips {
   margin-bottom: 20px;
   padding: 10px;
@@ -381,5 +575,4 @@ export default {
   font-size: 12px;
   line-height: 1.5;
 }
-/* ========== 新增样式结束 ========== */
 </style>
