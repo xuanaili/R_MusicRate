@@ -1,6 +1,5 @@
 <template>
   <div class="tab-content">
-    <!-- 全新基础信息卡片 -->
     <div class="new-base-info-card">
       <!-- 左上：封面 -->
       <div class="info-section cover-section">
@@ -10,7 +9,7 @@
 
       <!-- 右上：拆分为三列（元信息 + 标签选择 + 下拉列表） -->
       <div class="info-section meta-tags-container">
-        <!-- 第一列：原专辑元信息（位置不变） -->
+        <!-- 第一列：原专辑元信息 -->
         <div class="meta-section">
           <h2 class="meta-album-name">{{ album.album_name || '未知专辑' }}</h2>
           <div class="meta-item">
@@ -31,42 +30,40 @@
           </div>
         </div>
 
-        <!-- 第二列：标签搜索+已选标签（右上角中间） -->
+        <!-- 第二列：标签搜索+已选标签 -->
         <div class="my-tags-section-inline">
           <h3 class="section-title">我的分类</h3>
-          <!-- 已选标签 -->
           <div class="selected-tags">
             <div
               class="selected-tag"
               v-for="(tag, idx) in selectedMyTags"
               :key="idx"
+              :style="{backgroundColor: mainColorDark}"
             >
               {{ tag }}
               <span class="tag-close" @click="removeMyTag(idx)">×</span>
             </div>
           </div>
-          <!-- 标签搜索框（限制宽度） -->
           <div class="tag-select-container">
             <input
               v-model="tagSearchInput"
               @input="filterTagOptions"
-              placeholder="搜索标签（如Pop、Rock）"
+              :placeholder="selectedMyTags.length >=5 ? '最多只能选择5个标签' : '搜索标签（如Pop、Rock）'"
               class="tag-search-input"
+              :disabled="selectedMyTags.length >=5"
             >
-          </div>
-          <div class="tag-tip" v-if="selectedMyTags.length >= 5">
-            最多只能选择5个标签
           </div>
           <button
             class="save-tags-btn"
             @click="handleSaveTags"
             :disabled="!selectedMyTags.length"
+            :style="{backgroundColor: selectedMyTags.length ? mainColorDark : '#999'}"
           >
             保存
           </button>
         </div>
 
-        <!-- 第三列：标签下拉列表（右上角最右侧） -->
+        <!-- 第三列：标签下拉列表 -->
         <div class="tag-options-column">
           <h3 class="section-title">可选标签</h3>
           <div class="tag-options-list">
@@ -83,66 +80,71 @@
         </div>
       </div>
 
-      <!-- 左下：可编辑专辑简介（缩小尺寸） -->
+      <!-- 左下：可编辑专辑简介 -->
       <div class="info-section intro-section">
         <h3 class="section-title">专辑简介</h3>
+        <div v-if="loadingIntro" class="loading-intro">加载中...</div>
+        <div v-else-if="!isEditingIntro" class="intro-display">
+          {{ albumIntro || '暂无专辑简介' }}
+        </div>
         <textarea
+          v-else
           v-model="albumIntro"
           class="intro-textarea"
-          placeholder="请输入专辑简介..."
+          placeholder="请输入专辑简介（支持分段、特殊符号）..."
           rows="6"
+          ref="introTextarea"
         ></textarea>
-        <button class="save-intro-btn" @click="handleSaveIntro">保存简介</button>
+        <button
+          class="intro-edit-btn"
+          @click="toggleIntroEdit"
+          :disabled="loadingIntro"
+          :style="{backgroundColor: mainColorDark}"
+        >
+          {{ isEditingIntro ? '完成' : '编辑' }}
+        </button>
       </div>
 
-      <!-- 右下：分类统计气泡图（展示所有用户标签统计） -->
+      <!-- 右下：分类统计气泡图【✅核心修改1：删除固定绿色，只传动态主色】 -->
       <div class="info-section tag-chart-section">
-        <h3 class="section-title">全网用户标签统计</h3>
-        <!-- 气泡图容器 -->
-        <div class="chart-container">
-          <!-- 加载中状态 -->
-          <div v-if="loading" class="loading-chart">加载中...</div>
-          <!-- 气泡图渲染 -->
-          <div v-else-if="chartData.length > 0" class="bubble-chart">
-            <div
-              class="bubble"
-              v-for="(item, idx) in chartData"
-              :key="idx"
-              :style="{
-                width: `${item.size}px`,
-                height: `${item.size}px`,
-                left: `${item.x}%`,
-                top: `${item.y - 10}%`,
-                backgroundColor: item.color
-              }"
-            >
-              <div class="bubble-label">{{ item.tag }}</div>
-              <div class="bubble-value">{{ item.percent }}%</div>
-            </div>
-          </div>
-          <!-- 无数据提示 -->
-          <div v-else class="no-chart-data">
-            暂无其他用户为该专辑添加标签
-          </div>
-        </div>
+        <h3 class="section-title">专辑风格</h3>
+        <TagBubbleChart
+          :tag-stats="tagStatsData"
+          :loading="loading"
+          :main-color="mainColor"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import TagBubbleChart from '@/components/TagBubbleChart'
+
 export default {
   name: 'AlbumBaseInfo',
+  components: { TagBubbleChart },
   props: {
     album: {
       type: Object,
       required: true,
       default: () => ({})
     },
-    // 核心新增：接收公共专辑池ID（必传）
     albumPoolId: {
       type: Number,
       required: true
+    },
+    mainColor: {
+      // 封面原始主色
+      type: String,
+      required: true,
+      default: '#42b983'
+    },
+    mainColorDark: {
+      // 封面主色 加深1级 (按钮/下划线/已选标签背景)
+      type: String,
+      required: true,
+      default: '#2f9465'
     }
   },
   data() {
@@ -151,51 +153,56 @@ export default {
       allTagOptions: ['Pop', 'Rock', 'Jazz', 'Classical', 'Hip-hop', 'Electronic', 'Folk', 'R&B', 'Country', 'Metal'],
       filteredTagOptions: [],
       selectedMyTags: [],
-      chartData: [],
+      tagStatsData: [],
       loading: false,
       albumIntro: '',
-      // 预设颜色池（用于不同标签的气泡颜色）
-      colorPool: ['#42b983', '#3498db', '#9b59b6', '#e74c3c', '#f39c12', '#1abc9c', '#8e44ad', '#e67e22']
+      isEditingIntro: false,
+      loadingIntro: false,
+      originIntro: '',
+      bgStyle: {}
     };
+  },
+  computed: {
+    // ✅ 核心新增：封面主色 加深2级 (所有文字的颜色，和编辑按钮hover同源)
+    mainColorDarkDouble() {
+      return this.darkenColor(this.mainColor, 0.3)
+    }
   },
   watch: {
     album: {
       immediate: true,
       deep: true,
       handler(newVal) {
-        // 初始化已选标签（当前用户）
         if (newVal.tags && Array.isArray(newVal.tags)) {
           this.selectedMyTags = [...newVal.tags].slice(0, 5);
         }
-        // 初始化专辑简介
-        this.albumIntro = newVal.introduction || '';
-        // 初始化标签选项
         this.filteredTagOptions = [...this.allTagOptions];
         this.filterTagOptions();
-        // 核心修复：调用接口时传入正确的公共专辑ID
         if (this.albumPoolId) {
-          console.log('✅ 传入的公共专辑ID：', this.albumPoolId);
           this.getAllUsersTagStatistics(this.albumPoolId);
         } else {
-          console.log('⚠️ 未传入公共专辑ID，气泡图无法渲染');
-          this.chartData = [];
+          this.tagStatsData = [];
+        }
+        if (newVal.id) {
+          this.getUserAlbumIntro(newVal.id);
         }
       }
     }
   },
   methods: {
-    // 过滤标签选项（当前用户的标签选择）
+    // 颜色加深算法 (复用原有方法，无改动)
+    darkenColor(hex, amount) {
+      const r = parseInt(hex.slice(1, 3), 16) * (1 - amount);
+      const g = parseInt(hex.slice(3, 5), 16) * (1 - amount);
+      const b = parseInt(hex.slice(5, 7), 16) * (1 - amount);
+      return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
+    },
     filterTagOptions() {
       const keyword = this.tagSearchInput.trim().toLowerCase();
-      if (!keyword) {
-        this.filteredTagOptions = this.allTagOptions.filter(tag => !this.selectedMyTags.includes(tag));
-      } else {
-        this.filteredTagOptions = this.allTagOptions.filter(tag =>
-            tag.toLowerCase().includes(keyword) && !this.selectedMyTags.includes(tag)
-        );
-      }
+      this.filteredTagOptions = keyword
+          ? this.allTagOptions.filter(tag => tag.toLowerCase().includes(keyword) && !this.selectedMyTags.includes(tag))
+          : this.allTagOptions.filter(tag => !this.selectedMyTags.includes(tag));
     },
-    // 添加标签（当前用户）
     addMyTag(tag) {
       if (this.selectedMyTags.length < 5 && !this.selectedMyTags.includes(tag)) {
         this.selectedMyTags.push(tag);
@@ -203,81 +210,76 @@ export default {
         this.tagSearchInput = '';
       }
     },
-    // 移除标签（当前用户）
     removeMyTag(index) {
       this.selectedMyTags.splice(index, 1);
       this.filterTagOptions();
     },
-    // 保存标签（当前用户）
     handleSaveTags() {
       this.$emit('save-tags', this.selectedMyTags);
-      // 保存后重新获取全网统计数据（传正确的公共专辑ID）
-      if (this.albumPoolId) {
-        this.getAllUsersTagStatistics(this.albumPoolId);
+      this.albumPoolId && this.getAllUsersTagStatistics(this.albumPoolId);
+    },
+    async getUserAlbumIntro(albumId) {
+      try {
+        this.loadingIntro = true;
+        const res = await this.$axios.get(`/api/album/user/intro/get/${albumId}`);
+        this.albumIntro = res.data?.code === 200 ? res.data.data || this.album.album_intro || '' : this.album.album_intro || '';
+        this.originIntro = this.albumIntro;
+      } catch (e) {
+        this.albumIntro = this.album.album_intro || '';
+        this.originIntro = this.albumIntro
+      } finally {
+        this.loadingIntro = false
       }
     },
-    // 保存专辑简介
-    handleSaveIntro() {
-      this.$emit('save-intro', this.albumIntro);
-      alert('专辑简介保存成功！');
+    async saveUserAlbumIntro(albumId, introContent) {
+      try {
+        this.loadingIntro = true;
+        const res = await this.$axios.post('/api/album/user/intro/save', {
+          album_id: albumId,
+          intro_content: introContent
+        });
+        if (res.data?.code === 200) {
+          this.$message?.({type: 'success', message: '保存成功'});
+          this.$set(this.album, 'album_intro', introContent);
+          return true
+        } else {
+          this.$message?.({type: 'error', message: res.data?.msg || '保存失败'});
+          this.albumIntro = this.originIntro;
+          return false
+        }
+      } catch (e) {
+        this.$message?.({type: 'error', message: '保存失败'});
+        this.albumIntro = this.originIntro;
+        return false
+      } finally {
+        this.loadingIntro = false
+      }
     },
-    /**
-     * 核心修改：获取所有用户对该专辑的标签统计数据
-     * @param {Number} albumPoolId - 公共专辑池ID
-     */
+    async toggleIntroEdit() {
+      if (this.isEditingIntro) {
+        const intro = this.albumIntro.trim();
+        if (!intro) {
+          this.$message?.warning('简介不能为空');
+          this.$nextTick(() => this.$refs.introTextarea?.focus());
+          return
+        }
+        const ok = await this.saveUserAlbumIntro(this.album.id, intro);
+        ok && (this.isEditingIntro = false);
+      } else {
+        this.originIntro = this.albumIntro;
+        this.$nextTick(() => this.$refs.introTextarea?.focus());
+        this.isEditingIntro = true;
+      }
+    },
     async getAllUsersTagStatistics(albumPoolId) {
       try {
         this.loading = true;
-        console.log('📡 请求全网标签统计接口，公共专辑ID：', albumPoolId);
-
-        // 调用标签统计接口（路径与后端保持一致）
         const res = await this.$axios.get(`/api/album/${albumPoolId}/tag-statistics`);
-
-        if (res.data?.code === 200 && Array.isArray(res.data.data)) {
-          const tagStats = res.data.data;
-          // 计算总标签数和各标签占比
-          const total = tagStats.reduce((sum, item) => sum + item.count, 0);
-
-          if (total === 0) {
-            this.chartData = [];
-            return;
-          }
-
-          // 处理数据生成气泡图所需格式
-          this.chartData = tagStats.map((item, idx) => {
-            const percent = ((item.count / total) * 100).toFixed(1);
-            // 根据占比计算气泡大小（50-150px区间）
-            const size = Math.min(150, Math.max(50, 50 + percent * 1));
-            // 随机位置（避免重叠）
-            const x = 10 + (idx * 15) > 85 ? 85 : 10 + (idx * 15);
-            const y = 20 + Math.random() * 60;
-            // 循环使用颜色池
-            const color = this.colorPool[idx % this.colorPool.length];
-
-            return {
-              tag: item.tag,
-              count: item.count,
-              percent: percent,
-              size: size,
-              x: x,
-              y: y,
-              color: color
-            };
-          });
-        } else {
-          console.warn('⚠️ 接口返回数据格式异常', res.data);
-          this.chartData = [];
-        }
-      } catch (error) {
-        console.error('❌ 获取全网标签统计失败：', {
-          url: error.config?.url,
-          status: error.response?.status,
-          message: error.message,
-          responseData: error.response?.data
-        });
-        this.chartData = [];
+        this.tagStatsData = res.data?.code === 200 && Array.isArray(res.data.data) ? res.data.data : [];
+      } catch (e) {
+        this.tagStatsData = []
       } finally {
-        this.loading = false;
+        this.loading = false
       }
     }
   }
@@ -285,37 +287,80 @@ export default {
 </script>
 
 <style scoped>
-/* 基础布局：保留2×2网格 + 与sidebar上端对齐 */
+/* 全局盒模型修复 */
+* {
+  box-sizing: border-box;
+}
+
+.tab-content {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding-right: 50px !important;
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+}
+
+/* 整体卡片背景全透明，无白色边框阴影 */
 .new-base-info-card {
   display: grid;
   grid-template-columns: 1fr 2fr;
   grid-template-rows: 1fr 1fr;
   gap: 20px;
-  background: #f9f9f9;
+  background: transparent !important;
   padding: 20px;
   border-radius: 8px;
   margin-bottom: 30px;
   min-height: 700px;
-  margin-top: 0 !important; /* 取消顶部外边距，与sidebar上端对齐 */
-  align-self: flex-start; /* 顶部对齐 */
+  margin-top: 0 !important;
+  align-self: flex-start;
+  width: calc(100vw - 270px - 50px);
+  max-width: 100%;
+  z-index: 2;
+  border: none !important;
+  box-shadow: none !important;
 }
 
+/* 所有区块无白色边框，透明背景 */
 .info-section {
   padding: 15px;
-  background: #fff;
+  background: transparent !important;
   border-radius: 8px;
-  border: 1px solid #eee;
+  border: none !important;
+  width: 100%;
+  height: 100%;
 }
 
+/* ✅ 提升优先级：标题下划线+文字颜色 强制生效 */
 .section-title {
   font-size: 16px;
-  color: #42b983;
   margin-bottom: 15px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  position: relative;
+  border-bottom: none !important;
+  color: v-bind(mainColorDarkDouble) !important;
+  font-weight: 600;
 }
 
-/* 封面区域 */
+.section-title::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
+  opacity: 1 !important;
+}
+
 .cover-section {
   display: flex;
   justify-content: center;
@@ -328,40 +373,47 @@ export default {
   border-radius: 8px;
   object-fit: cover;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border: none !important;
 }
 
+/* 封面占位图：透明磨砂无白色边框 */
 .cover-placeholder {
-  width: 300px; /* 同步封面尺寸 */
+  width: 300px;
   height: 300px;
   border-radius: 8px;
-  background: #f5f5f5;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: flex;
   justify-content: center;
   align-items: center;
-  color: #999;
+  color: v-bind(mainColorDarkDouble) !important;
   font-size: 14px;
+  border: none !important;
 }
 
-/* 右上容器：三列布局 */
 .meta-tags-container {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr; /* 三等分 */
+  grid-template-columns: 1.5fr 1fr 1fr;
   gap: 15px;
   align-items: flex-start;
   padding: 20px;
+  background: transparent !important;
+  border: none !important;
 }
 
-/* 第一列：元信息 */
 .meta-section {
   display: flex;
   flex-direction: column;
   padding: 0;
 }
 
+/* ✅ 提升优先级：专辑名称颜色强制生效 */
 .meta-album-name {
   font-size: 24px;
-  color: #222;
+  color: v-bind(mainColorDarkDouble) !important;
   margin-bottom: 20px;
+  font-weight: 600;
 }
 
 .meta-item {
@@ -370,22 +422,22 @@ export default {
   font-size: 16px;
 }
 
+/* ✅ 提升优先级：歌手/发行时间等文字颜色强制生效 */
 .meta-label {
   width: 80px;
-  color: #666;
+  color: v-bind(mainColorDarkDouble) !important;
   font-weight: 600;
 }
 
 .meta-value {
-  color: #333;
+  color: v-bind(mainColorDarkDouble) !important;
 }
 
-/* 第二列：标签选择（中间） */
 .my-tags-section-inline {
   padding: 0;
   display: flex;
   flex-direction: column;
-  max-width: calc(100% - 10px); /* 限制宽度，避免超出 */
+  max-width: calc(100% - 10px);
 }
 
 .selected-tags {
@@ -400,10 +452,10 @@ export default {
   display: flex;
   align-items: center;
   padding: 4px 8px;
-  background: #42b983;
   color: #fff;
   border-radius: 4px;
   font-size: 14px;
+  cursor: default;
 }
 
 .tag-close {
@@ -415,188 +467,196 @@ export default {
 
 .tag-select-container {
   margin-bottom: 10px;
-  max-width: 100%; /* 限制容器宽度 */
+  max-width: 100%;
 }
 
-/* 核心：限制搜索框宽度，右端不超过标签列表左端 */
+/* 搜索框：透明磨砂+加深再加深文字+灰色提示占位符 */
 .tag-search-input {
   width: 100%;
-  max-width: 200px; /* 固定最大宽度，根据实际调整 */
+  max-width: 200px;
   padding: 8px 12px;
-  border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
   box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border: none !important;
+  color: v-bind(mainColorDarkDouble) !important;
 }
 
-.tag-tip {
-  font-size: 12px;
-  color: #e53935;
-  margin-bottom: 10px;
+.tag-search-input::placeholder {
+  color: #999;
+  opacity: 1;
+}
+
+.tag-search-input:disabled {
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.2) !important;
 }
 
 .save-tags-btn {
   padding: 6px 12px;
-  background: #42b983;
   color: #fff;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   align-self: flex-start;
   font-size: 14px;
+  transition: all 0.2s;
 }
 
 .save-tags-btn:disabled {
-  background: #999;
   cursor: not-allowed;
+  opacity: 0.7;
 }
 
-/* 第三列：标签下拉列表（最右侧） */
+/* ✅ 按钮hover → 封面主色加深再加深，和文字颜色一致 */
+.save-tags-btn:hover:not(:disabled), .intro-edit-btn:hover:not(:disabled) {
+  background-color: v-bind(mainColorDarkDouble) !important;
+  opacity: 0.95;
+}
+
 .tag-options-column {
   padding: 0;
   display: flex;
   flex-direction: column;
 }
 
+/* 标签下拉列表：透明磨砂无白色边框 */
 .tag-options-list {
   display: flex;
   flex-direction: column;
   gap: 5px;
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid #eee;
   border-radius: 4px;
   padding: 5px;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border: none !important;
 }
 
+.tag-options-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tag-options-list::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDarkDouble);
+  border-radius: 2px;
+}
+
+/* ✅ 可选标签文字 → 封面主色加深再加深 */
 .tag-option {
   padding: 6px 10px;
   cursor: pointer;
   font-size: 14px;
   border-radius: 4px;
   transition: background 0.2s;
+  color: v-bind(mainColorDarkDouble) !important;
 }
 
-.tag-option:hover {
-  background: #f0f8fb;
+.tag-option:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .tag-option.disabled {
-  color: #999;
+  color: rgba(0, 0, 0, 0.3) !important;
   cursor: not-allowed;
-  background: #f5f5f5;
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* 左下：专辑简介（缩小尺寸） */
 .intro-section {
   display: flex;
   flex-direction: column;
   gap: 15px;
 }
 
-/* 缩小简介框：行数减少+宽度适配 */
+/* 加载中文字 → 封面主色加深再加深 */
+.loading-intro {
+  width: 100%;
+  max-width: 90%;
+  padding: 10px;
+  min-height: 140px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: v-bind(mainColorDarkDouble) !important;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: 4px;
+  border: none !important;
+}
+
+/* ✅ 专辑简介展示文字 → 封面主色加深再加深 */
+.intro-display {
+  width: 100%;
+  max-width: 90%;
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 140px;
+  color: v-bind(mainColorDarkDouble) !important;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  border: none !important;
+}
+
+/* ✅ 专辑简介编辑文字 → 封面主色加深再加深 */
 .intro-textarea {
   width: 100%;
-  max-width: 90%; /* 限制最大宽度 */
+  max-width: 90%;
   padding: 10px;
-  border: 1px solid #ddd;
   border-radius: 4px;
   resize: vertical;
   font-size: 14px;
   line-height: 1.5;
-  rows: 6; /* 固定6行 */
-  height: auto; /* 自适应高度 */
+  rows: 6;
+  height: auto;
+  min-height: 140px;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  color: v-bind(mainColorDarkDouble) !important;
+  border: none !important;
 }
 
-.save-intro-btn {
+.intro-textarea::placeholder {
+  color: #999;
+}
+
+.intro-edit-btn {
   padding: 8px 16px;
-  background: #42b983;
   color: #fff;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   align-self: flex-start;
+  font-size: 14px;
+  transition: all 0.2s;
 }
 
-/* 右下：气泡图区域（上移调整） */
+.intro-edit-btn:disabled {
+  background: #999;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 .tag-chart-section {
   display: flex;
   flex-direction: column;
-  height: 280px; /* 容器高度减少，整体上移 */
-  margin-top: -20px; /* 顶部负边距，整体上移 */
-}
-
-.chart-container {
-  flex: 1;
-  position: relative;
-  background: #f8f8f8;
-  border-radius: 4px;
-  overflow: hidden;
-  min-height: 230px; /* 容器高度上移 */
-  border: 1px solid #eee;
-}
-
-.loading-chart {
+  height: 350px;
+  margin-top: -20px;
   width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: #666;
-  font-size: 14px;
-}
-
-.bubble-chart {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-.bubble {
-  position: absolute !important;
-  border-radius: 50% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: center !important;
-  align-items: center !important;
-  color: #fff !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-  transition: transform 0.2s !important;
-  z-index: 99 !important;
-}
-
-.bubble:hover {
-  transform: scale(1.05) !important;
-}
-
-.bubble-label {
-  font-size: 14px !important;
-  font-weight: 600 !important;
-  margin-bottom: 4px !important;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3) !important;
-}
-
-.bubble-value {
-  font-size: 12px !important;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3) !important;
-}
-
-.no-chart-data {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: #999;
-  font-size: 14px;
-}
-
-/* 确保tab-content与sidebar对齐 */
-.tab-content {
-  padding-top: 0 !important;
-  margin-top: 0 !important;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  background: transparent !important;
+  border: none !important;
+  padding-top: 0;
 }
 </style>

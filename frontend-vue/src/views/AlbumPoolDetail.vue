@@ -1,66 +1,125 @@
 <template>
   <div class="pool-detail-container">
-    <h2>公共专辑详情</h2>
+    <!-- ✅ 全屏独立模糊封面背景层 - 和AlbumDetail完全一致 -->
+    <div class="bg-layer" :style="bgStyle"></div>
+
     <!-- 管理员修改按钮 -->
     <div v-if="isAdmin" class="edit-btn-container">
-      <button @click="goEditAlbum" class="edit-btn">修改专辑信息</button>
+      <button @click="goEditAlbum" class="edit-btn" :style="{backgroundColor: mainColorDark}">修改专辑信息</button>
     </div>
 
     <div v-if="loading" class="loading-tip">加载中...</div>
     <div v-else-if="!albumData" class="empty-tip">未找到该公共专辑</div>
-    <!-- 核心修改：重构布局为左右分栏 -->
+    <!-- 核心布局：左(放大基础信息+箭头左移) | 中(收窄单曲列表) | 右(用户固定高+风格占满) -->
     <div v-else class="album-detail-wrapper">
-      <!-- 左侧：基础信息 -->
-      <div class="album-base-info">
-        <div class="cover">
-          <img v-if="albumData.cover_img" :src="albumData.cover_img" alt="封面" class="detail-cover">
-          <div v-else class="no-cover">暂无封面</div>
+      <!-- 左侧：放大版基础信息/简介 滑动切换面板 + 箭头左移露全 -->
+      <div class="album-left-section" :class="{ 'slide-to-intro': showIntro }">
+        <!-- 专辑基础信息面板（放大） -->
+        <div class="album-panel info-panel">
+          <div class="cover">
+            <img v-if="albumData.cover_img" :src="albumData.cover_img" alt="封面" class="detail-cover">
+            <div v-else class="no-cover">暂无封面</div>
+          </div>
+          <!-- ✅ 外层增加蒙版容器 - 和收听用户一致的白色磨砂层 -->
+          <div class="info-mask">
+            <div class="info">
+              <h3>{{ albumData.album_name }}</h3>
+              <p :style="{color: mainColorDarkDouble}">歌手：{{ albumData.singer }}</p>
+              <p :style="{color: mainColorDarkDouble}">发行年份：{{ albumData.release_year }}</p>
+              <p :style="{color: mainColorDarkDouble}">创建用户：{{ albumData.create_user_name || albumData.create_user || '未知用户' }}</p>
+              <p class="create-time" :style="{color: mainColorDarkDouble}">创建时间：{{ formatCreateTime(albumData.create_time) }}</p>
+            </div>
+          </div>
+          <div class="actions">
+            <button @click="copyAlbum" class="copy-btn" :style="{backgroundColor: mainColorDark}">复制为我的副本</button>
+            <button @click="goBack" class="back-btn">返回搜索池</button>
+          </div>
         </div>
-        <div class="info">
-          <h3>{{ albumData.album_name }}</h3>
-          <p>歌手：{{ albumData.singer }}</p>
-          <p>发行年份：{{ albumData.release_year }}</p>
-          <p>标签：{{ albumData.tags?.join('、') || '无' }}</p>
-          <p>创建用户：{{ albumData.create_user_name || albumData.create_user || '未知用户' }}</p>
-          <!-- 优化：只显示日期，去掉时分秒 -->
-          <p class="create-time">创建时间：{{ formatCreateTime(albumData.create_time) }}</p>
+
+        <!-- 专辑简介面板（放大） -->
+        <div class="album-panel intro-panel">
+          <h4 class="intro-title" :style="{borderBottomColor: mainColor}">专辑简介</h4>
+          <!-- ✅ 外层增加蒙版容器 - 和收听用户一致的白色磨砂层 -->
+          <div class="intro-mask">
+            <div v-if="albumData.album_intro && albumData.album_intro.trim()" class="intro-content">
+              {{ albumData.album_intro }}
+            </div>
+            <div v-else class="no-intro-tip">暂无专辑简介</div>
+          </div>
         </div>
-        <div class="actions">
-          <button @click="copyAlbum" class="copy-btn">复制为我的副本</button>
-          <button @click="goBack" class="back-btn">返回搜索池</button>
+
+        <!-- 切换箭头左移露全 - 主色加深色 -->
+        <div class="slide-toggle-btn" @click="showIntro = !showIntro" :style="{backgroundColor: mainColorDark}">
+          <i class="icon-arrow" :class="showIntro ? 'arrow-left' : 'arrow-right'">
+            {{ showIntro ? '←' : '→' }}
+          </i>
         </div>
       </div>
 
-      <!-- 分隔线 -->
-      <div class="divider"></div>
-
-      <!-- 右侧：单曲列表 -->
-      <div class="album-songs-list">
-        <h4 class="songs-title">单曲列表</h4>
-        <!-- 无单曲提示 -->
-        <div v-if="!albumData.tracks || albumData.tracks.length === 0" class="no-songs-tip">
-          暂无单曲信息
+      <!-- 中间：收窄版单曲列表 -->
+      <div class="album-center-section">
+        <div class="album-songs-list">
+          <h4 class="songs-title" :style="{borderBottomColor: mainColor}">单曲列表</h4>
+          <div v-if="!albumData.tracks || albumData.tracks.length === 0" class="no-songs-tip">暂无单曲信息</div>
+          <ul class="songs-list" v-else>
+            <li class="song-item" v-for="(song, index) in albumData.tracks" :key="index">
+              <span class="song-index" :style="{backgroundColor: mainColorDark}">{{ index + 1 }}</span>
+              <span class="song-name">{{ song }}</span>
+            </li>
+          </ul>
         </div>
-        <!-- 单曲列表（带正方形序号） -->
-        <ul class="songs-list" v-else>
-          <li class="song-item" v-for="(song, index) in albumData.tracks" :key="index">
-            <span class="song-index">{{ index + 1 }}</span>
-            <span class="song-name">{{ song }}</span>
-          </li>
-        </ul>
+      </div>
+
+      <!-- 右侧：用户固定高度+专辑风格占满剩余空间 -->
+      <div class="album-right-section">
+        <!-- 最近收听用户：固定高度250px+内部滚动+宽度收窄 -->
+        <div class="album-recent-users">
+          <h4 class="users-title" :style="{borderBottomColor: mainColor}">最近收听用户</h4>
+          <div class="users-scroll-wrapper">
+            <div class="no-users-tip" v-if="recentUsers.length === 0">暂无用户添加该专辑</div>
+            <ul class="users-list" v-else>
+              <li class="user-item" v-for="(user, idx) in recentUsers" :key="idx">
+                <span class="user-avatar" :style="{backgroundColor: mainColorDark}">{{ user.name.slice(0,1) }}</span>
+                <span class="user-name">{{ user.name }}</span>
+                <span class="user-time" :style="{color: mainColorDarkDouble}">{{ user.listenTime }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- 专辑风格：占满右侧剩余所有高度 -->
+        <div class="album-style-chart">
+          <h4 class="style-title" :style="{borderBottomColor: mainColor}">专辑风格</h4>
+          <TagBubbleChart
+            :tag-stats="tagChartData"
+            :loading="chartLoading"
+            :main-color="mainColor"
+          />
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import TagBubbleChart from '@/components/TagBubbleChart.vue'
+
 export default {
   name: 'AlbumPoolDetail',
+  components: {TagBubbleChart},
   data() {
     return {
       albumData: null,
       loading: false,
-      isAdmin: false // 是否为管理员
+      chartLoading: false,
+      isAdmin: false,
+      tagChartData: [],
+      recentUsers: [],
+      showIntro: false,
+      bgStyle: {},
+      mainColor: '#42b983',
+      mainColorDark: '#2f9465',
+      mainColorDarkDouble: '#257750'
     }
   },
   created() {
@@ -68,55 +127,81 @@ export default {
       this.$router.push('/login');
       return;
     }
-    // 判断是否为管理员
     this.isAdmin = localStorage.getItem('is_admin') === '1';
-    // 获取URL中的poolId
     const poolId = this.$route.params.poolId;
     this.getPoolAlbumDetail(poolId);
+    this.getAlbumTagStats(poolId);
+    this.getAlbumPoolUsers(poolId);
   },
   methods: {
-    // 终极修复：强制解析所有时间格式为YYYY-MM-DD
     formatCreateTime(timeStr) {
       if (!timeStr || timeStr === '') return '未知';
-
-      // 第一步：强制转成Date对象（不管输入格式是什么）
       let date;
       try {
-        // 处理各种时间格式：字符串/时间戳/ISO/浏览器格式
         date = new Date(timeStr);
-        // 校验是否是有效日期（Invalid Date的时间戳是NaN）
-        if (isNaN(date.getTime())) {
-          return '未知';
-        }
+        if (isNaN(date.getTime())) return '未知';
       } catch (e) {
         return '未知';
       }
-
-      // 第二步：手动格式化成年月日（避免浏览器本地化差异）
       const year = date.getFullYear();
-      // 月份从0开始，补0
       const month = String(date.getMonth() + 1).padStart(2, '0');
-      // 日期补0
       const day = String(date.getDate()).padStart(2, '0');
-
-      // 最终返回：YYYY-MM-DD
       return `${year}-${month}-${day}`;
     },
-    // 获取公共专辑详情
+    extractAlbumMainColor(imgUrl) {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 10;
+        canvas.height = 10;
+        ctx.drawImage(img, 0, 0, 10, 10);
+        const data = ctx.getImageData(0,0,10,10).data;
+        let r=0,g=0,b=0,c=0;
+        for(let i=0;i<data.length;i+=4){r+=data[i];g+=data[i+1];b+=data[i+2];c++}
+        r=Math.floor(r/c);g=Math.floor(g/c);b=Math.floor(b/c);
+        const hex = `#${((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1)}`;
+        this.mainColor = hex;
+        this.mainColorDark = this.darkenColor(hex, 0.3);
+        this.mainColorDarkDouble = this.darkenColor(hex, 0.5);
+      };
+      img.onerror = () => {
+        this.mainColor = '#42b983';
+        this.mainColorDark = '#2f9465';
+        this.mainColorDarkDouble = '#257750';
+      };
+      img.src = imgUrl;
+    },
+    darkenColor(hex, amount) {
+      const r = parseInt(hex.slice(1,3),16)*(1-amount);
+      const g = parseInt(hex.slice(3,5),16)*(1-amount);
+      const b = parseInt(hex.slice(5,7),16)*(1-amount);
+      return `#${Math.round(r).toString(16).padStart(2,'0')}${Math.round(g).toString(16).padStart(2,'0')}${Math.round(b).toString(16).padStart(2,'0')}`;
+    },
+    setFullPageBg(coverImg) {
+      if (coverImg) {
+        this.bgStyle = {
+          backgroundImage: `url(${coverImg})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat'
+        }
+      } else {
+        this.bgStyle = { backgroundColor: '#f9f9f9' };
+      }
+    },
     getPoolAlbumDetail(poolId) {
       this.loading = true;
       this.$axios({
         url: `/api/album/pool/detail/${poolId}`,
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}` // 修复Token格式
-        }
+        headers: {'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}
       })
           .then(res => {
             this.loading = false;
             if (res.data.code === 200) {
               this.albumData = res.data.data;
-              // 兼容：确保tracks是数组（避免后端返回字符串/空值）
               if (typeof this.albumData.tracks === 'string') {
                 try {
                   this.albumData.tracks = JSON.parse(this.albumData.tracks);
@@ -126,10 +211,8 @@ export default {
               } else if (!Array.isArray(this.albumData.tracks)) {
                 this.albumData.tracks = [];
               }
-
-              // 调试：打印原始时间字符串，方便排查
-              console.log('原始创建时间：', this.albumData.create_time);
-              console.log('格式化后时间：', this.formatCreateTime(this.albumData.create_time));
+              this.setFullPageBg(this.albumData.cover_img);
+              if(this.albumData.cover_img) this.extractAlbumMainColor(this.albumData.cover_img);
             } else {
               alert('获取详情失败：' + res.data.msg);
             }
@@ -140,15 +223,46 @@ export default {
             alert('获取详情失败！');
           });
     },
-    // 复制为我的副本
+    getAlbumTagStats(poolId) {
+      this.chartLoading = true;
+      this.$axios({
+        url: `/api/album/${poolId}/tag-statistics`,
+        method: 'GET',
+        headers: {'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}
+      })
+          .then(res => {
+            this.chartLoading = false;
+            if (res.data.code === 200) {
+              this.tagChartData = res.data.data || [];
+            }
+          })
+          .catch(err => {
+            this.chartLoading = false;
+            console.error('获取专辑风格数据失败：', err);
+          });
+    },
+    getAlbumPoolUsers(poolId) {
+      this.$axios({
+        url: `/api/album/pool/users/${poolId}`,
+        method: 'GET',
+        headers: {'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}
+      })
+          .then(res => {
+            if (res.data.code === 200) {
+              this.recentUsers = res.data.data || [];
+            }
+          })
+          .catch(err => {
+            console.error('获取专辑用户列表失败：', err);
+            this.recentUsers = [];
+          });
+    },
     copyAlbum() {
       if (!confirm('确定复制该公共专辑为你的私有副本吗？')) return;
       this.$axios({
         url: `/api/album/pool/copy/${this.$route.params.poolId}`,
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}` // 修复Token格式
-        }
+        headers: {'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}
       })
           .then(res => {
             if (res.data.code === 200) {
@@ -163,11 +277,9 @@ export default {
             alert('复制失败！');
           });
     },
-    // 跳转到修改页面
     goEditAlbum() {
       this.$router.push(`/album/pool/edit/${this.$route.params.poolId}`);
     },
-    // 返回搜索池
     goBack() {
       this.$router.push('/album-pool');
     }
@@ -177,24 +289,43 @@ export default {
 
 <style scoped>
 .pool-detail-container {
-  max-width: 1000px; /* 加宽容器，适配左右布局 */
+  max-width: 1400px;
   margin: 0 auto;
   padding: 20px;
+  position: relative;
+  min-height: 100vh;
+  z-index: 1;
 }
 
-/* 新增修改按钮样式 */
+.bg-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+	width: 100%;
+	height: 100%;
+  z-index: -1;
+  filter: blur(25px) brightness(1.2);
+  -webkit-filter: blur(25px) brightness(1.2);
+}
+
 .edit-btn-container {
   text-align: right;
   margin-bottom: 20px;
+  z-index: 9;
+  position: relative;
 }
 
 .edit-btn {
   padding: 8px 20px;
-  background: #ff9800;
   color: white;
-  border: none;
+	border: none;
   border-radius: 4px;
   cursor: pointer;
+  transition: all 0.2s;
+}
+.edit-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
 }
 
 .loading-tip, .empty-tip {
@@ -203,25 +334,70 @@ export default {
   padding: 30px 0;
 }
 
-/* 核心：左右分栏布局 */
 .album-detail-wrapper {
   margin-top: 20px;
   display: flex;
   align-items: flex-start;
-  gap: 30px;
+  gap: 25px;
+	width: 100%;
+  align-items: stretch;
 }
 
-/* 左侧基础信息 */
-.album-base-info {
-  flex: 1; /* 左侧占1份 */
-  min-width: 300px; /* 增大最小宽度，确保时间完整显示 */
+/* ✅ 去掉白色边框 + 解决气泡溢出核心样式 */
+.album-left-section {
+  flex: 1.8;
+  min-width: 450px;
+  max-width: 500px;
+  height: 720px;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: 8px;
+  /* ✔️ 删除白色边框 border: 1px solid rgba(255,255,255,0.5); */
+  position: relative;
+  overflow: hidden;
+  transition: all 0.5s ease;
+}
+
+.album-panel {
+  position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	padding: 0px;
+	box-sizing: border-box;
+	transition: all 0.5s ease;
+}
+
+.info-panel {
+  opacity: 1;
+  z-index: 2;
+}
+
+.intro-panel {
+  opacity: 0;
+  z-index: 1;
+  transform: translateX(50px);
+}
+
+.slide-to-intro .info-panel {
+  opacity: 0;
+  transform: translateX(-50px);
+  z-index: 1;
+}
+
+.slide-to-intro .intro-panel {
+  opacity: 1;
+  transform: translateX(0);
+  z-index: 2;
 }
 
 .cover {
-  width: 200px;
-  height: 200px;
-  margin: 0 auto;
-  border: 1px solid #ddd;
+  width: 260px;
+  height: 260px;
+  margin: 40px auto 20px;
+  /* ✔️ 删除封面白色边框 border: 1px solid rgba(255,255,255,0.6); */
   border-radius: 8px;
   overflow: hidden;
   display: flex;
@@ -230,139 +406,172 @@ export default {
 }
 
 .detail-cover {
-  width: 100%;
-  height: 100%;
+	width: 100%;
+	height: 100%;
   object-fit: cover;
 }
 
 .no-cover {
   color: #999;
-  font-size: 14px;
+  font-size: 16px;
 }
 
-.info {
-  margin-top: 20px;
-  text-align: center;
-  width: 100%;
-  padding: 0 15px;
+.info-mask {
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: 6px;
+  padding: 15px 20px;
+  margin: 0 auto 25px;
+  width: 380px;
   box-sizing: border-box;
 }
-
+.info {
+  text-align: center;
+	width: 100%;
+  box-sizing: border-box;
+}
 .info h3 {
-  font-size: 20px;
+  font-size: 24px;
   color: #333;
+  margin-bottom: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+	font-weight: 600;
 }
-
 .info p {
-  margin: 10px 0; /* 增大行间距，避免拥挤 */
-  color: #666;
-  font-size: 15px; /* 增大字体，更清晰 */
-  /* 关键：强制换行，确保时间完整显示 */
-  white-space: normal;
-  word-break: break-all;
+  margin: 12px 0;
+  font-size: 17px;
+  font-weight: 500;
 }
-
-/* 创建时间专属样式 */
 .info .create-time {
-  font-size: 14px;
-  color: #555;
-  font-weight: 500; /* 加粗，更醒目 */
-  /* 确保宽度足够 */
+  font-size: 15px;
   display: block;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .actions {
-  margin-top: 30px;
+  margin-top: 10px;
   display: flex;
   justify-content: center;
-  gap: 20px;
+  gap: 25px;
 }
 
-.copy-btn {
-  padding: 8px 20px;
-  background: #42b983;
-  color: white;
-  border: none;
-  border-radius: 4px;
+.copy-btn, .back-btn {
+  padding: 10px 25px;
+  font-size: 16px;
+  border-radius: 6px;
+	border: none;
   cursor: pointer;
+  transition: all 0.2s;
+  color: #fff;
 }
-
 .back-btn {
-  padding: 8px 20px;
   background: #999;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+}
+.copy-btn:hover, .back-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
 }
 
-/* 分隔线 */
-.divider {
-  width: 1px;
-  background-color: #eee;
-  /* 自适应高度 */
-  height: auto;
-  min-height: 400px;
-  align-self: stretch;
-}
-
-/* 右侧单曲列表 */
-.album-songs-list {
-  flex: 1.5; /* 右侧占1.5份，更宽 */
-  padding: 10px;
-  min-width: 350px; /* 增大最小宽度 */
-}
-
-.songs-title {
+/* 核心修改：标题带圆角下划线 */
+.intro-title, .songs-title, .users-title, .style-title {
   font-size: 18px;
   color: #333;
-  margin-bottom: 15px;
-  border-bottom: 2px solid #42b983;
-  padding-bottom: 8px;
+  font-weight: 600;
+	padding: 15px 20px 8px;
+  margin: 0 !important;
+	width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  width: calc(100% - 40px);
+  margin: 0 auto !important;
+  position: relative;
+}
+/* 伪元素实现圆角下划线 */
+.intro-title::after,
+.songs-title::after,
+.users-title::after,
+.style-title::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 7px;
+  border-radius: 2px;
+  background-color: v-bind(mainColorDark);
+}
+
+.intro-mask {
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: 6px;
+  margin: 12px 20px 0;
+  padding: 10px;
+	height: calc(100% - 80px);
+  box-sizing: border-box;
+}
+.intro-content {
+  font-size: 16px;
+  color: #333;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+	padding: 10px 15px;
+	height: 100%;
+  overflow-y: auto;
+  margin-top: 0;
+}
+.no-intro-tip {
+  color: #999;
+  text-align: center;
+	padding: 60px 0;
+	height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  margin:0;
 }
 
 .no-songs-tip {
   color: #999;
   text-align: center;
-  padding: 20px 0;
+	padding: 12px 20px 20px;
+  marginTop: 0;
 }
-
 .songs-list {
   list-style: none;
-  padding: 0;
+	padding: 12px 20px 0;
   margin: 0;
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
 }
-
 .song-item {
   display: flex;
   align-items: center;
   margin-bottom: 12px;
-  padding: 8px 12px;
-  background-color: #f9f9f9;
-  border-radius: 4px;
+  padding: 10px 15px;
+  background: rgba(255,255,255,0.3);
+  border-radius: 6px;
 }
-
-/* 正方形序号样式 */
 .song-index {
   display: inline-block;
-  width: 24px;
-  height: 24px;
-  line-height: 24px;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
   text-align: center;
-  background-color: #42b983;
   color: white;
   font-size: 14px;
-  border-radius: 2px; /* 轻微圆角，接近正方形 */
-  margin-right: 15px;
+  border-radius: 3px;
+  margin-right: 18px;
 }
-
 .song-name {
-  font-size: 15px;
+  font-size: 16px;
   color: #333;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -370,21 +579,186 @@ export default {
   flex: 1;
 }
 
-/* 响应式适配（小屏幕变回上下布局） */
-@media (max-width: 768px) {
+.album-center-section {
+  flex: 1.2;
+  min-width: 300px;
+  max-width: 350px;
+  height: 720px;
+}
+/* ✅ 去掉白色边框 */
+.album-songs-list {
+  padding: 0 !important;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: 8px;
+  /* ✔️ 删除白色边框 border: 1px solid rgba(255,255,255,0.5); */
+	height: 100%;
+  box-sizing: border-box;
+}
+
+.album-right-section {
+  flex: 0.8;
+  min-width: 220px;
+  max-width: 500px;
+  height: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+/* ✅ 去掉白色边框 */
+.album-recent-users {
+  padding: 0 !important;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: 8px;
+  /* ✔️ 删除白色边框 border: 1px solid rgba(255,255,255,0.5); */
+	height: 250px;
+  box-sizing: border-box;
+}
+.users-scroll-wrapper {
+	height: calc(100% - 50px);
+  overflow-y: auto;
+  padding: 12px 20px 0;
+}
+.users-scroll-wrapper::-webkit-scrollbar {
+  width: 4px;
+}
+.users-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 2px;
+}
+.users-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.user-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+	padding:8px 10px;
+  margin-bottom:8px;
+  background:rgba(255,255,255,0.3);
+  border-radius:6px;
+  font-size:14px;
+}
+.user-avatar {
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:13px;
+  margin-right:8px;
+}
+.user-name {
+  flex:1;
+  font-size:14px;
+  color:#333;
+}
+.user-time {
+  font-size:12px;
+}
+
+/* ✅ ✅ ✅ 核心修改 二合一：1.去掉白色边框 2.气泡图不超框（不改气泡大小） 完美解决 */
+.album-style-chart {
+  padding: 0 !important;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: 8px;
+  /* ✔️ 删除白色边框 border: 1px solid rgba(255,255,255,0.5); */
+  flex: 1;
+  min-height: 320px;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden; /* ✔️ 核心：强制裁剪溢出的气泡，彻底解决超框问题，不改动任何气泡样式 */
+}
+/** ✅ 不改动气泡大小+完美适配容器 - 只调整内边距和高度，气泡原样保留 */
+.album-style-chart >>> .tag-bubble-chart-container {
+  padding: 12px 20px 20px !important;
+  box-sizing: border-box;
+  width: 100%;
+  height: calc(100% - 55px) !important; /* ✔️ 精准计算高度，刚好填充容器，不溢出 */
+  position: relative;
+}
+
+.slide-toggle-btn {
+  position:absolute;
+  top:50%;
+  right:0px;
+  transform: translateY(-50%);
+	width:24px;
+	height:auto;
+  min-height: 48px;
+  color:#fff;
+  border-radius:12px 0 0 12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+	box-shadow:0 2px 8px rgba(0,0,0,0.15);
+  z-index:99;
+  transition:all 0.3s ease;
+  padding: 5px 0;
+}
+.slide-toggle-btn:hover {
+  opacity:0.95;
+}
+.icon-arrow {
+  font-size:18px;
+	font-weight:bold;
+	line-height:1;
+}
+
+@media (max-width: 1200px) {
   .album-detail-wrapper {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .album-left-section {
+    max-width: 100%;
+    flex: 1 1 100%;
+  }
+  .album-center-section {
+    flex: 1 1 100%;
+    min-width: 100%;
+    max-width: 100%;
+    margin-top: 20px;
+    height:auto;
+  }
+  .album-right-section {
+    flex: 1 1 100%;
+    min-width: 100%;
+    max-width: 100%;
+    margin-top:20px;
+    height:auto;
+    flex-direction:row;
+    gap:20px;
+  }
+  .album-recent-users {
+    flex:1;
+    height:300px;
+  }
+  .album-style-chart {
+    flex:1;
+    min-height:300px;
+  }
+}
+
+@media (max-width: 768px) {
+  .album-right-section {
     flex-direction: column;
-    gap: 20px;
   }
-
-  .divider {
-    width: 100%;
-    height: 1px;
-    margin: 20px 0;
+  .album-recent-users {
+    height:280px;
   }
-
-  .album-base-info, .album-songs-list {
-    min-width: 100%; /* 移动端占满宽度 */
+  .album-style-chart {
+    min-height:250px;
   }
 }
 </style>

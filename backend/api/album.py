@@ -1,7 +1,10 @@
 from flask import request, jsonify
 import json
 import traceback
-from ..db_utils import get_db, get_album_table_name, get_current_user_id
+from ..db_utils import (
+    get_db, get_album_table_name, get_current_user_id,
+    save_user_album_intro, get_user_album_intro  # 新增导入简介操作函数
+)
 from ..decorators import login_required
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, VALID_SORT_FIELDS
 import pymysql
@@ -16,7 +19,7 @@ def register_album_routes(app):
     def album_list_compatible():
         return get_album_list()
 
-    # 2. 获取专辑列表（完全保留你原来的逻辑 + 修复JSON解析容错）
+    # 2. 获取专辑列表（完全保留你原来的逻辑 + 修复JSON解析容错 + 新增专辑简介字段）
     @app.route('/api/music', methods=['GET', 'OPTIONS'])  # 仅加OPTIONS
     @login_required
     def get_album_list():
@@ -65,6 +68,11 @@ def register_album_routes(app):
 
             album_list = []
             for album in albums:
+                # ========== 新增：优先获取用户专属简介 ==========
+                user_intro = get_user_album_intro(current_user_id, album["id"])
+                # 优先使用用户专属简介，无则用专辑表中的简介
+                final_intro = user_intro if user_intro else album.get("album_intro", "")
+
                 album_dict = {
                     "id": album["id"],
                     "album_name": album["album_name"],
@@ -84,6 +92,8 @@ def register_album_routes(app):
                     "code": album["code"],
                     "video_shared": album["video_shared"],
                     "mandopop_code": album["mandopop_code"],
+                    # 新增：使用最终的简介（用户专属 > 专辑表）
+                    "album_intro": final_intro,
                     # 修复tracks解析
                     "tracks": safe_json_loads(album["tracks"]),
                     # 修复review解析（注意review是字典，容错为{}）
@@ -106,6 +116,7 @@ def register_album_routes(app):
                     "list": album_list,
                     "pagination": {
                         "total": total,
+                        "page": page,
                         "page": page,
                         "page_size": page_size,
                         "total_pages": total_pages
@@ -253,7 +264,7 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"保存标签失败：{str(e)}"}), 500
 
-    # 3. 补充专辑详情接口（关键：加OPTIONS，逻辑和列表一致）
+    # 3. 补充专辑详情接口（关键：加OPTIONS，逻辑和列表一致 + 新增专辑简介）
     @app.route('/api/album/detail/<int:album_id>', methods=['GET', 'OPTIONS'])
     @login_required
     def get_album_detail(album_id):
@@ -282,7 +293,12 @@ def register_album_routes(app):
                 except (json.JSONDecodeError, TypeError):
                     return []
 
-            # 解析逻辑和列表完全一致（使用容错函数）
+            # ========== 新增：优先获取用户专属简介 ==========
+            user_intro = get_user_album_intro(current_user_id, album_id)
+            # 优先使用用户专属简介，无则用专辑表中的简介
+            final_intro = user_intro if user_intro else album.get("album_intro", "")
+
+            # 解析逻辑和列表完全一致（使用容错函数 + 新增专辑简介）
             album_dict = {
                 "id": album["id"],
                 "album_name": album["album_name"],
@@ -300,6 +316,8 @@ def register_album_routes(app):
                 "code": album["code"],
                 "video_shared": album["video_shared"],
                 "mandopop_code": album["mandopop_code"],
+                # 新增：使用最终的简介（用户专属 > 专辑表）
+                "album_intro": final_intro,
                 "tracks": safe_json_loads(album["tracks"]),
                 "review": safe_json_loads(album["review"]) if safe_json_loads(album["review"]) is not None else {},
                 "score": album["score"],
@@ -320,7 +338,7 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 500
 
-    # 4. 添加专辑接口（核心修改：防重复校验 + 补充tracks写入album_pool）
+    # 4. 添加专辑接口（核心修改：新增专辑简介字段 + 防重复校验 + 补充tracks写入album_pool）
     @app.route('/api/album/add', methods=['POST', 'OPTIONS'])
     @login_required
     def add_album():
@@ -385,6 +403,9 @@ def register_album_routes(app):
                 except:
                     return json.dumps([])
 
+            # 新增：处理专辑简介字段（支持长文本、分段、特殊符号）
+            album_intro = data.get('album_intro', '').strip()
+
             new_album = {
                 "album_name": album_name,
                 "cover_img": data.get('cover_img', '').strip(),
@@ -401,6 +422,8 @@ def register_album_routes(app):
                 "code": data.get('code', ''),
                 "video_shared": data.get('video_shared', ''),
                 "mandopop_code": data.get('mandopop_code', ''),
+                # 新增：专辑简介（放在tracks上方）
+                "album_intro": album_intro,
                 "tracks": json.dumps(data.get('tracks', [])) or "",
                 "review": json.dumps({
                     "feelings": [],
@@ -418,14 +441,14 @@ def register_album_routes(app):
                 "is_customized": 0  # 默认未自定义
             }
 
-            # ========== 核心修改2：先插入公共专辑池，获取pool_id ==========
+            # ========== 核心修改2：先插入公共专辑池，获取pool_id（新增album_intro） ==========
             main_type_str = json.dumps(data.get('main_type', [])) if data.get('main_type') else ""
             tracks_str = get_default_tracks_value(data.get('tracks', []))  # 处理默认值
             cursor.execute('''
                 INSERT INTO album_pool (
                     album_name, cover_img, singer, release_year, 
-                    main_type, tags, tracks, my_score, create_user
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    main_type, tags, album_intro, tracks, my_score, create_user
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 new_album['album_name'],
                 new_album['cover_img'],
@@ -433,6 +456,7 @@ def register_album_routes(app):
                 new_album['release_year'],
                 main_type_str,
                 new_album['tags'],
+                new_album['album_intro'],  # 新增：写入专辑简介到公共池
                 tracks_str,  # 新增：写入tracks字段
                 new_album['my_score'],
                 current_user_id
@@ -442,17 +466,17 @@ def register_album_routes(app):
             # 给source_pool_id赋值
             new_album['source_pool_id'] = new_pool_id
 
-            # ========== 核心修改3：插入用户专属表时，新增source_pool_id等同步字段 ==========
+            # ========== 核心修改3：插入用户专属表时，新增album_intro和同步字段 ==========
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
                     track_count, track_duration, my_score, burn_class, duration_type,
                     tags, main_type, code, video_shared, mandopop_code,
-                    tracks, review, score, comments,
+                    album_intro, tracks, review, score, comments,
                     source_pool_id, sync_pool_update, is_customized  -- 新增同步字段
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s  -- 同步字段对应的值
                 )
             ''', (
@@ -461,6 +485,8 @@ def register_album_routes(app):
                 new_album['track_duration'], new_album['my_score'], new_album['burn_class'],
                 new_album['duration_type'], new_album['tags'], new_album['main_type'],
                 new_album['code'], new_album['video_shared'], new_album['mandopop_code'],
+                # 新增：专辑简介字段值
+                new_album['album_intro'],
                 new_album['tracks'], new_album['review'], new_album['score'],
                 new_album['comments'],
                 # 同步字段的值
@@ -469,6 +495,10 @@ def register_album_routes(app):
                 new_album['is_customized']
             ))
             new_album_id = cursor.lastrowid
+
+            # ========== 新增：如果有专辑简介，同步保存到user_album_intro表 ==========
+            if album_intro:
+                save_user_album_intro(current_user_id, new_album_id, album_intro)
 
             db.commit()
             cursor.close()
@@ -509,6 +539,13 @@ def register_album_routes(app):
             db = get_db()
             cursor = db.cursor()
 
+            # ========== 新增：删除专辑时，同时删除对应的用户专属简介 ==========
+            # 先删除user_album_intro中的记录
+            cursor.execute('''
+                DELETE FROM user_album_intro 
+                WHERE user_id = %s AND album_id = %s
+            ''', (current_user_id, album_id))
+
             # 关键点2：删除条件必须包含album_id（前端传的ID）
             cursor.execute(f'DELETE FROM `{table_name}` WHERE id = %s', (album_id,))
             affected_rows = cursor.rowcount  # 关键：获取受影响行数
@@ -527,3 +564,63 @@ def register_album_routes(app):
             print(f"删除专辑出错：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"删除专辑失败：{str(e)}"}), 500
+
+    # ========== 核心新增：保存用户专辑专属简介接口 ==========
+    @app.route('/api/album/user/intro/save', methods=['POST', 'OPTIONS'])
+    @login_required
+    def save_user_album_intro_api():
+        """保存用户对专辑的专属简介（关联账号）"""
+        try:
+            user_id = get_current_user_id()
+            if not user_id:
+                return jsonify({"code": 401, "msg": "请先登录"}), 401
+
+            # 获取请求参数
+            data = request.get_json()
+            album_id = data.get('album_id')
+            intro_content = data.get('intro_content', '').strip()
+
+            # 参数校验
+            if not album_id:
+                return jsonify({"code": 400, "msg": "专辑ID不能为空"}), 400
+            if not intro_content:
+                return jsonify({"code": 400, "msg": "简介内容不能为空"}), 400
+
+            # 调用db_utils中的保存函数
+            save_success = save_user_album_intro(user_id, album_id, intro_content)
+            if save_success:
+                return jsonify({
+                    "code": 200,
+                    "msg": "专辑简介保存成功（已关联账号）",
+                    "data": {"album_id": album_id, "intro_content": intro_content}
+                })
+            else:
+                return jsonify({"code": 500, "msg": "简介保存失败，请稍后重试"}), 500
+
+        except Exception as e:
+            print(f"❌ 保存用户专辑简介接口出错：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"保存简介失败：{str(e)}"}), 500
+
+    # ========== 核心新增：获取用户专辑专属简介接口 ==========
+    @app.route('/api/album/user/intro/get/<int:album_id>', methods=['GET', 'OPTIONS'])
+    @login_required
+    def get_user_album_intro_api(album_id):
+        """获取当前用户对指定专辑的专属简介"""
+        try:
+            user_id = get_current_user_id()
+            if not user_id:
+                return jsonify({"code": 401, "msg": "请先登录"}), 401
+
+            # 调用db_utils中的查询函数
+            intro_content = get_user_album_intro(user_id, album_id)
+            return jsonify({
+                "code": 200,
+                "msg": "获取简介成功",
+                "data": intro_content
+            })
+
+        except Exception as e:
+            print(f"❌ 获取用户专辑简介接口出错：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"获取简介失败：{str(e)}"}), 500

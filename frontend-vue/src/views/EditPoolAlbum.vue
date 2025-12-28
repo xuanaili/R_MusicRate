@@ -67,15 +67,17 @@
         >
       </div>
 
-      <!-- 标签 -->
+      <!-- 替换标签：专辑简介（支持长文本、分段、特殊符号） -->
       <div class="form-item">
-        <label>标签（多个用逗号分隔）：</label>
-        <input
-            v-model="tagInput"
-            type="text"
-            placeholder="例如：流行,华语,2020"
-            class="form-input"
-        >
+        <label>专辑简介：</label>
+        <textarea
+            v-model="album.album_intro"
+            placeholder="请输入专辑简介（支持长文本、分段、特殊符号）"
+            class="album-intro-textarea form-input"
+            rows="8"
+            spellcheck="false"
+        ></textarea>
+        <p class="intro-tip">提示：支持分段（按Enter）、特殊符号，内容将完整保存</p>
       </div>
 
       <!-- 核心：单曲列表（和添加专辑一致的交互） -->
@@ -131,15 +133,15 @@ export default {
   data() {
     return {
       albumId: '', // 公共专辑ID
-      // 专辑表单（和添加专辑结构一致）
+      // 专辑表单（新增album_intro字段，移除tagInput）
       album: {
         album_name: "",
         cover_img: "",
         singer: "",
         release_year: "",
+        album_intro: "", // 专辑简介
         songs: [{song_name: ""}] // 单曲列表
       },
-      tagInput: '', // 标签输入框（逗号分隔）
       loading: false,
       isUploading: false,
       syncResult: null, // 存储同步结果
@@ -241,8 +243,8 @@ export default {
       }
     },
 
-    // ========== 原有核心逻辑 ==========
-    // 获取原有专辑数据
+    // ========== 原有核心逻辑（修改适配专辑简介） ==========
+    // 获取原有专辑数据（新增album_intro赋值，移除标签相关逻辑）
     getAlbumData() {
       this.loading = true;
       this.$axios({
@@ -256,19 +258,18 @@ export default {
             this.loading = false;
             if (res.data.code === 200) {
               const data = res.data.data;
-              // 基础信息赋值
+              // 基础信息赋值（新增album_intro）
               this.album = {
                 album_name: data.album_name || "",
                 cover_img: data.cover_img || "",
                 singer: data.singer || "",
                 release_year: data.release_year || "",
+                album_intro: data.album_intro || "", // 专辑简介赋值
                 // 处理单曲列表：后端返回的tracks转成输入框格式
                 songs: data.tracks && Array.isArray(data.tracks)
                     ? data.tracks.map(song => ({song_name: song}))
                     : [{song_name: ""}]
               };
-              // 标签数组转逗号分隔字符串
-              this.tagInput = (data.tags && Array.isArray(data.tags)) ? data.tags.join(',') : '';
             } else {
               alert('加载专辑数据失败：' + res.data.msg);
               this.goBack();
@@ -282,7 +283,7 @@ export default {
           });
     },
 
-    // 提交修改（保留同步逻辑）
+    // 提交修改（新增album_intro字段，移除标签相关逻辑）
     submitEdit() {
       // 清除之前的错误提示
       this.errorMsg = "";
@@ -310,16 +311,13 @@ export default {
         return;
       }
 
-      // 3. 处理标签（字符串转数组）
-      const tags = this.tagInput.split(',').map(tag => tag.trim()).filter(tag => tag);
-
-      // 4. 构造提交数据
+      // 3. 构造提交数据（新增album_intro，移除tags）
       const submitData = {
         album_name: this.album.album_name.trim(),
         cover_img: this.album.cover_img.trim(),
         singer: this.album.singer.trim(),
         release_year: this.album.release_year ? Number(this.album.release_year) : '',
-        tags: tags,
+        album_intro: this.album.album_intro.trim(), // 专辑简介（保留原始格式）
         tracks: validSongs // 单曲列表转数组
       };
 
@@ -399,6 +397,22 @@ export default {
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
+}
+
+/* 新增：专辑简介文本框样式 */
+.album-intro-textarea {
+  line-height: 1.6;
+  resize: vertical; /* 允许垂直调整大小 */
+  font-family: inherit;
+  white-space: pre-wrap; /* 保留换行和空格 */
+  word-wrap: break-word; /* 自动换行 */
+}
+
+.intro-tip {
+  margin: 5px 0 0 0;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
 }
 
 /* 封面上传区域（和添加专辑一致） */

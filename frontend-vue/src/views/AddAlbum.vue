@@ -32,6 +32,19 @@
       <input v-model="album.release_year" type="number" placeholder="如：2024">
     </div>
 
+    <!-- 新增：专辑简介（放在单曲列表上方） -->
+    <div class="form-item">
+      <label>专辑简介：</label>
+      <textarea
+        v-model="album.album_intro"
+        placeholder="请输入专辑简介（支持长文本、分段、特殊符号）"
+        class="album-intro-textarea"
+        rows="8"
+        spellcheck="false"
+      ></textarea>
+      <p class="intro-tip">提示：支持分段（按Enter）、特殊符号，内容将完整保存</p>
+    </div>
+
     <!-- 核心：单曲列表（优化交互） -->
     <div class="form-item">
       <label>单曲列表：</label>
@@ -74,12 +87,13 @@ export default {
   name: 'AddAlbum',
   data() {
     return {
-      // 仅保留核心字段
+      // 新增 album_intro 字段
       album: {
         album_name: "",
         cover_img: "",
         singer: "",
         release_year: "",
+        album_intro: "", // 专辑简介
         // 单曲列表：初始1个空输入框
         songs: [{ song_name: "" }]
       },
@@ -197,12 +211,13 @@ export default {
         return;
       }
 
-      // 3. 构造提交数据
+      // 3. 构造提交数据（新增 album_intro 字段）
       const submitData = {
         album_name: this.album.album_name.trim(),
         cover_img: this.album.cover_img.trim(),
         singer: this.album.singer.trim(),
         release_year: Number(this.album.release_year),
+        album_intro: this.album.album_intro.trim(), // 专辑简介（保留原始格式）
         tracks: validSongs // 仅传递有效单曲名数组
       };
 
@@ -268,6 +283,28 @@ export default {
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
+}
+
+/* 专辑简介文本框样式 */
+.album-intro-textarea {
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical; /* 允许垂直调整大小 */
+  font-family: inherit;
+  white-space: pre-wrap; /* 保留换行和空格 */
+  word-wrap: break-word; /* 自动换行 */
+}
+
+.intro-tip {
+  margin: 5px 0 0 0;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
 }
 
 /* 封面上传区域 */

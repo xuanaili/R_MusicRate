@@ -16,6 +16,7 @@
           @click="handleSubmitComment"
           class="submit-btn"
           :disabled="!commentContent.trim() || hasComment"
+          :style="{backgroundColor: mainColorDark}"
         >
           {{ hasComment ? '你已发表评论，不可重复发布' : '发布评论' }}
         </button>
@@ -29,6 +30,7 @@
         class="sort-btn"
         :class="{active: sortType === 'time'}"
         @click="$emit('sort-change', 'time')"
+        :style="sortType==='time'?{backgroundColor:mainColorDark,color:'#fff',borderColor:mainColorDark}:{}"
       >
         最新时间
       </button>
@@ -36,6 +38,7 @@
         class="sort-btn"
         :class="{active: sortType === 'like'}"
         @click="$emit('sort-change', 'like')"
+        :style="sortType==='like'?{backgroundColor:mainColorDark,color:'#fff',borderColor:mainColorDark}:{}"
       >
         最多点赞
       </button>
@@ -48,10 +51,11 @@
         class="comment-item my-comment"
         v-if="myComment"
         :key="myComment.id"
+        :style="{border: '2px solid '+mainColorDark, backgroundColor: 'rgba('+hexToRgb(mainColor)+',0.05)'}"
       >
         <div class="comment-header">
-          <span class="comment-username">{{ myComment.username }}</span>
-          <span class="my-tag">我的评论</span>
+          <span class="comment-username" :style="{color:mainColorDark}">{{ myComment.username }}</span>
+          <span class="my-tag" :style="{backgroundColor:mainColorDark}">我的评论</span>
           <span v-if="myComment.is_admin" class="admin-tag">管理员</span>
         </div>
         <div class="comment-content">{{ myComment.content }}</div>
@@ -62,6 +66,7 @@
               class="like-btn"
               @click="$emit('like-comment', myComment.id)"
               :class="{liked: myComment.like_user_ids.includes(currentUserId)}"
+              :style="{color: myComment.like_user_ids.includes(currentUserId) ? '#e53935' : '#999'}"
             >
               👍 {{ myComment.like_count }}
             </button>
@@ -86,11 +91,12 @@
           class="block-btn"
           @click="$emit('block-comment', comment.id)"
           title="屏蔽这条评论"
+          :style="{backgroundColor:mainColorDark}"
         >
           🚫
         </button>
         <div class="comment-header">
-          <span class="comment-username">{{ comment.username }}</span>
+          <span class="comment-username" :style="{color:mainColorDark, fontWeight:600}">{{ comment.username }}</span>
           <span v-if="comment.is_admin" class="admin-tag">管理员</span>
         </div>
         <div class="comment-content">{{ comment.content }}</div>
@@ -101,6 +107,7 @@
               class="like-btn"
               @click="$emit('like-comment', comment.id)"
               :class="{liked: comment.like_user_ids.includes(currentUserId)}"
+              :style="{color: comment.like_user_ids.includes(currentUserId) ? '#e53935' : '#999'}"
             >
               👍 {{ comment.like_count }}
             </button>
@@ -121,7 +128,7 @@
     <!-- 已屏蔽评论提示 -->
     <div class="block-tip" v-if="blockedCommentIds.length > 0">
       已屏蔽 <span>{{ blockedCommentIds.length }}</span> 条评论
-      <button class="unblock-all-btn" @click="$emit('unblock-all')">取消全部屏蔽</button>
+      <button class="unblock-all-btn" @click="$emit('unblock-all')" :style="{backgroundColor:mainColorDark}">取消全部屏蔽</button>
     </div>
   </div>
 </template>
@@ -178,6 +185,17 @@ export default {
       type: Array,
       required: true,
       default: () => []
+    },
+    // ✅✅✅ 接收父组件传的主色+加深色
+    mainColor: {
+      type: String,
+      required: true,
+      default: '#42b983'
+    },
+    mainColorDark: {
+      type: String,
+      required: true,
+      default: '#2f9465'
     }
   },
   data() {
@@ -186,15 +204,20 @@ export default {
     };
   },
   watch: {
-    // 同步父组件的评论内容
     commentContent(val) {
       this.$emit('update-comment-content', val);
     }
   },
   methods: {
-    // 发布评论
     handleSubmitComment() {
       this.$emit('submit-comment');
+    },
+    // 辅助方法：十六进制转rgb，用于背景色透明度
+    hexToRgb(hex) {
+      const r = parseInt(hex.slice(1,3),16);
+      const g = parseInt(hex.slice(3,5),16);
+      const b = parseInt(hex.slice(5,7),16);
+      return `${r},${g},${b}`;
     }
   }
 };
@@ -210,7 +233,7 @@ export default {
 
 .comment-textarea {
   width: 100%;
-  padding: 10px;
+	padding: 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
   resize: vertical;
@@ -229,18 +252,23 @@ export default {
   text-align: right;
 }
 
+/* 发布按钮 基础样式 */
 .submit-btn {
   padding: 8px 20px;
-  background: #42b983;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  transition: all 0.2s;
 }
-
 .submit-btn:disabled {
-  background: #999;
+  background: #999 !important;
   cursor: not-allowed;
+  opacity: 0.7;
+}
+.submit-btn:hover:not(:disabled) {
+  opacity: 0.95;
+  filter: brightness(0.9);
 }
 
 /* 排序选项 */
@@ -268,11 +296,9 @@ export default {
   font-size: 14px;
   transition: all 0.2s;
 }
-
-.sort-btn.active {
-  background-color: #42b983;
-  color: #fff;
-  border-color: #42b983;
+.sort-btn:hover:not([style*="backgroundColor"]) {
+  border-color: v-bind(mainColorDark);
+  color: v-bind(mainColorDark);
 }
 
 .comments-list-container {
@@ -289,11 +315,6 @@ export default {
   position: relative;
 }
 
-.comment-item.my-comment {
-  border: 2px solid #42b983;
-  background-color: #f0f8fb;
-}
-
 .comment-header {
   margin-bottom: 10px;
   display: flex;
@@ -301,14 +322,7 @@ export default {
   gap: 8px;
 }
 
-.comment-username {
-  font-weight: 600;
-  color: #42b983;
-  font-size: 14px;
-}
-
 .my-tag {
-  background-color: #42b983;
   color: white;
   font-size: 10px;
   padding: 2px 6px;
@@ -353,16 +367,16 @@ export default {
   gap: 5px;
   background: transparent;
   border: none;
-  color: #999;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
+  transition: all 0.2s;
+}
+.like-btn:hover {
+  background-color: rgba(0,0,0,0.03);
 }
 
-.like-btn.liked {
-  color: #e53935;
-}
-
+/* 删除按钮 红色系保留 */
 .delete-comment-btn {
   padding: 4px 8px;
   background: #e74c3c;
@@ -371,10 +385,11 @@ export default {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  transition: all 0.2s;
 }
-
 .delete-comment-btn:hover {
   background: #c0392b;
+  opacity: 0.95;
 }
 
 /* 屏蔽按钮 */
@@ -382,7 +397,6 @@ export default {
   position: absolute;
   top: 10px;
   right: 10px;
-  background-color: #999;
   color: white;
   border: none;
   border-radius: 50%;
@@ -394,17 +408,17 @@ export default {
   cursor: pointer;
   font-size: 12px;
   opacity: 0.7;
-  transition: opacity 0.2s;
+  transition: all 0.2s;
 }
-
 .block-btn:hover {
   opacity: 1;
+  filter: brightness(0.9);
 }
 
 .no-comment {
   color: #999;
   font-size: 13px;
-  margin: 5px 0;
+	margin: 5px 0;
   text-align: center;
   padding: 30px 0;
 }
@@ -423,11 +437,15 @@ export default {
 .unblock-all-btn {
   margin-left: 10px;
   padding: 2px 8px;
-  background-color: #42b983;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  transition: all 0.2s;
+}
+.unblock-all-btn:hover {
+  opacity: 0.95;
+  filter: brightness(0.9);
 }
 </style>

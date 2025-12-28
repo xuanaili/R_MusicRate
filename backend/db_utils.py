@@ -59,9 +59,9 @@ def get_album_table_name(user_id):
     return f'albums_{user_id}'
 
 
-# ========== 核心修改：更新用户专辑表结构（新增同步相关字段） ==========
+# ========== 核心修改：更新用户专辑表结构（新增同步相关字段 + 专辑简介） ==========
 def create_user_album_table(user_id):
-    """为新用户创建专属的专辑表（新增同步开关、自定义标记、来源模板ID字段 + tracks字段）"""
+    """为新用户创建专属的专辑表（新增同步开关、自定义标记、来源模板ID字段 + tracks + album_intro）"""
     try:
         db = get_db()
         cursor = db.cursor()
@@ -85,6 +85,7 @@ def create_user_album_table(user_id):
                 code VARCHAR(50) DEFAULT "",
                 video_shared VARCHAR(50) DEFAULT "",
                 mandopop_code VARCHAR(50) DEFAULT "",
+                album_intro TEXT NULL COMMENT '专辑简介（支持长文本、分段、特殊符号）',  -- 新增：专辑简介
                 tracks TEXT,  -- TEXT字段不设默认值
                 review TEXT,
                 score FLOAT DEFAULT 0.0,
@@ -99,14 +100,14 @@ def create_user_album_table(user_id):
         ''')
         db.commit()
         cursor.close()
-        print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！已包含同步相关字段 + tracks字段")
+        print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！已包含同步相关字段 + tracks + album_intro")
     except Exception as e:
         print(f"❌ 创建用户专辑表失败：{str(e)}")
         raise e
 
 
 def check_and_create_user_album_table(user_id):
-    """检查用户专辑表是否存在，不存在则创建 + 补充缺失字段（含tracks）"""
+    """检查用户专辑表是否存在，不存在则创建 + 补充缺失字段（含tracks + album_intro）"""
     try:
         db = get_db()
         # 关键修复：使用DictCursor确保返回字典格式
@@ -123,8 +124,19 @@ def check_and_create_user_album_table(user_id):
         if not table_exists:
             create_user_album_table(user_id)
         else:
-            # ========== 核心新增：为已有用户表补充缺失字段（含tracks） ==========
-            # 1. 检查并添加tracks字段（防止历史表缺失）
+            # ========== 核心新增：为已有用户表补充缺失字段（含tracks + album_intro） ==========
+            # 1. 检查并添加album_intro字段（专辑简介）
+            cursor.execute(f'''
+                SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'album_intro'
+            ''', (MYSQL_CONFIG['db'], table_name))
+            result = cursor.fetchone()
+            if result['count'] == 0:
+                cursor.execute(
+                    f'ALTER TABLE `{table_name}` ADD COLUMN album_intro TEXT NULL COMMENT "专辑简介（支持长文本、分段、特殊符号）" AFTER mandopop_code')
+                print(f"✅ 为用户{user_id}的专辑表{table_name}补充album_intro字段")
+
+            # 2. 检查并添加tracks字段（防止历史表缺失）
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'tracks'
@@ -132,10 +144,10 @@ def check_and_create_user_album_table(user_id):
             result = cursor.fetchone()
             if result['count'] == 0:
                 cursor.execute(
-                    f'ALTER TABLE `{table_name}` ADD COLUMN tracks TEXT COMMENT "单曲列表（JSON字符串）" AFTER mandopop_code')
+                    f'ALTER TABLE `{table_name}` ADD COLUMN tracks TEXT COMMENT "单曲列表（JSON字符串）" AFTER album_intro')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充tracks字段")
 
-            # 2. 检查并添加source_pool_id字段
+            # 3. 检查并添加source_pool_id字段
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'source_pool_id'
@@ -146,7 +158,7 @@ def check_and_create_user_album_table(user_id):
                     f'ALTER TABLE `{table_name}` ADD COLUMN source_pool_id INT NULL COMMENT "来源公共模板ID" AFTER created_at')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充source_pool_id字段")
 
-            # 3. 检查并添加sync_pool_update字段
+            # 4. 检查并添加sync_pool_update字段
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'sync_pool_update'
@@ -157,7 +169,7 @@ def check_and_create_user_album_table(user_id):
                     f'ALTER TABLE `{table_name}` ADD COLUMN sync_pool_update TINYINT DEFAULT 1 COMMENT "是否同步模板更新（1=开启，0=关闭）" AFTER source_pool_id')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充sync_pool_update字段")
 
-            # 4. 检查并添加is_customized字段
+            # 5. 检查并添加is_customized字段
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'is_customized'
@@ -175,8 +187,40 @@ def check_and_create_user_album_table(user_id):
         raise e
 
 
+# ========== 新增：创建用户-专辑专属简介表 ==========
+def create_user_album_intro_table():
+    """创建用户-专辑专属简介表（核心：关联user_id + album_id，存储用户自定义简介）"""
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        # 创建独立的user_album_intro表，专门存储用户对专辑的自定义简介
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_album_intro (
+                id INT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+                user_id INT NOT NULL COMMENT '用户ID（关联users表）',
+                album_id INT NOT NULL COMMENT '专辑ID（关联用户专属专辑表/album_pool）',
+                album_intro TEXT NULL COMMENT '用户自定义的专辑简介（支持长文本、分段）',
+                update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后更新时间',
+                -- 联合唯一索引：确保一个用户对一个专辑只能有一条简介
+                UNIQUE KEY idx_user_album (user_id, album_id),
+                -- 普通索引：提升查询效率
+                INDEX idx_user_id (user_id),
+                INDEX idx_album_id (album_id),
+                INDEX idx_update_time (update_time)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户-专辑专属简介表（与账号绑定）';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ user_album_intro表创建/检查成功！")
+    except Exception as e:
+        print(f"❌ 创建user_album_intro表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
+# ========== 核心：初始化所有基础表 ==========
 def init_base_tables():
-    """初始化基础表（重构后的users + album_pool(含tracks) + album_comments + 模板历史表）"""
+    """初始化基础表（重构后的users + album_pool(含tracks+album_intro) + album_comments + 模板历史表 + user_album_intro）"""
     try:
         db = get_db()
         # 关键修复：全局使用DictCursor，统一返回字典格式
@@ -198,8 +242,8 @@ def init_base_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表（重构版）';
         ''')
 
-        # ========== 2. 升级后的album_pool表（核心：新增tracks字段 + 版本号 + 修改日志） ==========
-        # 移除tracks字段的DEFAULT默认值（解决MySQL 1101错误）
+        # ========== 2. 升级后的album_pool表（核心：新增tracks + album_intro字段 + 版本号 + 修改日志） ==========
+        # 移除TEXT字段的DEFAULT默认值（解决MySQL 1101错误）
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS album_pool (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -209,6 +253,7 @@ def init_base_tables():
                 release_year INT NOT NULL,
                 main_type VARCHAR(50) DEFAULT "",  # 改VARCHAR更适合短文本
                 tags TEXT,  # TEXT字段不设默认值
+                album_intro TEXT NULL COMMENT '专辑简介（支持长文本、分段、特殊符号）',  -- 新增：专辑简介
                 tracks TEXT COMMENT '单曲列表（JSON字符串）',  # 核心：新增tracks字段（无默认值）
                 my_score FLOAT DEFAULT 0.0,
                 create_user INT NOT NULL COMMENT '创建用户ID',
@@ -221,13 +266,14 @@ def init_base_tables():
                 INDEX idx_album_name (album_name),
                 INDEX idx_singer (singer),
                 INDEX idx_tags (tags(50)),
+                INDEX idx_album_intro (album_intro(50)),  -- 新增专辑简介索引
                 INDEX idx_main_type (main_type),
                 INDEX idx_tracks (tracks(50)),  # 新增tracks索引
                 INDEX idx_version (version)  # 新增版本号索引
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑搜索池表（带版本管理 + tracks）';
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑搜索池表（带版本管理 + tracks + album_intro）';
         ''')
 
-        # ========== 3. 新增：album_pool_history 模板历史版本表（同步tracks字段） ==========
+        # ========== 3. 新增：album_pool_history 模板历史版本表（同步tracks + album_intro字段） ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS album_pool_history (
                 id INT AUTO_INCREMENT PRIMARY KEY COMMENT '历史记录ID',
@@ -239,14 +285,16 @@ def init_base_tables():
                 release_year INT NOT NULL COMMENT '历史发行年份',
                 main_type VARCHAR(50) DEFAULT "" COMMENT '历史主类型',
                 tags TEXT COMMENT '历史标签',
+                album_intro TEXT NULL COMMENT '历史专辑简介',  -- 同步：专辑简介
                 tracks TEXT COMMENT '历史单曲列表',  # 同步tracks字段（无默认值）
                 my_score FLOAT DEFAULT 0.0 COMMENT '历史评分',
                 update_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '版本更新时间',
                 -- 索引优化
                 INDEX idx_pool_version (pool_id, version),
                 INDEX idx_update_time (update_time),
+                INDEX idx_album_intro (album_intro(50)),  # 新增专辑简介索引
                 INDEX idx_tracks (tracks(50))  # 新增tracks索引
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='公共专辑模板历史版本表（含tracks）';
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='公共专辑模板历史版本表（含tracks + album_intro）';
         ''')
 
         # ========== 4. 原有album_comments表（无需修改） ==========
@@ -268,7 +316,22 @@ def init_base_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑公共评论表';
         ''')
 
-        # ========== 补充：为已有album_pool表添加tracks字段（关键修复） ==========
+        # ========== 补充：为已有album_pool表添加缺失字段（tracks + album_intro） ==========
+        # 检查album_pool是否已有album_intro字段
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool' AND COLUMN_NAME = 'album_intro'
+        ''', (MYSQL_CONFIG['db'],))
+        result = cursor.fetchone()
+        if result['count'] == 0:
+            # 新增album_intro字段时不设置默认值（解决1101错误）
+            cursor.execute('''
+                ALTER TABLE album_pool 
+                ADD COLUMN album_intro TEXT NULL COMMENT '专辑简介（支持长文本、分段、特殊符号）' 
+                AFTER tags
+            ''')
+            print("✅ 为已有album_pool表补充album_intro字段")
+
         # 检查album_pool是否已有tracks字段
         cursor.execute('''
             SELECT COUNT(*) as count FROM information_schema.COLUMNS 
@@ -280,9 +343,24 @@ def init_base_tables():
             cursor.execute('''
                 ALTER TABLE album_pool 
                 ADD COLUMN tracks TEXT COMMENT '单曲列表（JSON字符串）' 
-                AFTER tags
+                AFTER album_intro
             ''')
             print("✅ 为已有album_pool表补充tracks字段")
+
+        # ========== 补充：为已有album_pool_history表添加缺失字段（tracks + album_intro） ==========
+        # 检查album_pool_history是否已有album_intro字段
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool_history' AND COLUMN_NAME = 'album_intro'
+        ''', (MYSQL_CONFIG['db'],))
+        result = cursor.fetchone()
+        if result['count'] == 0:
+            cursor.execute('''
+                ALTER TABLE album_pool_history 
+                ADD COLUMN album_intro TEXT NULL COMMENT '历史专辑简介' 
+                AFTER tags
+            ''')
+            print("✅ 为已有album_pool_history表补充album_intro字段")
 
         # 检查album_pool_history是否已有tracks字段
         cursor.execute('''
@@ -294,17 +372,22 @@ def init_base_tables():
             cursor.execute('''
                 ALTER TABLE album_pool_history 
                 ADD COLUMN tracks TEXT COMMENT '历史单曲列表' 
-                AFTER tags
+                AFTER album_intro
             ''')
             print("✅ 为已有album_pool_history表补充tracks字段")
 
         db.commit()
         cursor.close()
+
+        # ========== 关键新增：创建user_album_intro表 ==========
+        create_user_album_intro_table()
+
         print("✅ MySQL基础表初始化成功！包含：")
         print("  - 重构后users表")
-        print("  - 带版本管理 + tracks字段的album_pool表")
-        print("  - 含tracks的album_pool_history模板历史表")
+        print("  - 带版本管理 + tracks + album_intro字段的album_pool表")
+        print("  - 含tracks + album_intro的album_pool_history模板历史表")
         print("  - album_comments公共评论表")
+        print("  - user_album_intro用户-专辑专属简介表")
 
         # 初始化默认admin用户（适配新表结构）
         init_default_admin()
@@ -334,13 +417,13 @@ def init_default_admin():
             ''', (DEFAULT_ADMIN_USER, encrypted_pwd, datetime.now()))
             admin_id = cursor.lastrowid
             db.commit()
-            # 为admin创建专属专辑表（包含同步字段 + tracks）
+            # 为admin创建专属专辑表（包含同步字段 + tracks + album_intro）
             create_user_album_table(admin_id)
             print(f"✅ 默认admin用户创建成功（ID：{admin_id}），密码已加密，权限为管理员！")
         else:
-            # 为已有admin用户检查并创建专辑表（补充同步字段 + tracks）
+            # 为已有admin用户检查并创建专辑表（补充同步字段 + tracks + album_intro）
             check_and_create_user_album_table(user['user_id'])  # 字典取值
-            print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），已检查并补充专辑表同步字段 + tracks")
+            print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），已检查并补充专辑表同步字段 + tracks + album_intro")
         cursor.close()
     except Exception as e:
         print(f"❌ 初始化admin用户失败：{str(e)}")
@@ -364,21 +447,63 @@ def get_next_id(table_name):
         return 1
 
 
-# ========== 新增：数据插入时的默认值处理函数（弥补TEXT无默认值） ==========
-def get_default_tracks_value(tracks_data):
+# ========== 新增：用户专辑简介的增删改查函数（供接口调用） ==========
+def save_user_album_intro(user_id, album_id, intro_content):
     """
-    处理tracks字段的默认值（弥补MySQL TEXT无默认值的限制）
-    :param tracks_data: 传入的tracks数据
-    :return: 合法的JSON字符串（空数组默认[]）
+    保存用户对专辑的专属简介
+    :param user_id: 用户ID
+    :param album_id: 专辑ID
+    :param intro_content: 简介内容
+    :return: bool 保存是否成功
     """
-    import json  # 局部导入，避免循环依赖
-    if not tracks_data:
-        return json.dumps([])
-    if isinstance(tracks_data, list):
-        return json.dumps(tracks_data)
     try:
-        # 尝试解析为JSON，确保格式合法
-        json.loads(tracks_data)
-        return tracks_data
-    except:
-        return json.dumps([])
+        db = get_db()
+        cursor = db.cursor()
+        # 先查询是否已有记录（存在则更新，不存在则新增）
+        cursor.execute('''
+            SELECT id FROM user_album_intro WHERE user_id = %s AND album_id = %s
+        ''', (user_id, album_id))
+        existing = cursor.fetchone()
+
+        if existing:
+            # 更新已有简介
+            cursor.execute('''
+                UPDATE user_album_intro 
+                SET album_intro = %s 
+                WHERE user_id = %s AND album_id = %s
+            ''', (intro_content, user_id, album_id))
+        else:
+            # 新增简介
+            cursor.execute('''
+                INSERT INTO user_album_intro (user_id, album_id, album_intro) 
+                VALUES (%s, %s, %s)
+            ''', (user_id, album_id, intro_content))
+        db.commit()
+        cursor.close()
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"❌ 保存用户专辑简介失败：{str(e)}")
+        return False
+
+
+def get_user_album_intro(user_id, album_id):
+    """
+    获取用户对专辑的专属简介
+    :param user_id: 用户ID
+    :param album_id: 专辑ID
+    :return: str 简介内容，无则返回空字符串
+    """
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+            SELECT album_intro FROM user_album_intro 
+            WHERE user_id = %s AND album_id = %s
+        ''', (user_id, album_id))
+        result = cursor.fetchone()
+        cursor.close()
+        return result['album_intro'] if result else ""
+    except Exception as e:
+        print(f"❌ 获取用户专辑简介失败：{str(e)}")
+        return ""
