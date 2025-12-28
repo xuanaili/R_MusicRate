@@ -60,6 +60,7 @@
         :other-comments="otherComments"
         :main-color="albumMainColor"
         :main-color-dark="albumMainColorDark"
+        :main-color-dark-double="albumMainColorDarkDouble"
         @sort-change="changeSortType"
         @block-comment="blockComment"
         @unblock-all="unblockAllComments"

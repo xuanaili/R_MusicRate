@@ -1,9 +1,10 @@
 <template>
   <div class="tab-content">
-    <h2>{{ album.album_name || '未知专辑' }}——公共评论区</h2>
+    <!-- 标题颜色绑定 封面加深再加深色 无固定绿色 -->
+    <h2 :style="{color: mainColorDarkDouble}">{{ album.album_name || '未知专辑' }}——公共评论区</h2>
 
-    <!-- 评论输入框 -->
-    <div class="comment-input-card">
+    <!-- ✅ 核心改版：分2种状态 - 无评论【带磨砂蒙版输入框】 | 有评论【隐藏输入框+只留提示按钮】 -->
+    <div v-if="!hasComment" class="comment-input-card">
       <textarea
         v-model="commentContent"
         placeholder="分享你的听后感..."
@@ -18,12 +19,21 @@
           :disabled="!commentContent.trim() || hasComment"
           :style="{backgroundColor: mainColorDark}"
         >
-          {{ hasComment ? '你已发表评论，不可重复发布' : '发布评论' }}
+          发布评论
         </button>
       </div>
     </div>
 
-    <!-- 排序选项 -->
+    <!-- ✅ 已发表评论：只显示提示按钮 居中展示 无输入框 自动上移 -->
+    <div
+      v-else
+      class="comment-has-tip"
+      :style="{backgroundColor: mainColorDark}"
+    >
+      你已发表评论，不可重复发布
+    </div>
+
+    <!-- 排序选项 - 唯一保留 透明磨砂蒙版 自动上移无空白 -->
     <div class="sort-options" v-if="publicComments.length > 0">
       <span class="sort-label">排序方式：</span>
       <button
@@ -46,12 +56,12 @@
 
     <!-- 公共评论列表 -->
     <div class="comments-list-container" v-if="(publicComments.length - blockedCommentIds.length) > 0">
-      <!-- 自己的评论 置顶 -->
+      <!-- 自己的评论 置顶 - 纯透明 仅保留主色边框 无任何背景色 -->
       <div
         class="comment-item my-comment"
         v-if="myComment"
         :key="myComment.id"
-        :style="{border: '2px solid '+mainColorDark, backgroundColor: 'rgba('+hexToRgb(mainColor)+',0.05)'}"
+        :style="{border: '2px solid '+mainColorDark}"
       >
         <div class="comment-header">
           <span class="comment-username" :style="{color:mainColorDark}">{{ myComment.username }}</span>
@@ -60,7 +70,7 @@
         </div>
         <div class="comment-content">{{ myComment.content }}</div>
         <div class="comment-footer">
-          <span class="comment-time">{{ myComment.create_time }}</span>
+          <span class="comment-time" :style="{color: mainColorDarkDouble}">{{ myComment.create_time }}</span>
           <div class="comment-actions">
             <button
               class="like-btn"
@@ -80,7 +90,7 @@
         </div>
       </div>
 
-      <!-- 他人的评论 -->
+      <!-- 他人的评论 - 纯透明 无磨砂 无背景色 无边框 -->
       <div
         class="comment-item"
         v-for="comment in otherComments"
@@ -101,7 +111,7 @@
         </div>
         <div class="comment-content">{{ comment.content }}</div>
         <div class="comment-footer">
-          <span class="comment-time">{{ comment.create_time }}</span>
+          <span class="comment-time" :style="{color: mainColorDarkDouble}">{{ comment.create_time }}</span>
           <div class="comment-actions">
             <button
               class="like-btn"
@@ -125,7 +135,7 @@
 
     <p class="no-comment" v-else>暂无评论，快来抢沙发~</p>
 
-    <!-- 已屏蔽评论提示 -->
+    <!-- 已屏蔽评论提示 - 纯透明 无磨砂 无背景色 -->
     <div class="block-tip" v-if="blockedCommentIds.length > 0">
       已屏蔽 <span>{{ blockedCommentIds.length }}</span> 条评论
       <button class="unblock-all-btn" @click="$emit('unblock-all')" :style="{backgroundColor:mainColorDark}">取消全部屏蔽</button>
@@ -186,7 +196,6 @@ export default {
       required: true,
       default: () => []
     },
-    // ✅✅✅ 接收父组件传的主色+加深色
     mainColor: {
       type: String,
       required: true,
@@ -196,6 +205,11 @@ export default {
       type: String,
       required: true,
       default: '#2f9465'
+    },
+    mainColorDarkDouble: {
+      type: String,
+      required: true,
+      default: '#257d51'
     }
   },
   data() {
@@ -212,7 +226,6 @@ export default {
     handleSubmitComment() {
       this.$emit('submit-comment');
     },
-    // 辅助方法：十六进制转rgb，用于背景色透明度
     hexToRgb(hex) {
       const r = parseInt(hex.slice(1,3),16);
       const g = parseInt(hex.slice(3,5),16);
@@ -224,25 +237,40 @@ export default {
 </script>
 
 <style scoped>
-.comment-input-card {
-  background: #f9f9f9;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 30px;
+/* 标题基础样式 无固定颜色 */
+h2 {
+  font-size: 18px;
+  margin-bottom: 20px;
+  font-weight: 600;
 }
 
+/* ✅ 无评论状态 - 评论输入框容器 带透明磨砂蒙版 无边框 */
+.comment-input-card {
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  background: rgba(255, 255, 255, 0.25) !important;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border: none !important;
+}
+
+/* ✅ 无评论状态 - 输入框本身 半透明底 无边框 有输入质感 */
 .comment-textarea {
   width: 100%;
 	padding: 10px;
-  border: 1px solid #ddd;
+  border: none !important;
   border-radius: 4px;
   resize: vertical;
   font-size: 14px;
   line-height: 1.6;
+  background: rgba(255, 255, 255, 0.3) !important;
+  color: #333;
+  outline: none;
 }
 
 .comment-textarea:disabled {
-  background-color: #f5f5f5;
+  background-color: rgba(255, 255, 255, 0.2) !important;
   color: #999;
   cursor: not-allowed;
 }
@@ -252,7 +280,7 @@ export default {
   text-align: right;
 }
 
-/* 发布按钮 基础样式 */
+/* 发布按钮 样式不变 */
 .submit-btn {
   padding: 8px 20px;
   color: white;
@@ -271,15 +299,32 @@ export default {
   filter: brightness(0.9);
 }
 
-/* 排序选项 */
+/* ✅ 核心新增：已发表评论 只显示提示按钮 居中+适配色+自动上移 无多余间距 */
+.comment-has-tip {
+  width: 100%;
+  padding: 10px 0;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 14px;
+  margin-bottom: 20px;
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+/* 排序方式容器 - 唯一保留 透明磨砂蒙版 自动上移 无空白 */
 .sort-options {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 20px;
   padding: 10px;
-  background-color: #f8f8f8;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   border-radius: 4px;
+  border: none !important;
 }
 
 .sort-label {
@@ -290,7 +335,7 @@ export default {
 .sort-btn {
   padding: 4px 12px;
   background-color: #fff;
-  border: 1px solid #ddd;
+	border: 1px solid #ddd;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
@@ -305,10 +350,10 @@ export default {
   margin-top: 20px;
 }
 
-/* 评论项 */
+/* 所有人的评论项 - 纯透明 无磨砂 无背景色 无边框 */
 .comment-item {
-  background: #fff;
-  border: 1px solid #eee;
+  background: transparent !important;
+  border: none !important;
   border-radius: 8px;
   padding: 15px;
   margin-bottom: 15px;
@@ -329,11 +374,12 @@ export default {
   border-radius: 10px;
 }
 
+/* 管理员标签 红色保留 不变 */
 .admin-tag {
   background-color: #e53935;
   color: white;
-  font-size: 10px;
-  padding: 2px 6px;
+	font-size: 10px;
+	padding: 2px 6px;
   border-radius: 10px;
 }
 
@@ -349,7 +395,6 @@ export default {
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
-  color: #999;
 }
 
 .comment-time {
@@ -361,6 +406,7 @@ export default {
   gap: 10px;
 }
 
+/* 点赞按钮 红色保留 不变 */
 .like-btn {
   display: flex;
   align-items: center;
@@ -376,7 +422,7 @@ export default {
   background-color: rgba(0,0,0,0.03);
 }
 
-/* 删除按钮 红色系保留 */
+/* 删除按钮 红色系保留 不变 */
 .delete-comment-btn {
   padding: 4px 8px;
   background: #e74c3c;
@@ -392,7 +438,7 @@ export default {
   opacity: 0.95;
 }
 
-/* 屏蔽按钮 */
+/* 屏蔽按钮样式不变 */
 .block-btn {
   position: absolute;
   top: 10px;
@@ -400,8 +446,8 @@ export default {
   color: white;
   border: none;
   border-radius: 50%;
-  width: 24px;
-  height: 24px;
+	width: 24px;
+	height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -423,15 +469,16 @@ export default {
   padding: 30px 0;
 }
 
-/* 已屏蔽提示 */
+/* 已屏蔽提示 - 纯透明 无磨砂 无背景色 */
 .block-tip {
   margin-top: 20px;
   padding: 10px;
-  background-color: #f8f8f8;
+  background: transparent !important;
   border-radius: 4px;
   font-size: 14px;
   color: #666;
   text-align: center;
+  border: none !important;
 }
 
 .unblock-all-btn {

@@ -347,6 +347,7 @@ def register_comment_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"点赞失败：{str(e)}"}), 500
 
+
     # 6. 删除公共评论（仅作者/管理员可删）
     @app.route('/api/album/pool/comment/delete/<int:comment_id>', methods=['DELETE', 'OPTIONS'])
     @login_required
@@ -358,26 +359,33 @@ def register_comment_routes(app):
             current_user_id = get_current_user_id()
             if not current_user_id:
                 return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+            # 强制转为int，确保数据类型统一
+            current_user_id = int(current_user_id)
 
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # 查询评论作者 + 是否为管理员
-            cursor.execute('''
-                SELECT ac.user_id, u.is_admin 
-                FROM album_comments ac
-                LEFT JOIN users u ON ac.user_id = u.user_id
-                WHERE ac.id = %s
-            ''', (comment_id,))
+            # ========== 修复点1：修改SQL，分两步查询，先查评论作者，再查当前登录用户的管理员状态 ==========
+            # 第一步：查询这条评论的作者ID，确认评论是否存在
+            cursor.execute('SELECT user_id FROM album_comments WHERE id = %s', (comment_id,))
             comment = cursor.fetchone()
             if not comment:
                 cursor.close()
                 return jsonify({"code": 404, "msg": "评论不存在！"}), 404
+            # 评论作者ID 强转int，统一数据类型
+            comment_author_id = int(comment['user_id'])
 
-            # 权限校验：仅作者/管理员可删
-            if comment['user_id'] != current_user_id and comment['is_admin'] != 1:
+            # 第二步：查询【当前登录用户】的管理员状态（核心修复！查自己，不是查评论作者）
+            cursor.execute('SELECT is_admin FROM users WHERE user_id = %s', (current_user_id,))
+            current_user = cursor.fetchone()
+            # 默认为非管理员，防止用户表无数据的情况
+            is_current_user_admin = current_user['is_admin'] == 1 if current_user else 0
+
+            # ========== 修复点2：修复权限判断逻辑，完美逻辑 ==========
+            # 权限规则：✅ 评论作者  或  ✅ 当前登录的管理员 → 允许删除；否则403
+            if comment_author_id != current_user_id and not is_current_user_admin:
                 cursor.close()
-                return jsonify({"code": 403, "msg": "无权限删除该评论！"}), 403
+                return jsonify({"code": 403, "msg": "无权限删除该评论！仅评论作者或管理员可删除"}), 403
 
             # 执行删除
             cursor.execute('DELETE FROM album_comments WHERE id = %s', (comment_id,))
