@@ -31,6 +31,7 @@ backend/*.log
 backend/*.db
 # 数据
 backend/data/album_covers
+backend/data/album_track
 # ===================== 通用忽略项 =====================
 # PyCharm配置
 .idea/

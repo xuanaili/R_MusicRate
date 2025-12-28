@@ -1,5 +1,5 @@
 # MusicRate\backend\api\__init__.py 接口模块初始化 - 统一注册所有业务接口
-from . import auth, album, album_pool, review, comment
+from . import auth, album, album_pool, review, comment, audio_resource  # 新增：导入音频接口
 
 
 def register_all_api_routes(app):
@@ -14,3 +14,5 @@ def register_all_api_routes(app):
     review.register_review_routes(app)
     # 注册评论接口
     comment.register_comment_routes(app)
+    # 新增：注册音频资源接口 (最后加)
+    audio_resource.register_audio_routes(app)

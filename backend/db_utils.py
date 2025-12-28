@@ -242,8 +242,7 @@ def init_base_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表（重构版）';
         ''')
 
-        # ========== 2. 升级后的album_pool表（核心：新增tracks + album_intro字段 + 版本号 + 修改日志） ==========
-        # 移除TEXT字段的DEFAULT默认值（解决MySQL 1101错误）
+        # ========== 2. 升级后的album_pool表（核心：新增tracks + album_intro + MP3音频三字段） ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS album_pool (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -261,6 +260,10 @@ def init_base_tables():
                 -- ========== 核心新增：模板版本管理字段 ==========
                 version INT DEFAULT 1 COMMENT '模板版本号',
                 update_log TEXT COMMENT '修改日志（JSON格式）',
+                -- ========== 核心新增：专辑音频三字段 (永久存储) ==========
+                mp3_url VARCHAR(255) DEFAULT NULL COMMENT '整轨MP3访问地址',
+                mp3_name VARCHAR(100) DEFAULT NULL COMMENT 'MP3原始文件名',
+                mp3_duration INT DEFAULT 0 COMMENT '音频时长(秒)',
                 -- ========== 新增字段结束 ==========
                 -- TEXT字段索引指定长度，VARCHAR字段直接索引
                 INDEX idx_album_name (album_name),
@@ -268,9 +271,10 @@ def init_base_tables():
                 INDEX idx_tags (tags(50)),
                 INDEX idx_album_intro (album_intro(50)),  -- 新增专辑简介索引
                 INDEX idx_main_type (main_type),
-                INDEX idx_tracks (tracks(50)),  # 新增tracks索引
-                INDEX idx_version (version)  # 新增版本号索引
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑搜索池表（带版本管理 + tracks + album_intro）';
+                INDEX idx_tracks (tracks(50)),  -- 新增tracks索引
+                INDEX idx_version (version),  -- 新增版本号索引
+                INDEX idx_mp3_url (mp3_url)    -- 新增音频地址索引
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑搜索池表（带版本管理 + tracks + album_intro + MP3音频）';
         ''')
 
         # ========== 3. 新增：album_pool_history 模板历史版本表（同步tracks + album_intro字段） ==========
@@ -346,7 +350,39 @@ def init_base_tables():
                 AFTER album_intro
             ''')
             print("✅ 为已有album_pool表补充tracks字段")
+        # ========== 补充：为已有album_pool表添加缺失的音频三字段 ==========
+        # 检查并添加mp3_url字段
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool' AND COLUMN_NAME = 'mp3_url'
+        ''', (MYSQL_CONFIG['db'],))
+        result = cursor.fetchone()
+        if result['count'] == 0:
+            cursor.execute(
+                'ALTER TABLE album_pool ADD COLUMN mp3_url VARCHAR(255) DEFAULT NULL COMMENT "整轨MP3访问地址" AFTER update_log')
+            print("✅ 为已有album_pool表补充mp3_url字段")
 
+        # 检查并添加mp3_name字段
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool' AND COLUMN_NAME = 'mp3_name'
+        ''', (MYSQL_CONFIG['db'],))
+        result = cursor.fetchone()
+        if result['count'] == 0:
+            cursor.execute(
+                'ALTER TABLE album_pool ADD COLUMN mp3_name VARCHAR(100) DEFAULT NULL COMMENT "MP3原始文件名" AFTER mp3_url')
+            print("✅ 为已有album_pool表补充mp3_name字段")
+
+        # 检查并添加mp3_duration字段
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool' AND COLUMN_NAME = 'mp3_duration'
+        ''', (MYSQL_CONFIG['db'],))
+        result = cursor.fetchone()
+        if result['count'] == 0:
+            cursor.execute(
+                'ALTER TABLE album_pool ADD COLUMN mp3_duration INT DEFAULT 0 COMMENT "音频时长(秒)" AFTER mp3_name')
+            print("✅ 为已有album_pool表补充mp3_duration字段")
         # ========== 补充：为已有album_pool_history表添加缺失字段（tracks + album_intro） ==========
         # 检查album_pool_history是否已有album_intro字段
         cursor.execute('''
