@@ -9,7 +9,7 @@
             v-for="(item, idx) in localPlaylistTabs"
             :key="idx"
             :class="{active: localActiveTabIndex === idx}"
-            @click="localActiveTabIndex = idx"
+            @click="handleTabChange(idx)"
           >
             <span class="tab-name">{{ item.name }}</span>
             <span class="tab-close-icon" @click.stop="delPlaylistTab(idx)" v-if="idx > 0">×</span>
@@ -170,7 +170,6 @@ export default {
       isDragging: false,
       dragTimer: null, // ✅ 新增：防抖定时器，杜绝高频触发
       playModeMap: { order: '顺序播放', single: '单曲循环', random: '随机播放' },
-      // ✅ 核心修复2：变量名拼写错误！ isDragingAction → isDraggingAction (少了一个g)
       isDraggingAction: false
     };
   },
@@ -210,6 +209,13 @@ export default {
     },
     playModeTipText() {
       return `点击切换播放模式：${this.playModeText}`
+    },
+    // ✅ 新增：当前正在播放的专辑数据
+    currentPlayingAlbum() {
+      if (this.currentTrackIndex > -1 && this.currentPlaylist.length) {
+        return this.currentPlaylist[this.currentTrackIndex];
+      }
+      return null;
     }
   },
   watch: {
@@ -261,8 +267,30 @@ export default {
   },
   beforeDestroy() {
     clearTimeout(this.dragTimer)
+    // ✅ 销毁组件前 兜底上传时长
+    this.handlePauseAndUploadDuration();
   },
   methods: {
+    // ✅ ✅ ✅ 【核心新增】统一公共方法：暂停播放 + 上传播放时长 + 重置索引 所有场景复用 ✅ ✅ ✅
+    async handlePauseAndUploadDuration() {
+      if (this.currentTrackIndex > -1 && this.currentPlayingAlbum) {
+        // 1. 派发暂停事件给父组件的播放器
+        this.$emit('pause-track');
+        // 2. 调用上传时长接口 - 把当前播放专辑的时长存入数据库
+        const albumId = this.currentPlayingAlbum.id;
+        if (albumId) {
+          try {
+            await this.$axios.post(`/api/album/listening/pause/${albumId}`);
+            console.log('✅ 切换歌单-自动上传播放时长成功 albumId=', albumId);
+          } catch (err) {
+            console.warn('⚠️ 上传播放时长失败:', err);
+          }
+        }
+        // 3. 重置当前播放索引，清除播放状态残留
+        this.$emit('update:currentTrackIndex', -1);
+      }
+    },
+
     addPlaylistTab() {
       const tabName = prompt('请输入歌单名称：', '我的新歌单');
       if (tabName && tabName.trim()) {
@@ -270,12 +298,23 @@ export default {
         this.localActiveTabIndex = this.localPlaylistTabs.length - 1;
       }
     },
+
     delPlaylistTab(idx) {
       if (idx === 0) return this.$message?.warning('默认歌单不能删除！');
       if (confirm('确定删除这个歌单吗？')) {
+        // ✅ 删除歌单前：暂停+上传时长+重置索引
+        this.handlePauseAndUploadDuration();
         this.localPlaylistTabs.splice(idx, 1);
         this.localActiveTabIndex = Math.max(0, this.localActiveTabIndex - 1);
       }
+    },
+
+    // ✅ ✅ ✅ 【核心修改】点击切换tab的方法 新增暂停+上传逻辑
+    handleTabChange(idx) {
+      if (this.localActiveTabIndex === idx) return;
+      // 切换歌单前：必须先暂停+上传时长+重置索引 ✔️ 根治问题核心
+      this.handlePauseAndUploadDuration();
+      this.localActiveTabIndex = idx;
     },
 
     handleDragStart(idx) {
@@ -284,7 +323,6 @@ export default {
       this.isDragging = true;
       event.dataTransfer.effectAllowed = 'move';
       event.preventDefault();
-      // ✅ 绑定正确的变量名
       this.isDraggingAction = true;
       setTimeout(() => {
         this.isDraggingAction = false;
@@ -321,7 +359,6 @@ export default {
       this.isDragging = false;
       this.dragStartIndex = -1;
       this.dragPlaceholderIndex = -1;
-      // ✅ 核心修复3：重置拖拽锁变量
       this.isDraggingAction = false;
       clearTimeout(this.dragTimer)
       this.dragTimer = setTimeout(() => {
@@ -385,6 +422,8 @@ export default {
       this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
     },
     handleRemoveAllTracks() {
+      // ✅ 清空歌单前 兜底暂停+上传时长
+      this.handlePauseAndUploadDuration();
       this.localPlaylistTabs[this.localActiveTabIndex].tracks = [];
       this.$emit('update:currentTrackIndex', -1);
       this.$message?.success('已清空当前歌单');
@@ -405,6 +444,8 @@ export default {
       this.sortType = type;
     },
     handleClose() {
+      // ✅ 关闭侧边栏 兜底校验：未暂停则补传时长
+      this.handlePauseAndUploadDuration();
       this.$emit('close-sidebar');
       this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
       this.saveUserPlaylistData && this.saveUserPlaylistData()
@@ -412,7 +453,6 @@ export default {
 
 // ✅✅✅ 跳转详情页核心方法：修改判断条件为正确的变量名，逻辑不变
 async handleJumpAlbumDetail(idx) {
-  // ✅ 修复：判断正确的拖拽锁变量名
   if (this.isDraggingAction) return;
   const albumItem = this.currentPlaylist[idx];
   console.log('👉 点击专辑块，准备查询专辑ID并跳转', albumItem);
@@ -433,7 +473,6 @@ async handleJumpAlbumDetail(idx) {
     if (res.data.code === 200 && res.data.data?.album_id) {
       const realAlbumId = res.data.data.album_id;
       console.log('✅ 精准匹配成功：source_pool_id=', sourcePoolId, ' → album_id=', realAlbumId);
-      // ✅ 核心关键：直接在子组件执行跳转！不需要经过父组件转发，彻底解决问题
       this.$router.push({
         path: `/album/detail/${realAlbumId}`,
         query: {id: realAlbumId}
@@ -845,7 +884,7 @@ async handleJumpAlbumDetail(idx) {
 
 .playlist-mask {
   position: fixed;
-  top: 0;
+	top: 0;
 	left: 0;
 	width: 100%;
 	height: 100%;

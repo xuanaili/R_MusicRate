@@ -95,12 +95,14 @@ def create_user_album_table(user_id):
                 sync_pool_update TINYINT DEFAULT 1 COMMENT '是否同步模板更新（1=开启，0=关闭）',
                 is_customized TINYINT DEFAULT 0 COMMENT '是否用户自定义修改（1=是，0=否）',
                 -- ✅ 核心修改：字段类型TEXT + 注释更新 存储【时间戳数组JSON】 和tracks一一对应 ✅
-                tracks_time TEXT NULL DEFAULT NULL COMMENT '单曲对应编辑时间戳【数组JSON】：[时间戳1,时间戳2]，与tracks数组索引一一匹配'
+                tracks_time TEXT NULL DEFAULT NULL COMMENT '单曲对应编辑时间戳【数组JSON】：[时间戳1,时间戳2]，与tracks数组索引一一匹配',
+                -- ✅ ✅ ✅ 新增：播放时长统计字段 ✅ ✅ ✅
+                listening_duration FLOAT DEFAULT 0.0 COMMENT '专辑累计播放时长(秒) 精准统计'
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ''')
         db.commit()
         cursor.close()
-        print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！tracks_time为数组格式，与tracks一一对应")
+        print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！tracks_time为数组格式+新增播放时长字段")
     except Exception as e:
         print(f"❌ 创建用户专辑表失败：{str(e)}")
         raise e
@@ -108,7 +110,7 @@ def create_user_album_table(user_id):
 
 def check_and_create_user_album_table(user_id):
     """检查用户专辑表是否存在，不存在则创建 + 补充缺失字段
-    重点：自动为老用户补充tracks_time字段（TEXT类型，数组JSON）
+    重点：自动为老用户补充tracks_time字段（TEXT类型，数组JSON） + listening_duration播放时长字段
     """
     try:
         db = get_db()
@@ -179,7 +181,7 @@ def check_and_create_user_album_table(user_id):
                     f'ALTER TABLE `{table_name}` ADD COLUMN is_customized TINYINT DEFAULT 0 COMMENT "是否用户自定义修改（1=是，0=否）" AFTER sync_pool_update')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充is_customized字段")
 
-            # ✅ ✅ ✅ 重点：检查并补充 tracks_time 字段【TEXT类型】✅ ✅ ✅
+            # ✅ ✅ ✅ 重点1：检查并补充 tracks_time 字段【TEXT类型】✅ ✅ ✅
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'tracks_time'
@@ -189,6 +191,17 @@ def check_and_create_user_album_table(user_id):
                 cursor.execute(
                     f'ALTER TABLE `{table_name}` ADD COLUMN tracks_time TEXT NULL DEFAULT NULL COMMENT "单曲对应编辑时间戳【数组JSON】：[时间戳1,时间戳2]，与tracks数组索引一一匹配" AFTER is_customized')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充 tracks_time 字段【数组格式】")
+
+            # ✅ ✅ ✅ 重点2：检查并补充 listening_duration 播放时长统计字段 ✅ ✅ ✅
+            cursor.execute(f'''
+                SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'listening_duration'
+            ''', (MYSQL_CONFIG['db'], table_name))
+            result = cursor.fetchone()
+            if result['count'] == 0:
+                cursor.execute(
+                    f'ALTER TABLE `{table_name}` ADD COLUMN listening_duration FLOAT DEFAULT 0.0 COMMENT "专辑累计播放时长(秒) 精准统计" AFTER tracks_time')
+                print(f"✅ 为用户{user_id}的专辑表{table_name}补充 listening_duration 播放时长字段")
 
             db.commit()
         cursor.close()
@@ -465,7 +478,7 @@ def init_default_admin():
             print(f"✅ 默认admin用户创建成功（ID：{admin_id}）")
         else:
             check_and_create_user_album_table(user['user_id'])
-            print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），已检查并补充字段")
+            print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），已检查并补充所有缺失字段")
         cursor.close()
     except Exception as e:
         print(f"❌ 初始化admin用户失败：{str(e)}")
