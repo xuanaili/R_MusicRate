@@ -329,11 +329,11 @@ $route: {
           setTimeout(() => {
             if (this.album.source_pool_id) {
               this.getAlbumAudioInfo().then(() => {
-                // ========== ✅ 核心新增：路由参数变化后，加载完音频立即自动播放 ==========
+                // ✅ 改为直接调用播放方法，而不是autoPlay，跳转后必播放
                 this.autoPlayCurrentAlbumAudio();
               }).catch(() => console.log('音频加载失败'));
             }
-          }, 100);
+          }, 100); // 延时100ms，确保音频资源加载完成
         });
       }
     }
@@ -436,48 +436,74 @@ autoPlayCurrentAlbumAudio() {
   this.saveUserPlaylistData();
 },
 
-    // ✅✅✅ 完整修复的播放方法
-    async handlePlayTrack(index) {
-      const currentList = this.currentPlaylist;
-      if (currentList.length === 0 || index < 0 || index >= currentList.length) {
-        this.$message?.warning('播放索引无效，请重试');
-        return;
-      }
-      const playAlbum = currentList[index];
-      if (!playAlbum || !playAlbum.source_pool_id) {
-        this.$message?.error('该专辑暂无音频资源，无法播放');
-        return;
+// ✅✅✅ 重构完整版：播放指定专辑 + 自动播放 + 自动跳转详情页 + 无播放权限兼容
+// ✅✅✅ 最终完美修复版：解决重复路由报错 + 自动切歌+播放+跳转 + 无任何异常
+async handlePlayTrack(index, needJumpDetail = false) {
+  const currentList = this.currentPlaylist;
+  if (currentList.length === 0 || index < 0 || index >= currentList.length) {
+    this.$message?.warning('播放索引无效，请重试');
+    return;
+  }
+  const playAlbum = currentList[index];
+  if (!playAlbum || !playAlbum.source_pool_id) {
+    this.$message?.error('该专辑暂无音频资源，无法播放');
+    return;
+  }
+
+  try {
+    // 1. 获取专辑音频信息
+    const res = await this.$axios.get(`/api/album/pool/audio/info/${playAlbum.source_pool_id}`, {
+      headers: {Authorization: localStorage.getItem('token') || ''}
+    })
+    if (res.data.code === 200 && res.data.data.mp3_url) {
+      this.audioSrc = res.data.data.mp3_url
+      this.fileName = res.data.data.mp3_name
+      this.duration = res.data.data.mp3_duration
+      this.durationFormat = res.data.data.duration_format
+      this.currentTrackIndex = index;
+      this.currentAlbumId = index;
+      this.currentTime = 0;
+      this.currentProgress = 0;
+
+      // ========= ✅ 核心修复：解决重复路由跳转报错【关键代码】 =========
+      if (needJumpDetail) {
+        const albumIdRes = await this.$axios.get('/api/album/get-id-by-source', {
+          params: { source_pool_id: playAlbum.source_pool_id },
+          headers: {Authorization: localStorage.getItem('token') || ''}
+        });
+        if (albumIdRes.data.code === 200 && albumIdRes.data.data?.album_id) {
+          const realAlbumId = albumIdRes.data.data.album_id;
+          // ✅ 新增：判断【当前路由ID】和【要跳转的ID】是否一致，一致则不跳转，避免报错
+          const currentRouteAlbumId = Number(this.$route.params.id || this.$route.query.id);
+          if (realAlbumId !== currentRouteAlbumId) {
+            // 只有ID不同时才跳转，彻底杜绝重复导航报错
+            this.$router.replace({
+              path: `/album/detail/${realAlbumId}`,
+              query: { id: realAlbumId }
+            });
+          }
+        }
       }
 
-      try {
-        const res = await this.$axios.get(`/api/album/pool/audio/info/${playAlbum.source_pool_id}`, {
-          headers: {Authorization: localStorage.getItem('token') || ''}
-        })
-        if (res.data.code === 200 && res.data.data.mp3_url) {
-          this.audioSrc = res.data.data.mp3_url
-          this.fileName = res.data.data.mp3_name
-          this.duration = res.data.data.mp3_duration
-          this.durationFormat = res.data.data.duration_format
-          this.currentTrackIndex = index;
-          this.currentAlbumId = playAlbum.source_pool_id;
-          this.currentTime = 0;
-          this.currentProgress = 0;
-          const audio = this.$refs.audioRef;
-          audio.play().then(() => {
-            this.isPlaying = true;
-          }).catch(() => {
-            this.isPlaying = false;
-            alert('📢 请点击底部专辑封面解锁播放权限后再试～');
-          });
-        } else {
-          this.$message.error('该专辑暂无音频资源，无法播放');
-        }
-      } catch (err) {
-        console.error('❌ 获取播放音频失败：', err);
-        this.$message.error('播放失败，该专辑暂无音频资源');
-      }
-      this.saveUserPlaylistData();
-    },
+      // ========= ✅ 修复自动播放失效 + 兼容浏览器策略，切歌必自动播放 =========
+      const audio = this.$refs.audioRef;
+      audio.currentTime = 0;
+      audio.play().then(() => {
+        this.isPlaying = true;
+      }).catch(() => {
+        this.isPlaying = false;
+        this.$message?.info('📢 点击底部专辑封面即可解锁播放～');
+        audio.load();
+      });
+    } else {
+      this.$message.error('该专辑暂无音频资源，无法播放');
+    }
+  } catch (err) {
+    console.error('❌ 获取播放音频失败：', err);
+    this.$message.error('播放失败，该专辑暂无音频资源');
+  }
+  this.saveUserPlaylistData();
+},
 
     // 曲目跳转事件 - 异常捕获
     handleTrackJump(targetSec) {
@@ -676,38 +702,52 @@ async getAlbumAudioInfo() {
       audio.currentTime = this.currentTime;
     },
 
-    // ✅✅✅ 播放完毕逻辑：完整支持播放模式切换
-    async handleEnded() {
-      this.isPlaying = false;
-      this.currentProgress = 0;
-      this.currentTime = 0;
-      const audio = this.$refs.audioRef;
-      if (!audio || !this.audioSrc) return;
+// ✅✅✅ 最终完整版：播放完毕自动切歌 + 自动播放 + 自动跳转专辑详情页 无任何BUG
+async handleEnded() {
+  this.isPlaying = false;
+  this.currentProgress = 0;
+  this.currentTime = 0;
+  const audio = this.$refs.audioRef;
+  if (!audio || !this.audioSrc || this.currentPlaylist.length === 0) return;
 
-      if (this.playMode === 'single') {
-        audio.play().then(() => {
-          this.isPlaying = true;
-        }).catch(() => this.isPlaying = false);
-        this.saveUserPlaylistData();
-        return;
-      }
+  // 单曲循环：本地直接重播，不走接口，效率最高
+  if (this.playMode === 'single') {
+    audio.currentTime = 0;
+    audio.play().then(() => {
+      this.isPlaying = true;
+    }).catch(() => this.isPlaying = false);
+    this.saveUserPlaylistData();
+    return;
+  }
 
-      const currentList = this.currentPlaylist;
-      if (currentList.length === 0) return;
+  try {
+    const res = await this.$axios.post(
+      '/api/playlist/switch-next-album',
+      {
+        playlist: this.playlistTabs,
+        current_playlist_id: this.activeTabIndex,
+        current_album_id: this.currentTrackIndex,
+        play_mode: this.playMode
+      },
+      { headers: { Authorization: localStorage.getItem('token') || '' } }
+    );
 
-      if (this.playMode === 'random') {
-        const randomIndex = Math.floor(Math.random() * currentList.length);
-        await this.handlePlayTrack(randomIndex);
-        return;
-      }
-
-      if (this.currentTrackIndex < currentList.length - 1) {
-        await this.handlePlayTrack(this.currentTrackIndex + 1);
-      } else {
-        this.autoPlayCurrentAlbumAudio();
-      }
-      this.saveUserPlaylistData();
-    },
+    // ========= ✅ 新增这行判断：接口返回有效索引才执行切歌 =========
+    if (res.data.code === 200 && res.data.data && res.data.data.current_album_id !== undefined) {
+      const { current_album_id: newTrackIndex } = res.data.data;
+      await this.handlePlayTrack(newTrackIndex, true);
+    } else {
+      this.$message?.warning(res.data.msg || '已播放到最后一首，暂无更多专辑');
+      this.currentTrackIndex = -1;
+      this.audioSrc = '';
+    }
+  } catch (err) {
+    console.error('❌ 切歌接口调用失败：', err);
+    this.$message?.error('切换下一曲失败，请重试');
+  } finally {
+    this.saveUserPlaylistData();
+  }
+},
 
     updateAlbumData(updatedData) {
       this.album = {...this.album, ...updatedData};

@@ -187,3 +187,81 @@ def register_playlist_routes(app):
             print(f"❌ 保存用户播放列表数据失败：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"保存播放列表失败：{str(e)}", "data": {}})
+    # ========== ✅ 新增核心接口：专辑播放完成后，切换下一个专辑（处理所有播放模式逻辑） ==========
+    @app.route('/api/playlist/switch-next-album', methods=['POST'])
+    @login_required
+    def switch_next_album():
+        try:
+            current_user_id = get_current_user_id()
+            if not current_user_id:
+                return jsonify({"code": 401, "msg": "用户未登录，请先登录"}), 401
+            current_user_id = int(current_user_id)
+
+            # 1. 获取前端传入的核心参数 (前端必须传这几个值，兜底有默认值)
+            data = request.get_json()
+            current_playlist_id = data.get('current_playlist_id', 0)  # 当前选中的歌单ID
+            current_album_id = data.get('current_album_id', 0)       # 当前播放的专辑索引
+            play_mode = data.get('play_mode', 'order')               # 播放模式：order/random/loop
+            playlist = data.get('playlist', [{"name": "默认歌单", "tracks": []}]) # 当前完整歌单数据
+
+            # 2. 校验当前歌单是否存在、当前歌单内是否有专辑
+            if current_playlist_id >= len(playlist):
+                return jsonify({"code": 400, "msg": "当前歌单ID无效", "data": {}})
+            current_playlist_tracks = playlist[current_playlist_id]['tracks']  # 当前歌单的专辑列表
+            album_count = len(current_playlist_tracks)  # 当前歌单的专辑总数
+            if album_count == 0:
+                return jsonify({"code": 400, "msg": "当前歌单暂无专辑，无法切换", "data": {}})
+
+            # 3. 核心逻辑：根据播放模式计算新的current_album_id
+            new_album_id = current_album_id
+            if play_mode == 'loop':
+                # 🔹 循环播放：单曲循环，专辑ID不变
+                new_album_id = current_album_id
+            elif play_mode == 'order':
+                # 🔹 顺序播放：自增1，越界则重置为0（回到歌单第一首）
+                new_album_id = current_album_id + 1
+                if new_album_id >= album_count:
+                    new_album_id = 0
+            elif play_mode == 'random':
+                # 🔹 随机播放：在当前歌单内随机选一个合法的专辑ID
+                import random
+                new_album_id = random.randint(0, album_count - 1)
+
+            # 4. 把最新的播放状态 更新到数据库 (持久化，下次打开页面能恢复)
+            db = get_db()
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+            # 序列化歌单数据，避免存入数据库报错
+            playlist_str = json.dumps(playlist, ensure_ascii=False)
+            # 更新user_playlist表的核心字段
+            update_sql = '''
+                UPDATE user_playlist 
+                SET playlist = %s, current_album_id = %s, current_playlist_id = %s, play_mode = %s
+                WHERE user_id = %s
+            '''
+            cursor.execute(
+                update_sql,
+                (playlist_str, new_album_id, current_playlist_id, play_mode, current_user_id)
+            )
+            db.commit()
+            cursor.close()
+
+            # 5. 返回最新的播放状态给前端，前端直接渲染即可
+            return jsonify({
+                "code": 200,
+                "msg": f"播放模式【{play_mode}】，切换专辑成功",
+                "data": {
+                    "current_playlist_id": current_playlist_id,
+                    "current_album_id": new_album_id,
+                    "play_mode": play_mode,
+                    "album_count": album_count # 前端可选：返回当前歌单专辑总数
+                }
+            })
+
+        except Exception as e:
+            print(f"❌ 切换下一张专辑失败：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({
+                "code": 500,
+                "msg": f"切换专辑失败：{str(e)}",
+                "data": {}
+            })

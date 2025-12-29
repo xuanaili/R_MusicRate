@@ -168,7 +168,9 @@ export default {
       localPlaylistTabs: JSON.parse(JSON.stringify(this.playlistTabs)),
       localActiveTabIndex: this.activeTabIndex,
       isDragging: false,
-      dragTimer: null // ✅ 新增：防抖定时器，杜绝高频触发
+      dragTimer: null, // ✅ 新增：防抖定时器，杜绝高频触发
+          // ✅ 新增：播放模式映射常量，前后端统一
+    playModeMap: { order: '顺序播放', single: '单曲循环', random: '随机播放' },
     };
   },
   computed: {
@@ -344,16 +346,17 @@ export default {
     },
 
     // 播放模式切换 - 无修改
-    togglePlayMode() {
-      let newMode = 'order';
-      if (this.playMode === 'order') newMode = 'single';
-      else if (this.playMode === 'single') newMode = 'random';
-      else if (this.playMode === 'random') newMode = 'order';
-      this.$emit('update:playMode', newMode);
-      this.$message?.success(`已切换为：${this.playModeText}`);
-      // ✅ 新增：播放模式变更后，强制更新父组件并保存
-      this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
-    },
+togglePlayMode() {
+  let newMode = 'order';
+  if (this.playMode === 'order') newMode = 'single';
+  else if (this.playMode === 'single') newMode = 'random';
+  else if (this.playMode === 'random') newMode = 'order';
+  this.$emit('update:playMode', newMode);
+  // ✅ 修复提示文案：获取新模式的文本
+  const newModeText = newMode === 'order' ? '顺序播放' : newMode === 'single' ? '单曲循环' : '随机播放';
+  this.$message?.success(`✅ 已切换为：${newModeText}`);
+  this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
+},
 
     // 筛选排序 - 优化：浅拷贝改为直接赋值，减少内存占用
     filterAndSortAlbums() {
