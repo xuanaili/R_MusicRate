@@ -313,27 +313,32 @@ export default {
         this.$refs.albumBaseInfo?.getAllUsersTagStatistics(this.albumPoolId);
       }
     },
-    // ✅✅✅ 修复核心：路由监听逻辑【完美版】- 跳转后自动刷新数据，无需手动刷新
-    $route: {
-      deep: true,
-      immediate: true,
-      handler(to) {
-        if (to.path.includes('/album/detail') && (to.params.id || to.query.id)) {
-          const albumId = Number(to.params.id || to.query.id);
-          if (albumId && albumId !== this.album.id) {
-            this.resetAlbumPageData();
-            this.getAlbumDetail(albumId).then(() => {
-              this.getAlbumPoolRealId();
-              this.checkUserComment();
-              this.getPublicComments();
-              setTimeout(() => {
-                if (this.album.source_pool_id) this.getAlbumAudioInfo().catch(() => console.log('音频加载失败'));
-              }, 100);
-            });
-          }
-        }
+// ✅✅✅ 修复核心：路由监听逻辑【完美版】- 跳转后自动刷新数据+自动播放音频，无需手动刷新
+$route: {
+  deep: true,
+  immediate: true,
+  handler(to) {
+    if (to.path.includes('/album/detail') && (to.params.id || to.query.id)) {
+      const albumId = Number(to.params.id || to.query.id);
+      if (albumId && albumId !== this.album.id) {
+        this.resetAlbumPageData();
+        this.getAlbumDetail(albumId).then(() => {
+          this.getAlbumPoolRealId();
+          this.checkUserComment();
+          this.getPublicComments();
+          setTimeout(() => {
+            if (this.album.source_pool_id) {
+              this.getAlbumAudioInfo().then(() => {
+                // ========== ✅ 核心新增：路由参数变化后，加载完音频立即自动播放 ==========
+                this.autoPlayCurrentAlbumAudio();
+              }).catch(() => console.log('音频加载失败'));
+            }
+          }, 100);
+        });
       }
-    },
+    }
+  },
+},
   },
   async created() {
     if (!localStorage.getItem('token')) {
@@ -408,20 +413,28 @@ export default {
       this.saveUserPlaylistData();
     },
 
-    // ✅✅✅ 自动播放当前专辑音频 - 异常捕获+兼容浏览器策略
-    autoPlayCurrentAlbumAudio() {
-      const audio = this.$refs.audioRef;
-      if (this.audioSrc && audio) {
-        audio.play().then(() => {
-          this.isPlaying = true;
-        }).catch(() => {
-          console.log('自动播放触发浏览器策略限制');
-          this.isPlaying = false;
-          alert('📢 浏览器限制自动播放，请点击底部专辑封面手动播放音乐～');
-        });
-      }
-      this.saveUserPlaylistData();
-    },
+// ✅✅✅ 自动播放当前专辑音频 - 兼容浏览器策略+静默失败+优化用户体验
+autoPlayCurrentAlbumAudio() {
+  const audio = this.$refs.audioRef;
+  if (this.audioSrc && audio) {
+    // 先重置播放进度，避免上次播放残留进度
+    this.currentTime = 0;
+    this.currentProgress = 0;
+    audio.currentTime = 0;
+    // 执行自动播放
+    audio.play().then(() => {
+      this.isPlaying = true;
+      console.log('✅ 专辑音频自动播放成功');
+    }).catch((err) => {
+      console.log('ℹ️ 浏览器策略限制自动播放，需要用户手动交互解锁：', err.message);
+      this.isPlaying = false;
+      // 去掉alert弹窗，改为静默提示，避免用户反感，保留手动点击封面播放的兜底
+      // 如需弹窗提示，解开下面注释即可
+      // this.$message?.info('📢 浏览器限制自动播放，点击底部专辑封面即可播放～');
+    });
+  }
+  this.saveUserPlaylistData();
+},
 
     // ✅✅✅ 完整修复的播放方法
     async handlePlayTrack(index) {
@@ -492,22 +505,25 @@ export default {
     },
 
     // 获取专辑音频信息
-    async getAlbumAudioInfo() {
-      try {
-        const res = await this.$axios.get(`/api/album/pool/audio/info/${this.album.source_pool_id}`)
-        if (res.data.code === 200 && res.data.data.mp3_url) {
-          this.audioSrc = res.data.data.mp3_url
-          this.fileName = res.data.data.mp3_name
-          this.duration = res.data.data.mp3_duration
-          this.durationFormat = res.data.data.duration_format
-          this.oldMp3Url = res.data.data.mp3_url
-          this.currentAlbumId = this.album.source_pool_id;
-        }
-      } catch (err) {
-        this.oldMp3Url = ''
-      }
-    },
-
+// 获取专辑音频信息 - ✅ 核心优化：增加return Promise，确保自动播放时机准确
+async getAlbumAudioInfo() {
+  try {
+    const res = await this.$axios.get(`/api/album/pool/audio/info/${this.album.source_pool_id}`)
+    if (res.data.code === 200 && res.data.data.mp3_url) {
+      this.audioSrc = res.data.data.mp3_url
+      this.fileName = res.data.data.mp3_name
+      this.duration = res.data.data.mp3_duration
+      this.durationFormat = res.data.data.duration_format
+      this.oldMp3Url = res.data.data.mp3_url
+      this.currentAlbumId = this.album.source_pool_id;
+    }
+    // ✅ 新增：无论是否获取到音频，都返回promise，避免报错
+    return Promise.resolve();
+  } catch (err) {
+    this.oldMp3Url = ''
+    return Promise.reject(err);
+  }
+},
     // 获取用户有音频的专辑列表
     async getUserHasAudioAlbums() {
       try {
