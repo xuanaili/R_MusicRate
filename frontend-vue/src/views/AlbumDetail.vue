@@ -72,28 +72,27 @@
     </main>
 
     <!-- ✅ 核心修改：播放列表组件传参完整，双向绑定+防抖保存 -->
-    <PlayerPlaylist
-      :visible="showPlaylistSidebar"
-      :main-color-dark="albumMainColorDark"
-      :main-color-dark-double="albumMainColorDarkDouble"
-      :active-menu-bg="activeMenuBg"
-      :current-user-id="currentUserId"
-      :albumList="albumList"
-      :current-track-index="currentTrackIndex"
-      :play-mode="playMode"
-      :playlistTabs="playlistTabs"
-      :activeTabIndex="activeTabIndex"
-      :currentAlbumId="currentAlbumId"
-      :currentPlaylistId="currentPlaylistId"
-      @play-track="handlePlayTrack"
-      @close-sidebar="handleClosePlaylistSidebar"
-      @update:currentTrackIndex="val => currentTrackIndex = val"
-      @update:playMode="val => playMode = val"
-      @update:playlistTabs="val => playlistTabs = val"
-      @update:activeTabIndex="val => activeTabIndex = val"
-      @jump-album-detail="handleJumpAlbumDetail"
-        @pause-track="pauseListeningTimer"
-    />
+<PlayerPlaylist
+  :visible="showPlaylistSidebar"
+  :main-color-dark="albumMainColorDark"
+  :main-color-dark-double="albumMainColorDarkDouble"
+  :active-menu-bg="activeMenuBg"
+  :current-user-id="currentUserId"
+  :albumList="albumList"
+  :current-track-index="currentTrackIndex"
+  :play-mode="playMode"
+  :playlistTabs="playlistTabs"
+  :activeTabIndex="activeTabIndex"
+  :currentAlbumId="currentAlbumId"
+  :currentPlaylistId="currentPlaylistId"
+  @play-track="handlePlayTrack"
+  @close-sidebar="handleClosePlaylistSidebar"
+  @update:currentTrackIndex="val => currentTrackIndex = val"
+  @update:playMode="val => playMode = val"
+  @update:playlistTabs="val => playlistTabs = val"
+  @update:activeTabIndex="val => activeTabIndex = val"
+  @trigger-upload-duration="pauseListeningTimer"
+/>
 
     <!-- ✅ 底部播放器区域 核心重构：精准坐标对齐+透明背景 -->
     <div class="full-player-wrapper">
@@ -436,8 +435,6 @@ autoPlayCurrentAlbumAudio() {
   this.saveUserPlaylistData();
 },
 
-// ✅✅✅ 最终完美修复版：解决重复路由报错 + 自动切歌+播放+跳转 + 无任何BUG
-// ✅✅✅ 最终完美修复版：切歌必上传上一首时长 + 无重复路由报错 + 自动播放 + 完整逻辑
 async handlePlayTrack(index, needJumpDetail = false) {
   const currentList = this.currentPlaylist;
   if (currentList.length === 0 || index < 0 || index >= currentList.length) {
@@ -450,18 +447,17 @@ async handlePlayTrack(index, needJumpDetail = false) {
     return;
   }
 
-  // ========== ✅✅✅ 核心新增：切歌前置操作【重中之重】==========
-  // 1. 如果当前正在播放其他歌曲 → 先暂停音频
+  // ========== ✅✅✅ 核心新增【必加】：切歌前，先上传上一首的时长，await确保上传完成 ==========
+  await this.pauseListeningTimer();
+  // ========== 新增结束 ==========
+
+  // 原有逻辑不变，无需修改
   const audio = this.$refs.audioRef;
   if (audio && this.isPlaying) {
     audio.pause();
     this.isPlaying = false;
   }
-  // 2. 强制调用暂停计时接口 → 上传上一首的所有播放时长，不管有没有播放，都兜底上传
-  await this.pauseListeningTimer();
-
   try {
-    // 1. 获取专辑音频信息
     const res = await this.$axios.get(`/api/album/pool/audio/info/${playAlbum.source_pool_id}`, {
       headers: {Authorization: localStorage.getItem('token') || ''}
     })
@@ -474,8 +470,6 @@ async handlePlayTrack(index, needJumpDetail = false) {
       this.currentAlbumId = index;
       this.currentTime = 0;
       this.currentProgress = 0;
-
-      // ========= ✅ 核心修复：解决重复路由跳转报错【关键代码】 =========
       if (needJumpDetail) {
         const albumIdRes = await this.$axios.get('/api/album/get-id-by-source', {
           params: { source_pool_id: playAlbum.source_pool_id },
@@ -492,12 +486,10 @@ async handlePlayTrack(index, needJumpDetail = false) {
           }
         }
       }
-
-      // ========= ✅ 修复自动播放失效 + 兼容浏览器策略，切歌必自动播放 =========
       audio.currentTime = 0;
       audio.play().then(() => {
         this.isPlaying = true;
-        this.startListeningTimer(); // ✅ 播放新歌：触发开始计时API
+        this.startListeningTimer(); // 播放新歌，开始计时
       }).catch(() => {
         this.isPlaying = false;
         this.$message?.info('📢 点击底部专辑封面即可解锁播放～');
@@ -713,24 +705,33 @@ async startListeningTimer() {
   }
 },
 
-// ========== ✅✅✅ 新增：调用后端 暂停播放计时API ========== ✅✅✅
-// ========== ✅✅✅ 修复版：调用后端 暂停播放计时API (必上传时长) ==========
+// ✅✅✅ 父组件核心上传方法 - 所有场景最终都会调用这个方法，100%有效
 async pauseListeningTimer() {
-  // 专辑ID为空/无音频/无token 都不调用
   const token = localStorage.getItem('token') || '';
+  // 必须满足3个条件：登录、有真实专辑ID、有音频资源
   if (!token || !this.album.id || !this.audioSrc) return;
   try {
     await this.$axios.post(
       `/api/album/listening/pause/${this.album.id}`,
-      {}, // 无请求体
+      {},
       { headers: { Authorization: token } }
     );
-    console.log(`✅ 成功上传时长：专辑ID=${this.album.id}，时长已累加保存`);
+    console.log(`✅ [成功] 上传时长到数据库：专辑ID=${this.album.id}`);
   } catch (err) {
-    console.log(`⚠️ 暂停计时接口调用失败(已兜底处理)：`, err.message);
+    console.log(`⚠️ [上传失败] 专辑ID=${this.album.id}：`, err.response?.data?.msg || err.message);
+  } finally {
+    // ============ ↓↓↓ 核心新增：兜底逻辑 必须加 ↓↓↓ ============
+    // 无论上传成功/失败，都强制暂停音频+重置播放状态，杜绝残留
+    const audio = this.$refs.audioRef;
+    if(audio) {
+      audio.pause();
+      this.isPlaying = false;
+      this.currentTime = 0;
+      this.currentProgress = 0;
+    }
+    // ============ ↑↑↑ 核心新增：兜底逻辑 必须加 ↑↑↑ ============
   }
 },
-
     handleTimeUpdate() {
       const audio = this.$refs.audioRef;
       if (!audio) return;
