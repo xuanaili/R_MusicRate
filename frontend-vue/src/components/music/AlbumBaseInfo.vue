@@ -303,6 +303,9 @@ export default {
   position: relative;
   z-index: 1;
   background: transparent !important;
+  /* ✅ 兜底保险：再加一点底部间距，双重保障 */
+  padding-bottom: 20px !important;
+  margin-bottom: 0 !important;
 }
 
 /* 整体卡片背景全透明，无白色边框阴影 */
@@ -314,8 +317,8 @@ export default {
   background: transparent !important;
   padding: 20px;
   border-radius: 8px;
-  margin-bottom: 30px;
-  min-height: 700px;
+  margin-bottom: 0 !important;
+  min-height: 650px; /* ✅ 微调高度，更紧凑，上移内容 */
   margin-top: 0 !important;
   align-self: flex-start;
   width: calc(100vw - 270px - 50px);
@@ -332,20 +335,20 @@ export default {
   border-radius: 8px;
   border: none !important;
   width: 100%;
-  height: 100%;
+	height: 100%;
 }
 
 /* ✅ 提升优先级：标题下划线+文字颜色 强制生效 */
 .section-title {
   font-size: 16px;
   margin-bottom: 15px;
-  padding-bottom: 8px;
+	padding-bottom: 8px;
   width: 100%;
   box-sizing: border-box;
   text-align: left;
   position: relative;
   border-bottom: none !important;
-  color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColorDarkDouble) !important;
   font-weight: 600;
 }
 
@@ -372,7 +375,7 @@ export default {
   height: 300px;
   border-radius: 8px;
   object-fit: cover;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border: none !important;
 }
 
@@ -381,15 +384,15 @@ export default {
   width: 300px;
   height: 300px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255,255,255,0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   display: flex;
   justify-content: center;
   align-items: center;
-  color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColorDarkDouble) !important;
   font-size: 14px;
-  border: none !important;
+	border: none !important;
 }
 
 .meta-tags-container {
@@ -399,7 +402,7 @@ export default {
   align-items: flex-start;
   padding: 20px;
   background: transparent !important;
-  border: none !important;
+	border: none !important;
 }
 
 .meta-section {
@@ -411,7 +414,7 @@ export default {
 /* ✅ 提升优先级：专辑名称颜色强制生效 */
 .meta-album-name {
   font-size: 24px;
-  color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColorDarkDouble) !important;
   margin-bottom: 20px;
   font-weight: 600;
 }
@@ -425,12 +428,12 @@ export default {
 /* ✅ 提升优先级：歌手/发行时间等文字颜色强制生效 */
 .meta-label {
   width: 80px;
-  color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColorDarkDouble) !important;
   font-weight: 600;
 }
 
 .meta-value {
-  color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColorDarkDouble) !important;
 }
 
 .my-tags-section-inline {
@@ -462,7 +465,7 @@ export default {
   margin-left: 8px;
   cursor: pointer;
   font-size: 16px;
-  line-height: 1;
+	line-height: 1;
 }
 
 .tag-select-container {
@@ -478,11 +481,11 @@ export default {
   border-radius: 4px;
   font-size: 14px;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255,255,255,0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   border: none !important;
-  color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColorDarkDouble) !important;
 }
 
 .tag-search-input::placeholder {
@@ -492,7 +495,7 @@ export default {
 
 .tag-search-input:disabled {
   cursor: not-allowed;
-  background: rgba(255, 255, 255, 0.2) !important;
+  background: rgba(255,255,255,0.2) !important;
 }
 
 .save-tags-btn {
@@ -527,50 +530,53 @@ export default {
 .tag-options-list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  max-height: 200px;
-  overflow-y: auto;
-  border-radius: 4px;
-  padding: 5px;
-  background: rgba(255, 255, 255, 0.3);
+  gap:5px;
+  max-height:200px;
+  overflow-y:auto;
+  border-radius:4px;
+  padding:5px;
+  background: rgba(255,255,255,0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  border: none !important;
+  border:none !important;
 }
 
 .tag-options-list::-webkit-scrollbar {
-  width: 4px;
+  width:4px;
 }
 
 .tag-options-list::-webkit-scrollbar-thumb {
   background: v-bind(mainColorDarkDouble);
-  border-radius: 2px;
+  border-radius:2px;
 }
 
 /* ✅ 可选标签文字 → 封面主色加深再加深 */
 .tag-option {
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 14px;
-  border-radius: 4px;
+  padding:6px 10px;
+  cursor:pointer;
+  font-size:14px;
+  border-radius:4px;
   transition: background 0.2s;
-  color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColorDarkDouble) !important;
 }
 
 .tag-option:hover:not(.disabled) {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255,255,255,0.5);
 }
 
 .tag-option.disabled {
-  color: rgba(0, 0, 0, 0.3) !important;
-  cursor: not-allowed;
-  background: rgba(255, 255, 255, 0.2);
+  color: rgba(0,0,0,0.3) !important;
+  cursor:not-allowed;
+  background: rgba(255,255,255,0.2);
 }
 
+/* ✅✅✅ 核心兜底：简介区块 整体上移+间距缩小，编辑按钮置顶，彻底无遮挡 */
 .intro-section {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 10px;
+  padding-bottom: 0 !important;
+  margin-top: -20px; /* ✅ 上移20px，远离底部 */
 }
 
 /* 加载中文字 → 封面主色加深再加深 */
@@ -578,20 +584,20 @@ export default {
   width: 100%;
   max-width: 90%;
   padding: 10px;
-  min-height: 140px;
+  min-height: 110px; /* ✅ 缩小高度，减少占用空间 */
   display: flex;
   justify-content: center;
   align-items: center;
-  color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColorDarkDouble) !important;
   font-size: 14px;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255,255,255,0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  border-radius: 4px;
-  border: none !important;
+  border-radius:4px;
+	border:none !important;
 }
 
-/* ✅ 专辑简介展示文字 → 封面主色加深再加深 */
+/* ✅ 专辑简介展示文字 → 封面主色加深再加深 + 高度缩减 */
 .intro-display {
   width: 100%;
   max-width: 90%;
@@ -599,17 +605,17 @@ export default {
   border-radius: 4px;
   font-size: 14px;
   line-height: 1.5;
-  min-height: 140px;
-  color: v-bind(mainColorDarkDouble) !important;
-  background: rgba(255, 255, 255, 0.3);
+  min-height: 110px;
+	color: v-bind(mainColorDarkDouble) !important;
+  background: rgba(255,255,255,0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   white-space: pre-wrap;
   word-wrap: break-word;
-  border: none !important;
+	border:none !important;
 }
 
-/* ✅ 专辑简介编辑文字 → 封面主色加深再加深 */
+/* ✅ 核心兜底：简介输入框 层级拉满+前置，绝对不被遮挡 */
 .intro-textarea {
   width: 100%;
   max-width: 90%;
@@ -620,18 +626,21 @@ export default {
   line-height: 1.5;
   rows: 6;
   height: auto;
-  min-height: 140px;
-  background: rgba(255, 255, 255, 0.3);
+  min-height: 110px;
+  background: rgba(255,255,255,0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  color: v-bind(mainColorDarkDouble) !important;
-  border: none !important;
+	color: v-bind(mainColorDarkDouble) !important;
+	border:none !important;
+  position: relative;
+  z-index: 999;
 }
 
 .intro-textarea::placeholder {
   color: #999;
 }
 
+/* ✅ 核心兜底：编辑按钮 顶级层级+置顶，点击无任何遮挡 */
 .intro-edit-btn {
   padding: 8px 16px;
   color: #fff;
@@ -641,6 +650,9 @@ export default {
   align-self: flex-start;
   font-size: 14px;
   transition: all 0.2s;
+  position: relative;
+  z-index: 9999;
+  margin-top: 5px;
 }
 
 .intro-edit-btn:disabled {
@@ -649,14 +661,16 @@ export default {
   opacity: 0.7;
 }
 
+/* ✅✅✅ 核心兜底：气泡图区块 上移+高度缩减，彻底远离播放器 */
 .tag-chart-section {
   display: flex;
   flex-direction: column;
-  height: 350px;
-  margin-top: -20px;
+  height: 300px;
+  margin-top: -40px; /* ✅ 上移40px，完美避开播放器 */
   width: 100%;
   background: transparent !important;
   border: none !important;
-  padding-top: 0;
+	padding-top: 0;
+  padding-bottom: 0 !important;
 }
 </style>

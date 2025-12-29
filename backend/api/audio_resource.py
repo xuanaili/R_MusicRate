@@ -227,3 +227,77 @@ def register_audio_routes(app):
             print(f"❌ 音频删除出错：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"音频删除失败：{str(e)}"}), 500
+
+    # 4. ✅ 核心新增：查询【当前用户】有音频资源的专辑列表 (给播放列表专用)
+    # 逻辑：查用户所有album -> 提取source_pool_id -> 关联album_pool筛选有mp3_url的专辑并返回详情
+    @app.route('/api/album/user/has-audio', methods=['GET'])
+    @login_required
+    def get_user_has_audio_albums():
+        try:
+            current_user_id = get_current_user_id()
+            if not current_user_id:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+            current_user_id = int(current_user_id)
+
+            db = get_db()
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+
+            # ========== 核心联表查询 ==========
+            # 1. 查当前用户的所有专辑，获取source_pool_id
+            # 2. 关联album_pool表，只筛选 mp3_url不为空 的专辑
+            # 3. 返回完整专辑信息+音频地址+时长，前端直接渲染
+            cursor.execute('''
+                SELECT 
+                    ap.id, ap.album_name, ap.singer, ap.cover_img, ap.release_year, 
+                    ap.mp3_url, ap.mp3_name, ap.mp3_duration, ap.my_score, a.create_time,
+                    a.tracks, a.tracks_time, a.audioSrc
+                FROM album a
+                LEFT JOIN album_pool ap ON a.source_pool_id = ap.id
+                WHERE a.user_id = %s AND ap.mp3_url IS NOT NULL AND ap.mp3_url != ''
+                ORDER BY a.create_time DESC
+            ''', (current_user_id,))
+
+            # 查询结果转列表
+            album_list = cursor.fetchall()
+            cursor.close()
+
+            # 格式化处理：1.时长转 分:秒 格式 2.处理空值 3.转json格式兼容前端
+            format_album_list = []
+            for album in album_list:
+                # 音频时长格式化 秒 -> m:ss
+                duration_format = "0:00"
+                if album['mp3_duration'] and album['mp3_duration'] > 0:
+                    m = album['mp3_duration'] // 60
+                    s = album['mp3_duration'] % 60
+                    duration_format = f"{m}:{s:02d}"
+
+                # 处理曲目/时长字段的空值，前端无需再做判断
+                tracks = json.loads(album['tracks']) if album['tracks'] else []
+                tracks_time = json.loads(album['tracks_time']) if album['tracks_time'] else []
+
+                format_album_list.append({
+                    "id": album['id'],  # album_pool的id
+                    "album_name": album['album_name'],
+                    "singer": album['singer'],
+                    "cover_img": album['cover_img'],
+                    "release_year": album['release_year'],
+                    "mp3_url": album['mp3_url'],  # 核心：音频地址
+                    "mp3_name": album['mp3_name'],
+                    "mp3_duration": album['mp3_duration'],
+                    "duration_format": duration_format,  # 格式化后的时长
+                    "my_score": album['my_score'] or 0.0,  # 评分
+                    "create_time": album['create_time'],  # 添加时间（用于排序）
+                    "tracks": tracks,  # 曲目列表
+                    "tracks_time": tracks_time,  # 曲目对应时长
+                    "audioSrc": album['mp3_url']  # 给前端播放用的别名，和原逻辑一致
+                })
+
+            return jsonify({
+                "code": 200,
+                "msg": "查询成功，共找到 {} 张带音频的专辑".format(len(format_album_list)),
+                "data": format_album_list
+            })
+        except Exception as e:
+            print(f"❌ 查询用户音频专辑失败：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"查询失败：{str(e)}"}), 500

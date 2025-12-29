@@ -3,11 +3,10 @@
     <!-- 全屏独立模糊封面背景层 - 保留 -->
     <div class="bg-layer" :style="bgStyle"></div>
 
+    <!-- 左侧侧边栏 原样保留 -->
     <aside class="sidebar">
-      <!-- ✅ 修改1：返回按钮 主色加深1级底色 + hover加深再加深 -->
       <button @click="goBack" class="back-btn" :style="{backgroundColor: albumMainColorDark}">← 返回专辑列表</button>
       <div class="sidebar-menu">
-        <!-- ✅ 修改2：选中菜单 文字色 = 封面主色加深再加深 -->
         <div class="menu-item" :class="{active: activeTab === 'base'}" :style="activeTab==='base'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'base'">基础信息</div>
         <div class="menu-item" :class="{active: activeTab === 'tracks'}" :style="activeTab==='tracks'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'tracks'">曲目列表</div>
         <div class="menu-item" :class="{active: activeTab === 'review'}" :style="activeTab==='review'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'review'">听后感</div>
@@ -15,8 +14,8 @@
       </div>
     </aside>
 
+    <!-- 右侧主内容区域 -->
     <main class="main-content">
-      <!-- 基础信息组件 - 传递主色参数 albumMainColor + albumMainColorDark -->
       <AlbumBaseInfo
         ref="albumBaseInfo"
         v-if="activeTab === 'base'"
@@ -28,13 +27,15 @@
         @save-intro="saveAlbumIntro"
       />
 
-      <!-- 曲目列表组件 -->
       <AlbumTrackList
         v-if="activeTab === 'tracks'"
         :album="album"
+        :tracks="album.tracks || ['未知曲目']"
+        :tracks-time="album.tracks_time || []"
+        @update-album-data="updateAlbumData"
+        @track-jump="handleTrackJump"
       />
 
-      <!-- 听后感组件 - 传递主色参数 -->
       <AlbumReviewEditor
         v-if="activeTab === 'review'"
         :album="album"
@@ -45,7 +46,6 @@
         @delete-all="deleteAllReview"
       />
 
-      <!-- 评论区组件 传参 -->
       <AlbumCommentSection
         v-if="activeTab === 'comments'"
         :album="album"
@@ -70,6 +70,116 @@
         @update-comment-content="(val) => newCommentContent = val"
       />
     </main>
+
+    <!-- ✅ 核心修改：播放列表组件传参完整，双向绑定+防抖保存 -->
+    <PlayerPlaylist
+      :visible="showPlaylistSidebar"
+      :main-color-dark="albumMainColorDark"
+      :main-color-dark-double="albumMainColorDarkDouble"
+      :active-menu-bg="activeMenuBg"
+      :current-user-id="currentUserId"
+      :albumList="albumList"
+      :current-track-index="currentTrackIndex"
+      :play-mode="playMode"
+      :playlistTabs="playlistTabs"
+      :activeTabIndex="activeTabIndex"
+      :currentAlbumId="currentAlbumId"
+      :currentPlaylistId="currentPlaylistId"
+      @play-track="handlePlayTrack"
+      @close-sidebar="handleClosePlaylistSidebar"
+      @update:currentTrackIndex="val => currentTrackIndex = val"
+      @update:playMode="val => playMode = val"
+      @update:playlistTabs="val => playlistTabs = val"
+      @update:activeTabIndex="val => activeTabIndex = val"
+    />
+
+    <!-- ✅ 底部播放器区域 核心重构：精准坐标对齐+透明背景 -->
+    <div class="full-player-wrapper">
+      <div class="album-rotate-box" @click="togglePlayPause" v-if="audioSrc && album.cover_img">
+        <div class="album-rotate-circle" :class="{playing: isPlaying}">
+          <img :src="album.cover_img" alt="专辑封面" class="album-rotate-img" />
+        </div>
+      </div>
+      <div class="album-rotate-box no-cover" v-else>
+        <div class="album-rotate-circle">
+          <div class="no-resource-text">暂无整轨音频资源</div>
+        </div>
+      </div>
+
+      <div class="player-right-box">
+        <div class="music-player-core">
+          <input
+            type="range"
+            class="progress-bar"
+            :value="currentProgress"
+            min="0"
+            max="100"
+            @input="handleProgressChange"
+          />
+          <div class="time-text">
+            {{ formatTime(currentTime) }} / {{ durationFormat }}
+          </div>
+
+          <div class="volume-wrapper" @mouseenter="showVolume = true" @mouseleave="showVolume = false">
+            <span class="volume-icon">🔊</span>
+            <div class="volume-dropdown" v-show="showVolume">
+              <input
+                type="range"
+                class="volume-bar"
+                v-model="volume"
+                min="0"
+                max="1"
+                step="0.05"
+              />
+            </div>
+          </div>
+
+          <div class="menu-icon-wrapper" @mouseenter="showMenu=true" @mouseleave="showMenu=false">
+            <div class="menu-icon">☰</div>
+            <div class="dropdown-menu" v-show="showMenu">
+              <button class="menu-btn playlist-btn" @click="showPlaylistSidebar = true">
+                播放列表
+              </button>
+              <button class="menu-btn upload-btn" @click="showUploadSidebar = true" v-if="isAdmin">
+                {{ audioSrc ? '更新音频' : '上传音频' }}
+              </button>
+              <button class="menu-btn delete-btn" @click="handleDeleteAudio" v-if="isAdmin && audioSrc">删除音频</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 上传/更新音频弹窗 原样保留 -->
+    <div class="upload-sidebar" v-show="showUploadSidebar">
+      <div class="sidebar-header">
+        <h4>{{ audioSrc ? '更新整轨MP3文件' : '上传整轨MP3文件' }}</h4>
+        <button class="close-btn" @click="showUploadSidebar = false">×</button>
+      </div>
+      <div
+        class="upload-area"
+        @dragover.prevent
+        @drop.prevent="handleDrop"
+      >
+        <input
+          type="file"
+          ref="fileInput"
+          accept=".mp3"
+          class="file-input"
+          @change="handleFileChange"
+        />
+        <div class="upload-tips">
+          <p>📂 点击上传 或 拖拽MP3文件到此处</p>
+          <p class="tip-text">仅支持 .mp3 格式音频文件</p>
+        </div>
+      </div>
+      <div v-if="fileName" class="file-name">{{ fileName }}</div>
+      <div class="upload-status" :class="{success: statusClass === 'success', error: statusClass === 'error'}">{{ statusText }}</div>
+    </div>
+    <div class="mask" v-show="showUploadSidebar" @click="showUploadSidebar = false"></div>
+
+    <!-- ✅✅✅ 修复核心报错：audio标签补全闭合标签 解决编译失败 -->
+    <audio ref="audioRef" :src="audioSrc" @timeupdate="handleTimeUpdate" @ended="handleEnded" :volume="volume"></audio>
   </div>
 </template>
 
@@ -78,6 +188,7 @@ import AlbumBaseInfo from '@/components/music/AlbumBaseInfo'
 import AlbumTrackList from '@/components/music/AlbumTrackList'
 import AlbumReviewEditor from '@/components/music/AlbumReviewEditor'
 import AlbumCommentSection from '@/components/music/AlbumCommentSection'
+import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
 
 export default {
   name: 'AlbumDetail',
@@ -85,11 +196,31 @@ export default {
     AlbumBaseInfo,
     AlbumTrackList,
     AlbumReviewEditor,
-    AlbumCommentSection
+    AlbumCommentSection,
+    PlayerPlaylist
   },
   data() {
     return {
-      album: {},
+      // ✅✅✅ 核心修复1：完整初始化album对象，补全所有必填字段，杜绝undefined
+      album: {
+        id: 0,
+        album_name: '',
+        singer: '',
+        release_year: '',
+        cover_img: '',
+        tracks: [],
+        tracks_time: [],
+        full_tracks: [],
+        review: {},
+        my_score: 0.0,
+        track_count: 0,
+        source_pool_id: 0,
+        sync_pool_update: 1,
+        is_customized: 0,
+        album_intro: '',
+        tags: [],
+        main_type: []
+      },
       activeTab: 'base',
       newCommentContent: '',
       publicComments: [],
@@ -104,17 +235,51 @@ export default {
       otherComments: [],
       bgStyle: {},
       albumMainColor: '#42b983',
-      albumMainColorDark: '#2f9465', // 封面主色 加深1级
-      albumMainColorDarkDouble: '#257d51', // ✅ 新增：封面主色 加深再加深（核心用色）
-      activeMenuBg: 'rgba(255,255,255,0.2)'
+      albumMainColorDark: '#2f9465',
+      albumMainColorDarkDouble: '#257d51',
+      activeMenuBg: 'rgba(255,255,255,0.2)',
+      // 播放器相关数据
+      showUploadSidebar: false,
+      audioSrc: '',
+      fileName: '',
+      volume: 0.7,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      durationFormat: '0:00',
+      currentProgress: 0,
+      statusText: '',
+      statusClass: '',
+      showVolume: false,
+      oldMp3Url: '',
+      showMenu: false,
+      // ✅✅✅ 播放列表核心数据【完整初始化，对接后端接口】
+      showPlaylistSidebar: false,
+      playlistTabs: [ { name: '默认歌单', tracks: [] } ],
+      activeTabIndex: 0,
+      currentTrackIndex: -1,
+      playMode: 'order',
+      currentAlbumId: 0,
+      currentPlaylistId: 0,
+      albumList: [],
+      saveTimer: null,
+      // ✅✅✅ 核心修复2：新增加载状态锁，控制所有异步操作时序
+      albumLoading: true
     };
   },
   computed: {
     filteredComments() {
       return this.publicComments.filter(comment => !this.blockedCommentIds.includes(comment.id.toString()));
+    },
+    currentPlaylist() {
+      return this.playlistTabs[this.activeTabIndex]?.tracks || []
     }
   },
   watch: {
+    volume() {
+      const audio = this.$refs.audioRef;
+      if (audio) audio.volume = this.volume;
+    },
     sortType() {
       this.processComments();
     },
@@ -124,24 +289,53 @@ export default {
     album: {
       deep: true,
       handler(newVal) {
-        if (newVal.review && newVal.review.personal_feeling && !newVal.review.feelings) {
-          newVal.review.feelings = [{
-            id: 'old_data',
-            content: newVal.review.personal_feeling,
-            create_time: newVal.review.update_time || '未知时间'
-          }];
+        if (newVal) {
+          this.album.tracks = newVal.tracks && newVal.tracks.length > 0 ? newVal.tracks : ["未知曲目"];
+          this.album.tracks_time = Array.isArray(newVal.tracks_time) ? newVal.tracks_time : [];
+          this.album.full_tracks = Array.isArray(newVal.full_tracks) ? newVal.full_tracks : [];
+
+          if (newVal.review && newVal.review.personal_feeling && !newVal.review.feelings) {
+            newVal.review.feelings = [{
+              id: 'old_data',
+              content: newVal.review.personal_feeling,
+              create_time: newVal.review.update_time || '未知时间'
+            }];
+          }
+          this.album.review = newVal.review || {};
+
+          this.setFullPageBg(newVal.cover_img);
+          if (newVal.cover_img) this.extractAlbumMainColor(newVal.cover_img);
         }
-        this.setFullPageBg(newVal.cover_img);
-        if(newVal.cover_img) this.extractAlbumMainColor(newVal.cover_img);
       }
     },
-    albumPoolId(newVal) {
-      if (newVal && this.activeTab === 'base') {
-        this.$refs.albumBaseInfo?.getAllUsersTagStatistics(newVal);
+    albumPoolId() {
+      if (this.albumPoolId && this.activeTab === 'base') {
+        this.$refs.albumBaseInfo?.getAllUsersTagStatistics(this.albumPoolId);
       }
-    }
+    },
+    // ✅✅✅ 修复核心：路由监听逻辑【完美版】- 跳转后自动刷新数据，无需手动刷新
+    $route: {
+      deep: true,
+      immediate: true,
+      handler(to) {
+        if (to.path.includes('/album/detail') && (to.params.id || to.query.id)) {
+          const albumId = Number(to.params.id || to.query.id);
+          if (albumId && albumId !== this.album.id) {
+            this.resetAlbumPageData();
+            this.getAlbumDetail(albumId).then(() => {
+              this.getAlbumPoolRealId();
+              this.checkUserComment();
+              this.getPublicComments();
+              setTimeout(() => {
+                if (this.album.source_pool_id) this.getAlbumAudioInfo().catch(() => console.log('音频加载失败'));
+              }, 100);
+            });
+          }
+        }
+      }
+    },
   },
-  created() {
+  async created() {
     if (!localStorage.getItem('token')) {
       this.$router.push('/login');
       return;
@@ -155,18 +349,354 @@ export default {
       this.$router.push('/music');
       return;
     }
-    this.getAlbumDetail(Number(albumId)).then(() => {
-      this.getAlbumPoolRealId().then(() => {
-        const savedBlockedIds = localStorage.getItem(`blocked_comments_${this.albumPoolId}`);
-        if (savedBlockedIds) {
-          this.blockedCommentIds = JSON.parse(savedBlockedIds);
-        }
-        this.checkUserComment();
-        this.getPublicComments();
-      });
-    });
+    await this.getAlbumDetail(Number(albumId));
+    await this.getAlbumPoolRealId();
+    const savedBlockedIds = localStorage.getItem(`blocked_comments_${this.albumPoolId}`);
+    if (savedBlockedIds) {
+      this.blockedCommentIds = JSON.parse(savedBlockedIds);
+    }
+    this.checkUserComment();
+    this.getPublicComments();
+    if (this.album.source_pool_id) await this.getAlbumAudioInfo().catch(() => console.log('音频加载失败'));
+    await this.getUserHasAudioAlbums();
+    await this.getUserPlaylistData();
+    this.autoPlayCurrentAlbumAudio();
   },
   methods: {
+    // ✅✅✅ 加载用户播放列表数据【对接后端GET接口】
+    async getUserPlaylistData() {
+      try {
+        const res = await this.$axios.get('/api/playlist/get-user-playlist-data', {
+          headers: {Authorization: localStorage.getItem('token') || ''}
+        })
+        if (res.data.code === 200 && res.data.data) {
+          const data = res.data.data;
+          this.playlistTabs = data.playlist || [{name: '默认歌单', tracks: []}];
+          this.activeTabIndex = data.current_playlist_id || 0;
+          this.currentAlbumId = data.current_album_id || 0;
+          this.playMode = data.play_mode || 'order';
+        }
+      } catch (_err) {
+        console.error('❌ 获取用户播放列表失败');
+        this.playlistTabs = [{name: '默认歌单', tracks: []}];
+      }
+    },
+
+    async saveUserPlaylistData() {
+      if (this.playlistTabs.length === 0 || !this.playlistTabs[0].tracks) return;
+      if (this.saveTimer) clearTimeout(this.saveTimer);
+      this.saveTimer = setTimeout(async () => {
+        try {
+          await this.$axios.post('/api/playlist/save-user-playlist-data', {
+            playlist: this.playlistTabs,
+            activeTabIndex: this.activeTabIndex,
+            current_album_id: this.currentAlbumId,
+            play_mode: this.playMode
+          }, {
+            headers: {Authorization: localStorage.getItem('token') || ''}
+          })
+        } catch (_err) {
+          console.error('❌ 保存播放列表失败');
+        } finally {
+          this.saveTimer = null;
+        }
+      }, 300);
+    },
+
+    handleClosePlaylistSidebar() {
+      this.showPlaylistSidebar = false;
+      this.saveUserPlaylistData();
+    },
+
+    // ✅✅✅ 自动播放当前专辑音频 - 异常捕获+兼容浏览器策略
+    autoPlayCurrentAlbumAudio() {
+      const audio = this.$refs.audioRef;
+      if (this.audioSrc && audio) {
+        audio.play().then(() => {
+          this.isPlaying = true;
+        }).catch(() => {
+          console.log('自动播放触发浏览器策略限制');
+          this.isPlaying = false;
+          alert('📢 浏览器限制自动播放，请点击底部专辑封面手动播放音乐～');
+        });
+      }
+      this.saveUserPlaylistData();
+    },
+
+    // ✅✅✅ 完整修复的播放方法
+    async handlePlayTrack(index) {
+      const currentList = this.currentPlaylist;
+      if (currentList.length === 0 || index < 0 || index >= currentList.length) {
+        this.$message?.warning('播放索引无效，请重试');
+        return;
+      }
+      const playAlbum = currentList[index];
+      if (!playAlbum || !playAlbum.source_pool_id) {
+        this.$message?.error('该专辑暂无音频资源，无法播放');
+        return;
+      }
+
+      try {
+        const res = await this.$axios.get(`/api/album/pool/audio/info/${playAlbum.source_pool_id}`, {
+          headers: {Authorization: localStorage.getItem('token') || ''}
+        })
+        if (res.data.code === 200 && res.data.data.mp3_url) {
+          this.audioSrc = res.data.data.mp3_url
+          this.fileName = res.data.data.mp3_name
+          this.duration = res.data.data.mp3_duration
+          this.durationFormat = res.data.data.duration_format
+          this.currentTrackIndex = index;
+          this.currentAlbumId = playAlbum.source_pool_id;
+          this.currentTime = 0;
+          this.currentProgress = 0;
+          const audio = this.$refs.audioRef;
+          audio.play().then(() => {
+            this.isPlaying = true;
+          }).catch(() => {
+            this.isPlaying = false;
+            alert('📢 请点击底部专辑封面解锁播放权限后再试～');
+          });
+        } else {
+          this.$message.error('该专辑暂无音频资源，无法播放');
+        }
+      } catch (err) {
+        console.error('❌ 获取播放音频失败：', err);
+        this.$message.error('播放失败，该专辑暂无音频资源');
+      }
+      this.saveUserPlaylistData();
+    },
+
+    // 曲目跳转事件 - 异常捕获
+    handleTrackJump(targetSec) {
+      if (!this.audioSrc) {
+        alert('暂无整轨音频资源，无法跳转播放！');
+        return;
+      }
+      const audio = this.$refs.audioRef;
+      audio.currentTime = targetSec;
+      this.currentTime = targetSec;
+      this.currentProgress = this.duration ? (targetSec / this.duration) * 100 : 0;
+      audio.play().then(() => {
+        this.isPlaying = true;
+      }).catch(() => {
+        alert('📢 请点击底部专辑封面解锁播放权限后再试～');
+      });
+    },
+
+    // 时间格式化
+    formatTime(seconds) {
+      if (!seconds) return '0:00';
+      const min = Math.floor(seconds / 60);
+      const sec = Math.floor(seconds % 60);
+      return `${min}:${sec.toString().padStart(2, '0')}`;
+    },
+
+    // 获取专辑音频信息
+    async getAlbumAudioInfo() {
+      try {
+        const res = await this.$axios.get(`/api/album/pool/audio/info/${this.album.source_pool_id}`)
+        if (res.data.code === 200 && res.data.data.mp3_url) {
+          this.audioSrc = res.data.data.mp3_url
+          this.fileName = res.data.data.mp3_name
+          this.duration = res.data.data.mp3_duration
+          this.durationFormat = res.data.data.duration_format
+          this.oldMp3Url = res.data.data.mp3_url
+          this.currentAlbumId = this.album.source_pool_id;
+        }
+      } catch (err) {
+        this.oldMp3Url = ''
+      }
+    },
+
+    // 获取用户有音频的专辑列表
+    async getUserHasAudioAlbums() {
+      try {
+        const res = await this.$axios.get('/api/playlist/get-user-audio-albums', {
+          headers: {Authorization: localStorage.getItem('token') || ''}
+        })
+        if (res.data.code === 200) {
+          this.albumList = res.data.data.map(item => ({
+            ...item,
+            my_score: item.score
+          }))
+        }
+      } catch (err) {
+        console.error('❌ 获取有音频专辑列表失败')
+        this.albumList = []
+        this.$message.error('加载可播放专辑失败，请重试')
+      }
+    },
+
+    // 文件选择事件
+    handleFileChange(e) {
+      const file = e.target.files[0];
+      if (file) {
+        this.handleFile(file);
+        this.$refs.fileInput.value = ''
+      }
+    },
+
+    handleDrop(e) {
+      const file = e.target.files[0] || e.dataTransfer.files[0];
+      if (file) {
+        this.handleFile(file);
+      }
+    },
+
+    async handleFile(file) {
+      if (file.type !== 'audio/mpeg' && !file.name.toLowerCase().endsWith('.mp3')) {
+        this.statusText = '❌ 仅支持上传MP3格式！';
+        this.statusClass = 'error';
+        return;
+      }
+      if (!this.album.source_pool_id) {
+        this.statusText = '❌ 公共专辑ID不存在，无法上传！';
+        this.statusClass = 'error';
+        return;
+      }
+      this.statusText = this.audioSrc ? '⏳ 更新中，请稍候...' : '⏳ 上传中，请稍候...';
+      this.statusClass = '';
+      try {
+        const formData = new FormData()
+        formData.append('source_pool_id', this.album.source_pool_id)
+        formData.append('mp3_file', file)
+        formData.append('old_mp3_url', this.oldMp3Url || '')
+        const res = await this.$axios.post('/api/album/pool/audio/upload', formData)
+        if (res.data.code === 200) {
+          this.audioSrc = res.data.data.mp3_url
+          this.fileName = res.data.data.mp3_name
+          this.duration = res.data.data.mp3_duration
+          this.durationFormat = res.data.data.duration_format
+          this.oldMp3Url = res.data.data.mp3_url
+          this.statusText = this.audioSrc ? '✅ 更新成功' : '✅ 上传成功';
+          this.statusClass = 'success';
+          setTimeout(() => {
+            this.showUploadSidebar = false
+            this.statusText = ''
+            this.statusClass = ''
+          }, 2000)
+        } else {
+          this.statusText = `❌ ${res.data.msg}`;
+          this.statusClass = 'error';
+        }
+      } catch (err) {
+        console.error('音频操作失败：')
+        this.statusText = '❌ 操作失败，请重试！';
+        this.statusClass = 'error';
+      }
+      this.isPlaying = false;
+      this.currentTime = 0;
+      this.currentProgress = 0;
+    },
+
+    async handleDeleteAudio() {
+      const confirmDel = confirm("确定要删除该音频资源吗？删除后无法恢复！");
+      if (!confirmDel) return;
+      try {
+        const res = await this.$axios.post('/api/album/pool/audio/delete', {
+          source_pool_id: this.album.source_pool_id,
+          mp3_url: this.oldMp3Url
+        })
+        if (res.data.code === 200) {
+          this.statusText = '✅ 音频删除成功！';
+          this.statusClass = 'success';
+          this.clearAudioData();
+          setTimeout(() => {
+            this.statusText = '';
+            this.statusClass = ''
+          }, 2000);
+        } else {
+          this.statusText = `❌ ${res.data.msg}`;
+          this.statusClass = 'error';
+        }
+      } catch (err) {
+        this.statusText = '❌ 删除失败，请重试！';
+        this.statusClass = 'error';
+      }
+    },
+
+    clearAudioData() {
+      this.audioSrc = '';
+      this.fileName = '';
+      this.duration = 0;
+      this.durationFormat = '0:00';
+      this.oldMp3Url = '';
+      this.isPlaying = false;
+      this.currentTime = 0;
+      this.currentProgress = 0;
+    },
+
+    // 播放暂停切换 - 异常捕获
+    togglePlayPause() {
+      const audio = this.$refs.audioRef;
+      if (!audio || !this.audioSrc) return;
+      if (this.isPlaying) {
+        audio.pause();
+        this.isPlaying = false;
+      } else {
+        audio.play().then(() => {
+          this.isPlaying = true;
+        }).catch(() => {
+          this.isPlaying = false;
+          alert('📢 播放失败，请检查音频资源是否有效～');
+        });
+      }
+    },
+
+    handleTimeUpdate() {
+      const audio = this.$refs.audioRef;
+      if (!audio) return;
+      this.currentTime = audio.currentTime;
+      this.duration = audio.duration || this.duration;
+      this.currentProgress = this.duration ? (this.currentTime / this.duration) * 100 : 0;
+    },
+
+    handleProgressChange(e) {
+      const audio = this.$refs.audioRef;
+      if (!audio) return;
+      const progress = e.target.value;
+      this.currentProgress = progress;
+      this.currentTime = (progress / 100) * this.duration;
+      audio.currentTime = this.currentTime;
+    },
+
+    // ✅✅✅ 播放完毕逻辑：完整支持播放模式切换
+    async handleEnded() {
+      this.isPlaying = false;
+      this.currentProgress = 0;
+      this.currentTime = 0;
+      const audio = this.$refs.audioRef;
+      if (!audio || !this.audioSrc) return;
+
+      if (this.playMode === 'single') {
+        audio.play().then(() => {
+          this.isPlaying = true;
+        }).catch(() => this.isPlaying = false);
+        this.saveUserPlaylistData();
+        return;
+      }
+
+      const currentList = this.currentPlaylist;
+      if (currentList.length === 0) return;
+
+      if (this.playMode === 'random') {
+        const randomIndex = Math.floor(Math.random() * currentList.length);
+        await this.handlePlayTrack(randomIndex);
+        return;
+      }
+
+      if (this.currentTrackIndex < currentList.length - 1) {
+        await this.handlePlayTrack(this.currentTrackIndex + 1);
+      } else {
+        this.autoPlayCurrentAlbumAudio();
+      }
+      this.saveUserPlaylistData();
+    },
+
+    updateAlbumData(updatedData) {
+      this.album = {...this.album, ...updatedData};
+    },
+
     setFullPageBg(coverImg) {
       if (coverImg) {
         this.bgStyle = {
@@ -176,9 +706,10 @@ export default {
           backgroundRepeat: 'no-repeat'
         }
       } else {
-        this.bgStyle = { backgroundColor: '#f9f9f9' };
+        this.bgStyle = {backgroundColor: '#f9f9f9'};
       }
     },
+
     extractAlbumMainColor(imgUrl) {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
@@ -188,14 +719,21 @@ export default {
         canvas.width = 10;
         canvas.height = 10;
         ctx.drawImage(img, 0, 0, 10, 10);
-        const data = ctx.getImageData(0,0,10,10).data;
-        let r=0,g=0,b=0,c=0;
-        for(let i=0;i<data.length;i+=4){r+=data[i];g+=data[i+1];b+=data[i+2];c++}
-        r=Math.floor(r/c);g=Math.floor(g/c);b=Math.floor(b/c);
-        const hex = `#${((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1)}`;
+        const data = ctx.getImageData(0, 0, 10, 10).data;
+        let r = 0, g = 0, b = 0, c = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+          c++
+        }
+        r = Math.floor(r / c);
+        g = Math.floor(g / c);
+        b = Math.floor(b / c);
+        const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
         this.albumMainColor = hex;
-        this.albumMainColorDark = this.darkenColor(hex, 0.2); // 加深1级 (按钮底色/标签背景)
-        this.albumMainColorDarkDouble = this.darkenColor(hex, 0.35); // ✅ 加深再加深 (选中菜单文字/按钮hover)
+        this.albumMainColorDark = this.darkenColor(hex, 0.2);
+        this.albumMainColorDarkDouble = this.darkenColor(hex, 0.35);
         this.activeMenuBg = `rgba(${r},${g},${b},0.2)`;
       };
       img.onerror = () => {
@@ -205,13 +743,14 @@ export default {
       };
       img.src = imgUrl;
     },
+
     darkenColor(hex, amount) {
-      const r = parseInt(hex.slice(1,3),16)*(1-amount);
-      const g = parseInt(hex.slice(3,5),16)*(1-amount);
-      const b = parseInt(hex.slice(5,7),16)*(1-amount);
-      return `#${Math.round(r).toString(16).padStart(2,'0')}${Math.round(g).toString(16).padStart(2,'0')}${Math.round(b).toString(16).padStart(2,'0')}`;
+      const r = parseInt(hex.slice(1, 3), 16) * (1 - amount);
+      const g = parseInt(hex.slice(3, 5), 16) * (1 - amount);
+      const b = parseInt(hex.slice(5, 7), 16) * (1 - amount);
+      return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
     },
-    // ============ 以下所有方法 完全未动 原样保留 ============
+
     saveAlbumIntro(introContent) {
       this.$axios({
         url: `/api/album/update/intro/${this.album.id}`,
@@ -220,7 +759,7 @@ export default {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json'
         },
-        data: { album_intro: introContent.trim() }
+        data: {album_intro: introContent.trim()}
       }).then(res => {
         if (res.data.code === 200) {
           alert('专辑简介保存成功！');
@@ -231,11 +770,12 @@ export default {
         } else {
           alert('保存失败：' + res.data.msg);
         }
-      }).catch(err => {
-        console.error('保存专辑简介失败：', err);
-        alert('保存专辑简介失败！' + err.message);
+      }).catch(() => {
+        console.error('保存专辑简介失败：');
+        alert('保存专辑简介失败！');
       });
     },
+
     syncAlbumIntroToPool(introContent) {
       this.$axios({
         url: `/api/album/pool/update/${this.albumPoolId}`,
@@ -244,17 +784,18 @@ export default {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json'
         },
-        data: { album_intro: introContent }
+        data: {album_intro: introContent}
       }).then(res => {
         if (res.data.code === 200) {
           console.log('✅ 公共专辑池简介同步成功');
         } else {
           console.warn('⚠️ 公共专辑池简介同步失败：', res.data.msg);
         }
-      }).catch(err => {
-        console.error('❌ 同步公共专辑简介失败：', err);
+      }).catch(() => {
+        console.error('❌ 同步公共专辑简介失败：');
       });
     },
+
     processComments() {
       const myComment = this.filteredComments.find(comment => comment.user_id == this.currentUserId);
       const otherComments = this.filteredComments.filter(comment => comment.user_id != this.currentUserId);
@@ -268,9 +809,11 @@ export default {
       this.myComment = myComment;
       this.otherComments = otherComments;
     },
+
     changeSortType(type) {
       this.sortType = type;
     },
+
     blockComment(commentId) {
       if (!this.blockedCommentIds.includes(commentId.toString())) {
         this.blockedCommentIds.push(commentId.toString());
@@ -278,23 +821,36 @@ export default {
         alert('已屏蔽这条评论！');
       }
     },
+
     unblockAllComments() {
       this.blockedCommentIds = [];
       localStorage.removeItem(`blocked_comments_${this.albumPoolId}`);
     },
-    async getAlbumPoolRealId() {
-      try {
-        if (!this.album.album_name || !this.album.singer) {
-          alert('专辑名称或歌手信息缺失，无法创建公共专辑！');
-          return;
-        }
 
+    // ✅✅✅ 核心修复3：getAlbumPoolRealId 加【加载状态+字段非空三重校验】，根治核心报错
+    async getAlbumPoolRealId() {
+      // 第一重：加载中不执行
+      if (this.albumLoading) {
+        console.log('⏳ 专辑数据加载中，稍后获取公共专辑ID');
+        return;
+      }
+      // 第二重：核心字段非空校验，杜绝空值请求
+      const {album_name, singer} = this.album;
+      if (!album_name || !album_name.trim() || !singer || !singer.trim()) {
+        console.warn('⚠️ 专辑名称/歌手为空，跳过公共专辑创建');
+        this.albumPoolId = '';
+        return;
+      }
+      // 第三重：发行年份容错
+      if (!this.album.release_year) this.album.release_year = 0;
+
+      try {
         const res = await this.$axios({
           url: '/api/album_pool/get_id',
           method: 'GET',
           params: {
-            album_name: this.album.album_name,
-            singer: this.album.singer
+            album_name: album_name.trim(),
+            singer: singer.trim()
           },
           headers: {
             'Authorization': localStorage.getItem('token') || ''
@@ -303,16 +859,18 @@ export default {
 
         if (res.data.code === 200) {
           this.albumPoolId = res.data.data.id;
-          console.log('✅ 获取到公共专辑池ID：', this.albumPoolId);
         } else if (res.data.code === 404) {
           await this.createAlbumPool();
         }
       } catch (err) {
         console.error('获取专辑池ID失败：', err);
-        alert('获取公共专辑ID失败：' + err.message);
+        this.albumPoolId = '';
       }
     },
+
+    // ✅✅✅ 核心修复4：createAlbumPool 传参修正+字段补全，无undefined
     async createAlbumPool() {
+      const {album_name, singer, release_year, cover_img, main_type, tags, my_score, album_intro} = this.album;
       try {
         const res = await this.$axios({
           url: '/api/album_pool/add',
@@ -322,25 +880,27 @@ export default {
             'Content-Type': 'application/json'
           },
           data: {
-            album_name: this.album.album_name,
-            cover_img: this.album.cover_img || '',
-            singer: this.album.singer,
-            release_year: this.album.release_year || 0,
-            main_type: this.album.main_type || '',
-            tags: this.album.tags || [],
-            my_score: this.album.my_score || 0.0,
-            album_intro: this.album.album_intro || ''
+            album_name: album_name.trim(),
+            cover_img: cover_img || '',
+            singer: singer.trim(),
+            release_year: Number(release_year) || 0,
+            main_type: Array.isArray(main_type) ? JSON.stringify(main_type) : main_type || '',
+            tags: tags || [],
+            my_score: Number(my_score) || 0.0,
+            album_intro: album_intro || ''
           }
         });
         if (res.data.code === 200) {
           this.albumPoolId = res.data.data.id;
+          this.album.source_pool_id = this.albumPoolId;
           alert('公共专辑创建成功！ID：' + this.albumPoolId);
         }
       } catch (err) {
         console.error('创建专辑池失败：', err);
-        alert('创建公共专辑失败：' + err.message);
+        alert(`创建公共专辑失败：${err.message || '服务器异常'}`);
       }
     },
+
     async checkUserComment() {
       if (!this.albumPoolId) return false;
       try {
@@ -365,8 +925,11 @@ export default {
         return false;
       }
     },
+
+    // ✅✅✅ 核心修复5：getAlbumDetail 加加载状态锁，异步请求有开始/结束标记
     getAlbumDetail(albumId) {
       return new Promise((resolve, reject) => {
+        this.albumLoading = true;
         this.$axios({
           url: `/api/album/detail/${albumId}`,
           method: 'GET',
@@ -378,11 +941,11 @@ export default {
             .then((res) => {
               if (res.data.code === 200) {
                 this.album = res.data.data;
-                this.album.review = this.album.review || {};
-                this.album.tracks = this.album.tracks || [];
                 if (this.album.source_pool_id) {
                   this.albumPoolId = this.album.source_pool_id;
+                  this.currentAlbumId = this.album.source_pool_id;
                 }
+                this.saveUserPlaylistData();
                 resolve();
               } else {
                 alert(res.data.msg);
@@ -390,14 +953,18 @@ export default {
                 reject(res.data.msg);
               }
             })
-            .catch((err) => {
-              console.error('获取详情失败：', err);
-              alert('获取专辑详情失败！' + err.message);
+            .catch(() => {
+              console.error('获取详情失败：');
+              alert('获取专辑详情失败！');
               this.$router.push('/music');
-              reject(err);
+              reject();
+            })
+            .finally(() => {
+              this.albumLoading = false;
             });
       });
     },
+
     saveMyTags(tags) {
       this.$axios({
         url: `/api/album/update/tags/${this.album.id}`,
@@ -417,11 +984,12 @@ export default {
         } else {
           alert('保存失败：' + res.data.msg);
         }
-      }).catch(err => {
-        console.error('保存标签失败：', err);
-        alert('保存标签失败！' + err.message);
+      }).catch(() => {
+        console.error('保存标签失败：');
+        alert('保存标签失败！');
       });
     },
+
     addSingleReview(content) {
       if (!content.trim()) {
         alert('听后感内容不能为空！');
@@ -450,11 +1018,12 @@ export default {
               alert(res.data.msg);
             }
           })
-          .catch((err) => {
-            console.error('添加听后感失败：', err);
-            alert('添加听后感失败！' + err.message);
+          .catch(() => {
+            console.error('添加听后感失败：');
+            alert('添加听后感失败！');
           });
     },
+
     deleteSingleReview(feelingId) {
       if (!confirm('确定要删除这条听后感吗？')) {
         return;
@@ -476,11 +1045,12 @@ export default {
               alert(res.data.msg);
             }
           })
-          .catch((err) => {
-            console.error('删除听后感失败：', err);
-            alert('删除听后感失败！' + err.message);
+          .catch(() => {
+            console.error('删除听后感失败：');
+            alert('删除听后感失败！');
           });
     },
+
     deleteAllReview() {
       if (!confirm('确定要清空所有听后感吗？')) {
         return;
@@ -501,19 +1071,56 @@ export default {
               alert(res.data.msg);
             }
           })
-          .catch((err) => {
-            console.error('清空听后感失败：', err);
-            alert('清空听后感失败！' + err.message);
+          .catch(() => {
+            console.error('清空听后感失败：');
+            alert('清空听后感失败！');
           });
     },
+
+    // ✅✅✅ 核心修复6：完整重置方法，补全所有字段，无undefined
+    resetAlbumPageData() {
+      this.album = {
+        id: 0,
+        album_name: '',
+        singer: '',
+        release_year: '',
+        cover_img: '',
+        tracks: [],
+        tracks_time: [],
+        full_tracks: [],
+        review: {},
+        my_score: 0.0,
+        track_count: 0,
+        source_pool_id: 0,
+        sync_pool_update: 1,
+        is_customized: 0,
+        album_intro: '',
+        tags: [],
+        main_type: []
+      };
+      this.audioSrc = '';
+      this.fileName = '';
+      this.isPlaying = false;
+      this.currentTime = 0;
+      this.duration = 0;
+      this.durationFormat = '0:00';
+      this.currentProgress = 0;
+      this.blockedCommentIds = [];
+      this.publicComments = [];
+      this.myComment = null;
+      this.otherComments = [];
+      this.hasComment = false;
+      this.existingCommentId = null;
+      this.albumPoolId = '';
+      this.albumLoading = true;
+    },
+
     goBack() {
       this.$router.push('/music');
     },
+
     getPublicComments() {
-      if (!this.albumPoolId) {
-        alert('公共专辑ID未初始化，请稍后重试！');
-        return;
-      }
+      if (!this.albumPoolId) return;
       this.$axios({
         url: `/api/album/pool/comment/list/${this.albumPoolId}`,
         method: 'GET',
@@ -527,11 +1134,12 @@ export default {
         } else {
           alert('获取公共评论失败：' + res.data.msg);
         }
-      }).catch(err => {
-        console.error('获取公共评论失败：', err);
+      }).catch(() => {
+        console.error('获取公共评论失败：');
         alert('获取公共评论失败！');
       });
     },
+
     async submitPublicComment() {
       const content = this.newCommentContent.trim();
       if (!content) {
@@ -577,9 +1185,10 @@ export default {
         }
       } catch (err) {
         console.error('发布失败：', err);
-        alert(`发布失败：${err.response?.data?.msg || err.message}`);
+        alert(`发布失败：服务器异常`);
       }
     },
+
     likePublicComment(commentId) {
       this.$axios({
         url: `/api/album/pool/comment/like/${commentId}`,
@@ -602,11 +1211,12 @@ export default {
         } else {
           alert(res.data.msg);
         }
-      }).catch(err => {
-        console.error('点赞失败：', err);
+      }).catch(() => {
+        console.error('点赞失败：');
         alert('点赞失败！');
       });
     },
+
     deletePublicComment(commentId) {
       if (!confirm('确定要删除这条评论吗？')) return;
       this.$axios({
@@ -624,12 +1234,23 @@ export default {
           }
           this.getPublicComments();
         } else {
-          alert('删除评论失败：' + res.data.msg);
+          alert('删除评论失败：', res.data.msg);
         }
-      }).catch(err => {
-        console.error('删除公共评论失败：', err);
-        alert('删除评论失败！');
+      }).catch(() => {
+        console.error('删除公共评论失败：');
+        alert('删除公共评论失败！');
       });
+    }
+  },
+  // 路由离开守卫，强制保存播放列表
+  beforeRouteLeave(to, from, next) {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveUserPlaylistData();
+    next();
+  },
+  beforeUnmount() {
+    if (this.audioSrc && this.audioSrc.includes('blob:')) {
+      URL.revokeObjectURL(this.audioSrc);
     }
   }
 };
@@ -672,6 +1293,10 @@ export default {
   padding: 20px;
   border-right: 1px solid rgba(255, 255, 255, 0.5);
   z-index: 2;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
 }
 
 .back-btn {
@@ -686,11 +1311,16 @@ export default {
   transition: all 0.2s;
 }
 
-/* ✅ 修改3：返回按钮hover 底色 = 封面主色加深再加深 */
 .back-btn:hover {
   opacity: 0.95;
   transform: scale(1.02);
   background-color: v-bind(albumMainColorDarkDouble) !important;
+}
+
+.sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
 .menu-item {
@@ -704,7 +1334,6 @@ export default {
   padding-left: 8px;
 }
 
-/* ✅ 修改4：菜单hover 文字色 = 封面主色加深再加深，保留通透背景 */
 .menu-item:hover {
   color: v-bind(albumMainColorDarkDouble) !important;
   background: rgba(255, 255, 255, 0.2);
@@ -712,12 +1341,15 @@ export default {
 
 .main-content {
   flex: 1;
+  margin-left: 200px;
   padding: 30px;
+  padding-bottom: 140px !important;
   overflow-y: auto;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   z-index: 2;
+  min-height: 100vh;
 }
 
 h1 {
@@ -728,21 +1360,362 @@ h1 {
 }
 
 h2 {
-	font-size: 20px;
-	margin-bottom: 18px;
-	color: #333;
-	text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+  font-size: 20px;
+  margin-bottom: 18px;
+  color: #333;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
 }
 
 h3 {
-	font-size: 18px;
-	margin-bottom: 15px;
-	color: #444;
+  font-size: 18px;
+  margin-bottom: 15px;
+  color: #444;
 }
 
 h4 {
-	font-size: 16px;
-	margin-bottom: 10px;
-	color: #555;
+  font-size: 16px;
+  margin-bottom: 10px;
+  color: #555;
+}
+
+.full-player-wrapper {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 110px;
+  background: transparent;
+  backdrop-filter: none;
+  border-top: none;
+  z-index: 99;
+  display: block;
+  padding: 0;
+  margin: 0;
+}
+
+.album-rotate-box {
+  width: 200px;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  transform: translateY(-10px);
+  z-index: 10;
+}
+
+.album-rotate-circle {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 4px solid v-bind(albumMainColorDark);
+  box-shadow: 0 0 15px v-bind(albumMainColorDark);
+  transition: all 0.3s ease;
+  animation-fill-mode: forwards;
+  animation: rotate 8s linear infinite;
+  animation-play-state: paused;
+}
+
+.album-rotate-circle.playing {
+  animation-play-state: running;
+}
+
+.album-rotate-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.no-cover .album-rotate-circle {
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.no-resource-text {
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+  padding: 0 10px;
+}
+
+.player-right-box {
+  position: absolute;
+  bottom: 15px;
+  left: 0;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.music-player-core {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 150px);
+  height: 1px;
+  position: absolute;
+  left: 110px;
+  bottom: 0px;
+  padding: 0;
+  margin: 0;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 5px;
+  cursor: pointer;
+  accent-color: v-bind(albumMainColorDark);
+  min-width: unset;
+}
+
+.time-text {
+  font-size: 11px;
+  color: #666;
+  width: 70px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.volume-wrapper {
+  position: relative;
+  cursor: pointer;
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-left: 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20px;
+}
+
+.volume-icon {
+  display: block;
+  color: #666;
+  margin-top: 5px;
+  transition: color 0.2s ease;
+}
+
+.volume-wrapper:hover .volume-icon {
+  color: v-bind(albumMainColorDark);
+}
+
+.volume-dropdown {
+  position: absolute;
+  bottom: 18px;
+  right: 0;
+  background: #fff;
+  padding: 6px;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.volume-bar {
+  width: 5px;
+  height: 60px;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  accent-color: v-bind(albumMainColorDark);
+  cursor: pointer;
+}
+
+.menu-icon-wrapper {
+  cursor: pointer;
+  position: relative;
+  width: 20px;
+  height: 20px;
+  margin-left: 5px;
+  z-index: 11;
+}
+
+.menu-icon {
+  font-size: 16px;
+  color: #666;
+  line-height: 20px;
+  text-align: center;
+  transition: color 0.2s ease;
+}
+
+.menu-icon-wrapper:hover .menu-icon {
+  color: v-bind(albumMainColorDark);
+}
+
+.dropdown-menu {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 0;
+  min-width: 80px;
+  z-index: 999;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.menu-btn.playlist-btn {
+  color: v-bind(albumMainColorDark);
+}
+
+.menu-btn.playlist-btn:hover {
+  background: v-bind(activeMenuBg);
+}
+
+.menu-btn {
+  border: none;
+  background: transparent;
+  padding: 3px 6px;
+  font-size: 11px;
+  text-align: center;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.menu-btn.upload-btn {
+  color: v-bind(albumMainColorDark);
+}
+
+.menu-btn.upload-btn:hover {
+  background: v-bind(activeMenuBg);
+}
+
+.menu-btn.delete-btn {
+  color: #dc2626;
+}
+
+.menu-btn.delete-btn:hover {
+  background: #fef2f2;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.upload-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 360px;
+  height: 100vh;
+  background: white;
+  z-index: 999;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #999;
+}
+
+.close-btn:hover {
+  color: #f00;
+}
+
+.upload-area {
+  width: 100%;
+  height: 180px;
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  background: #f9f9f9;
+  margin-bottom: 20px;
+  transition: all 0.2s ease;
+}
+
+.upload-area:hover {
+  border-color: v-bind(albumMainColorDark);
+  background: v-bind(activeMenuBg);
+}
+
+.file-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.upload-tips {
+  text-align: center;
+  color: #666;
+}
+
+.tip-text {
+  font-size: 12px;
+  color: #999;
+}
+
+.file-name {
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+
+.upload-status {
+  font-size: 14px;
+  padding: 8px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.upload-status.success {
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.upload-status.error {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 998;
 }
 </style>

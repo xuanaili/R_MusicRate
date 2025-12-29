@@ -3,7 +3,7 @@ import json
 import traceback
 from ..db_utils import (
     get_db, get_album_table_name, get_current_user_id,
-    save_user_album_intro, get_user_album_intro  # 新增导入简介操作函数
+    save_user_album_intro, get_user_album_intro
 )
 from ..decorators import login_required
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, VALID_SORT_FIELDS
@@ -14,13 +14,13 @@ def register_album_routes(app):
     """注册专辑基础操作路由（需传入Flask app实例）"""
 
     # 1. 兼容前端的 /api/album/list 接口
-    @app.route('/api/album/list', methods=['GET', 'OPTIONS'])  # 仅加OPTIONS
+    @app.route('/api/album/list', methods=['GET', 'OPTIONS'])
     @login_required
     def album_list_compatible():
         return get_album_list()
 
-    # 2. 获取专辑列表（完全保留你原来的逻辑 + 修复JSON解析容错 + 新增专辑简介字段）
-    @app.route('/api/music', methods=['GET', 'OPTIONS'])  # 仅加OPTIONS
+    # 2. 获取专辑列表（完全保留原逻辑 + 修复JSON解析 + 新增专辑简介 + 修复分页BUG + 返回正确的tracks_time【秒数数组】）
+    @app.route('/api/music', methods=['GET', 'OPTIONS'])
     @login_required
     def get_album_list():
         try:
@@ -28,7 +28,6 @@ def register_album_routes(app):
             if current_user_id is None:
                 return jsonify({"code": 401, "msg": "用户未登录！"}), 401
 
-            # 以下所有代码完全保留你原来的版本，仅修改JSON解析部分
             page = int(request.args.get('page', DEFAULT_PAGE))
             page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
             sort_by = request.args.get('sort_by', 'album_name')
@@ -56,21 +55,18 @@ def register_album_routes(app):
             albums = cursor.fetchall()
             cursor.close()
 
-            # ========== 核心修复：新增JSON解析容错函数 ==========
-            def safe_json_loads(s):
-                """安全解析JSON字符串，兼容空值/空字符串/非法JSON"""
-                if not s:  # None/空字符串/空值
-                    return []
+            # ========== 增强版JSON解析容错函数 兼容 数组+字典 ==========
+            def safe_json_loads(s, is_dict=False):
+                if not s:
+                    return {} if is_dict else []
                 try:
                     return json.loads(s)
                 except (json.JSONDecodeError, TypeError):
-                    return []
+                    return {} if is_dict else []
 
             album_list = []
             for album in albums:
-                # ========== 新增：优先获取用户专属简介 ==========
                 user_intro = get_user_album_intro(current_user_id, album["id"])
-                # 优先使用用户专属简介，无则用专辑表中的简介
                 final_intro = user_intro if user_intro else album.get("album_intro", "")
 
                 album_dict = {
@@ -85,26 +81,20 @@ def register_album_routes(app):
                     "my_score": album["my_score"],
                     "burn_class": album["burn_class"],
                     "duration_type": album["duration_type"],
-                    # 修复tags解析
                     "tags": safe_json_loads(album["tags"]),
-                    # 修复main_type解析（核心错误点）
                     "main_type": safe_json_loads(album["main_type"]),
                     "code": album["code"],
                     "video_shared": album["video_shared"],
                     "mandopop_code": album["mandopop_code"],
-                    # 新增：使用最终的简介（用户专属 > 专辑表）
                     "album_intro": final_intro,
-                    # 修复tracks解析
                     "tracks": safe_json_loads(album["tracks"]),
-                    # 修复review解析（注意review是字典，容错为{}）
-                    "review": safe_json_loads(album["review"]) if safe_json_loads(album["review"]) is not None else {},
+                    "review": safe_json_loads(album["review"], is_dict=True),
                     "score": album["score"],
-                    # 修复comments解析
                     "comments": safe_json_loads(album["comments"]),
-                    # 新增：同步相关字段（用于前端展示同步状态）
                     "source_pool_id": album.get("source_pool_id"),
                     "sync_pool_update": album.get("sync_pool_update", 1),
-                    "is_customized": album.get("is_customized", 0)
+                    "is_customized": album.get("is_customized", 0),
+                    "tracks_time": safe_json_loads(album.get("tracks_time"))  # ✅ 正确解析：曲目开始秒数数组
                 }
                 album_list.append(album_dict)
 
@@ -117,7 +107,6 @@ def register_album_routes(app):
                     "pagination": {
                         "total": total,
                         "page": page,
-                        "page": page,
                         "page_size": page_size,
                         "total_pages": total_pages
                     }
@@ -128,7 +117,57 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取专辑出错：{str(e)}"}), 500
 
-    # 在album.py中新增接口（用户专辑管理）
+    # ✅✅✅ 新增核心接口：根据source_pool_id查询当前用户的专属album_id ✅✅✅
+    @app.route('/api/album/get-id-by-source', methods=['GET', 'OPTIONS'])
+    @login_required
+    def get_album_id_by_source_pool_id():
+        try:
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+
+            # 获取前端传入的source_pool_id
+            source_pool_id = request.args.get('source_pool_id')
+            if not source_pool_id or not source_pool_id.isdigit():
+                return jsonify({"code": 400, "msg": "source_pool_id不能为空且必须为数字！"}), 400
+            source_pool_id = int(source_pool_id)
+
+            # 查询当前用户自己的专辑表，精准匹配source_pool_id
+            table_name = get_album_table_name(current_user_id)
+            db = get_db()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+
+            # 核心SQL：只查当前用户的表 + 精准匹配source_pool_id
+            cursor.execute(f'''
+                SELECT id FROM `{table_name}` 
+                WHERE source_pool_id = %s LIMIT 1
+            ''', (source_pool_id,))
+            album_info = cursor.fetchone()
+            cursor.close()
+
+            if album_info and album_info.get('id'):
+                # 查询成功，返回精准匹配的album_id
+                return jsonify({
+                    "code": 200,
+                    "msg": "查询专辑ID成功",
+                    "data": {
+                        "album_id": album_info['id'],
+                        "source_pool_id": source_pool_id
+                    }
+                })
+            else:
+                # 无匹配数据，返回提示，不报错
+                return jsonify({
+                    "code": 404,
+                    "msg": f"你的专辑列表中暂无source_pool_id={source_pool_id}的专辑",
+                    "data": None
+                })
+        except Exception as e:
+            print(f"❌ 根据source_pool_id查询album_id出错：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"查询失败：{str(e)}"}), 500
+
+    # 专辑同步开关
     @app.route('/api/album/sync/switch', methods=['POST'])
     @login_required
     def switch_album_sync():
@@ -139,7 +178,7 @@ def register_album_routes(app):
 
             data = request.get_json()
             album_id = data.get('album_id')
-            sync_status = data.get('sync_status', 1)  # 1=开启，0=关闭
+            sync_status = data.get('sync_status', 1)
 
             if not album_id:
                 return jsonify({"code": 400, "msg": "专辑ID不能为空！"}), 400
@@ -148,7 +187,6 @@ def register_album_routes(app):
             cursor = db.cursor()
             table_name = get_album_table_name(user_id)
 
-            # 更新同步开关
             cursor.execute(f'''
                 UPDATE `{table_name}` 
                 SET sync_pool_update = %s 
@@ -167,6 +205,7 @@ def register_album_routes(app):
             print(f"❌ 开关同步失败：{str(e)}")
             return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 500
 
+    # 标记自定义
     @app.route('/api/album/mark/customized', methods=['POST'])
     @login_required
     def mark_album_customized():
@@ -182,7 +221,6 @@ def register_album_routes(app):
             cursor = db.cursor()
             table_name = get_album_table_name(user_id)
 
-            # 标记为已自定义修改（后续不再同步模板更新）
             cursor.execute(f'''
                 UPDATE `{table_name}` 
                 SET is_customized = 1 
@@ -200,7 +238,7 @@ def register_album_routes(app):
         except Exception as e:
             return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 500
 
-    # ========== 优化：保存用户专辑标签接口 - 同步更新统计 ==========
+    # 更新专辑标签
     @app.route('/api/album/update/tags/<int:album_id>', methods=['PUT', 'OPTIONS'])
     @login_required
     def update_album_tags(album_id):
@@ -212,30 +250,25 @@ def register_album_routes(app):
             data = request.get_json()
             tags = data.get('tags', [])
 
-            # 校验标签：最多5个，去重，过滤空值
             tags = list(set([tag.strip() for tag in tags if tag.strip()]))[:5]
             tags_json = json.dumps(tags)
 
-            # 更新用户私有专辑的标签
             table_name = get_album_table_name(current_user_id)
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # 检查专辑是否存在
             cursor.execute(f'SELECT id, source_pool_id FROM `{table_name}` WHERE id = %s', (album_id,))
             album = cursor.fetchone()
             if not album:
                 cursor.close()
                 return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
 
-            # 更新用户专辑标签
             cursor.execute(f'''
                 UPDATE `{table_name}` 
                 SET tags = %s 
                 WHERE id = %s
             ''', (tags_json, album_id))
 
-            # 同步更新到公共专辑关联表（如果关联了公共专辑）
             pool_id = album.get('source_pool_id')
             if pool_id:
                 cursor.execute('''
@@ -250,7 +283,6 @@ def register_album_routes(app):
                         WHERE id = %s
                     ''', (tags_json, relation['id']))
                 else:
-                    # 没有关联记录则新增
                     cursor.execute('''
                         INSERT INTO user_album_relation (user_id, album_pool_id, tags)
                         VALUES (%s, %s, %s)
@@ -264,7 +296,7 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"保存标签失败：{str(e)}"}), 500
 
-    # 3. 补充专辑详情接口（关键：加OPTIONS，逻辑和列表一致 + 新增专辑简介）
+    # 专辑详情接口（返回正确的tracks_time【秒数数组】）
     @app.route('/api/album/detail/<int:album_id>', methods=['GET', 'OPTIONS'])
     @login_required
     def get_album_detail(album_id):
@@ -284,21 +316,17 @@ def register_album_routes(app):
             if not album:
                 return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
 
-            # ========== 新增容错函数 ==========
-            def safe_json_loads(s):
+            def safe_json_loads(s, is_dict=False):
                 if not s:
-                    return []
+                    return {} if is_dict else []
                 try:
                     return json.loads(s)
                 except (json.JSONDecodeError, TypeError):
-                    return []
+                    return {} if is_dict else []
 
-            # ========== 新增：优先获取用户专属简介 ==========
             user_intro = get_user_album_intro(current_user_id, album_id)
-            # 优先使用用户专属简介，无则用专辑表中的简介
             final_intro = user_intro if user_intro else album.get("album_intro", "")
 
-            # 解析逻辑和列表完全一致（使用容错函数 + 新增专辑简介）
             album_dict = {
                 "id": album["id"],
                 "album_name": album["album_name"],
@@ -316,16 +344,15 @@ def register_album_routes(app):
                 "code": album["code"],
                 "video_shared": album["video_shared"],
                 "mandopop_code": album["mandopop_code"],
-                # 新增：使用最终的简介（用户专属 > 专辑表）
                 "album_intro": final_intro,
                 "tracks": safe_json_loads(album["tracks"]),
-                "review": safe_json_loads(album["review"]) if safe_json_loads(album["review"]) is not None else {},
+                "review": safe_json_loads(album["review"], is_dict=True),
                 "score": album["score"],
                 "comments": safe_json_loads(album["comments"]),
-                # 新增：同步相关字段
                 "source_pool_id": album.get("source_pool_id"),
                 "sync_pool_update": album.get("sync_pool_update", 1),
-                "is_customized": album.get("is_customized", 0)
+                "is_customized": album.get("is_customized", 0),
+                "tracks_time": safe_json_loads(album.get("tracks_time"))  # ✅ 正确解析：曲目开始秒数数组
             }
 
             return jsonify({
@@ -338,7 +365,7 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 500
 
-    # 4. 添加专辑接口（核心修改：新增专辑简介字段 + 防重复校验 + 补充tracks写入album_pool）
+    # 添加专辑接口
     @app.route('/api/album/add', methods=['POST', 'OPTIONS'])
     @login_required
     def add_album():
@@ -355,7 +382,6 @@ def register_album_routes(app):
                 if not data.get(field):
                     return jsonify({"code": 400, "msg": f"{field}不能为空！"}), 400
 
-            # ========== 核心新增：防重复校验（专辑名+歌手+发行时间） ==========
             album_name = data.get('album_name').strip()
             singer = data.get('singer').strip()
             release_year = int(data.get('release_year'))
@@ -363,7 +389,6 @@ def register_album_routes(app):
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # 1. 校验公共专辑池是否已存在
             cursor.execute('''
                 SELECT id FROM album_pool 
                 WHERE album_name = %s AND singer = %s AND release_year = %s
@@ -377,7 +402,6 @@ def register_album_routes(app):
                     "data": {"pool_id": existing_pool_album['id']}
                 }), 409
 
-            # 2. 校验用户私有表是否已存在
             cursor.execute(f'''
                 SELECT id FROM `{table_name}` 
                 WHERE album_name = %s AND singer = %s AND release_year = %s
@@ -391,7 +415,6 @@ def register_album_routes(app):
                     "data": {"album_id": existing_user_album['id']}
                 }), 409
 
-            # ========== 核心修改1：处理tracks默认值（兼容MySQL TEXT无默认值） ==========
             def get_default_tracks_value(tracks_data):
                 if not tracks_data:
                     return json.dumps([])
@@ -403,7 +426,6 @@ def register_album_routes(app):
                 except:
                     return json.dumps([])
 
-            # 新增：处理专辑简介字段（支持长文本、分段、特殊符号）
             album_intro = data.get('album_intro', '').strip()
 
             new_album = {
@@ -422,7 +444,6 @@ def register_album_routes(app):
                 "code": data.get('code', ''),
                 "video_shared": data.get('video_shared', ''),
                 "mandopop_code": data.get('mandopop_code', ''),
-                # 新增：专辑简介（放在tracks上方）
                 "album_intro": album_intro,
                 "tracks": json.dumps(data.get('tracks', [])) or "",
                 "review": json.dumps({
@@ -435,15 +456,14 @@ def register_album_routes(app):
                 }) or "",
                 "score": float(data.get('score', 0.0)),
                 "comments": json.dumps([]) or "",
-                # ========== 核心新增：同步相关字段默认值（和copy逻辑一致） ==========
-                "source_pool_id": 0,  # 先初始化，后续赋值为刚创建的公共专辑池ID
-                "sync_pool_update": 1,  # 默认开启同步
-                "is_customized": 0  # 默认未自定义
+                "source_pool_id": 0,
+                "sync_pool_update": 1,
+                "is_customized": 0,
+                "tracks_time": json.dumps([])  # ✅ 新增专辑默认空秒数数组
             }
 
-            # ========== 核心修改2：先插入公共专辑池，获取pool_id（新增album_intro） ==========
             main_type_str = json.dumps(data.get('main_type', [])) if data.get('main_type') else ""
-            tracks_str = get_default_tracks_value(data.get('tracks', []))  # 处理默认值
+            tracks_str = get_default_tracks_value(data.get('tracks', []))
             cursor.execute('''
                 INSERT INTO album_pool (
                     album_name, cover_img, singer, release_year, 
@@ -456,28 +476,25 @@ def register_album_routes(app):
                 new_album['release_year'],
                 main_type_str,
                 new_album['tags'],
-                new_album['album_intro'],  # 新增：写入专辑简介到公共池
-                tracks_str,  # 新增：写入tracks字段
+                new_album['album_intro'],
+                tracks_str,
                 new_album['my_score'],
                 current_user_id
             ))
-            # 获取刚创建的公共专辑池ID
             new_pool_id = cursor.lastrowid
-            # 给source_pool_id赋值
             new_album['source_pool_id'] = new_pool_id
 
-            # ========== 核心修改3：插入用户专属表时，新增album_intro和同步字段 ==========
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
                     track_count, track_duration, my_score, burn_class, duration_type,
                     tags, main_type, code, video_shared, mandopop_code,
                     album_intro, tracks, review, score, comments,
-                    source_pool_id, sync_pool_update, is_customized  -- 新增同步字段
+                    source_pool_id, sync_pool_update, is_customized, tracks_time
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s  -- 同步字段对应的值
+                    %s, %s, %s, %s
                 )
             ''', (
                 new_album['album_name'], new_album['cover_img'], new_album['singer'],
@@ -485,18 +502,16 @@ def register_album_routes(app):
                 new_album['track_duration'], new_album['my_score'], new_album['burn_class'],
                 new_album['duration_type'], new_album['tags'], new_album['main_type'],
                 new_album['code'], new_album['video_shared'], new_album['mandopop_code'],
-                # 新增：专辑简介字段值
                 new_album['album_intro'],
                 new_album['tracks'], new_album['review'], new_album['score'],
                 new_album['comments'],
-                # 同步字段的值
                 new_album['source_pool_id'],
                 new_album['sync_pool_update'],
-                new_album['is_customized']
+                new_album['is_customized'],
+                new_album['tracks_time']
             ))
             new_album_id = cursor.lastrowid
 
-            # ========== 新增：如果有专辑简介，同步保存到user_album_intro表 ==========
             if album_intro:
                 save_user_album_intro(current_user_id, new_album_id, album_intro)
 
@@ -510,6 +525,7 @@ def register_album_routes(app):
             return_album['tracks'] = json.loads(return_album['tracks'])
             return_album['review'] = json.loads(return_album['review'])
             return_album['comments'] = json.loads(return_album['comments'])
+            return_album['tracks_time'] = json.loads(return_album['tracks_time'])
 
             return jsonify({
                 "code": 200,
@@ -519,14 +535,13 @@ def register_album_routes(app):
         except Exception as e:
             print(f"❌ 添加专辑出错：{str(e)}")
             print(traceback.format_exc())
-            # 异常时回滚事务
             if 'db' in locals():
                 db.rollback()
             if 'cursor' in locals():
                 cursor.close()
             return jsonify({"code": 500, "msg": f"添加专辑失败：{str(e)}"}), 500
 
-    # 5. 删除专辑（删除用户专属表数据）
+    # 删除专辑
     @app.route('/api/album/delete/<int:album_id>', methods=['DELETE'])
     @login_required
     def delete_album(album_id):
@@ -534,25 +549,20 @@ def register_album_routes(app):
             current_user_id = get_current_user_id()
             if current_user_id is None:
                 return jsonify({"code": 401, "msg": "用户未登录！"}), 401
-            # 关键点1：必须用当前登录用户的分表名（current_user_id）
             table_name = get_album_table_name(current_user_id)
             db = get_db()
             cursor = db.cursor()
 
-            # ========== 新增：删除专辑时，同时删除对应的用户专属简介 ==========
-            # 先删除user_album_intro中的记录
             cursor.execute('''
                 DELETE FROM user_album_intro 
                 WHERE user_id = %s AND album_id = %s
             ''', (current_user_id, album_id))
 
-            # 关键点2：删除条件必须包含album_id（前端传的ID）
             cursor.execute(f'DELETE FROM `{table_name}` WHERE id = %s', (album_id,))
-            affected_rows = cursor.rowcount  # 关键：获取受影响行数
+            affected_rows = cursor.rowcount
             db.commit()
             cursor.close()
 
-            # 关键点3：判断是否真的删除成功（affected_rows > 0 才是成功）
             if affected_rows == 0:
                 return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
 
@@ -565,28 +575,24 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"删除专辑失败：{str(e)}"}), 500
 
-    # ========== 核心新增：保存用户专辑专属简介接口 ==========
+    # 保存专辑简介
     @app.route('/api/album/user/intro/save', methods=['POST', 'OPTIONS'])
     @login_required
     def save_user_album_intro_api():
-        """保存用户对专辑的专属简介（关联账号）"""
         try:
             user_id = get_current_user_id()
             if not user_id:
                 return jsonify({"code": 401, "msg": "请先登录"}), 401
 
-            # 获取请求参数
             data = request.get_json()
             album_id = data.get('album_id')
             intro_content = data.get('intro_content', '').strip()
 
-            # 参数校验
             if not album_id:
                 return jsonify({"code": 400, "msg": "专辑ID不能为空"}), 400
             if not intro_content:
                 return jsonify({"code": 400, "msg": "简介内容不能为空"}), 400
 
-            # 调用db_utils中的保存函数
             save_success = save_user_album_intro(user_id, album_id, intro_content)
             if save_success:
                 return jsonify({
@@ -602,17 +608,15 @@ def register_album_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"保存简介失败：{str(e)}"}), 500
 
-    # ========== 核心新增：获取用户专辑专属简介接口 ==========
+    # 获取专辑简介
     @app.route('/api/album/user/intro/get/<int:album_id>', methods=['GET', 'OPTIONS'])
     @login_required
     def get_user_album_intro_api(album_id):
-        """获取当前用户对指定专辑的专属简介"""
         try:
             user_id = get_current_user_id()
             if not user_id:
                 return jsonify({"code": 401, "msg": "请先登录"}), 401
 
-            # 调用db_utils中的查询函数
             intro_content = get_user_album_intro(user_id, album_id)
             return jsonify({
                 "code": 200,
@@ -624,3 +628,65 @@ def register_album_routes(app):
             print(f"❌ 获取用户专辑简介接口出错：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取简介失败：{str(e)}"}), 500
+
+    # ✅ ✅ ✅ 核心修复接口：保存曲目列表 + 接收并存储【前端传的曲目开始秒数数组】✅ ✅ ✅
+    @app.route('/api/album/update/tracks/<int:album_id>', methods=['PUT', 'OPTIONS'])
+    @login_required
+    def update_album_tracks(album_id):
+        try:
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+
+            # 1. 获取前端传过来的所有参数：曲目名称数组、完整曲目信息、曲目开始秒数数组
+            data = request.get_json()
+            new_tracks = data.get('tracks', [])
+            full_tracks = data.get('full_tracks', [])
+            trackSecArr = data.get('tracks_time', []) # ✅ 接收前端的 曲目开始秒数数组
+
+            # 2. 数据容错处理
+            if isinstance(new_tracks, list):
+                new_tracks = [track.strip() for track in new_tracks if track.strip()]
+            # 秒数数组容错：必须是数组，长度和曲目一致，默认补0
+            if not isinstance(trackSecArr, list) or len(trackSecArr) != len(new_tracks):
+                trackSecArr = [0 for _ in new_tracks]
+
+            # 3. 转成JSON字符串 存入数据库
+            tracks_json = json.dumps(new_tracks, ensure_ascii=False)
+            tracks_time_json = json.dumps(trackSecArr, ensure_ascii=False)
+
+            # 4. 写入用户专属表 albums_用户ID
+            table_name = get_album_table_name(current_user_id)
+            db = get_db()
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+
+            # 权限校验：确认专辑属于当前用户
+            cursor.execute(f'SELECT id FROM `{table_name}` WHERE id = %s', (album_id,))
+            album_info = cursor.fetchone()
+            if not album_info:
+                cursor.close()
+                return jsonify({"code": 404, "msg": "专辑不存在或暂无编辑权限！"}), 404
+
+            # ✅ 核心SQL：同时更新 tracks + is_customized + tracks_time(前端传的秒数数组JSON) ✅
+            cursor.execute(f'''
+                UPDATE `{table_name}` 
+                SET tracks = %s, is_customized = 1, tracks_time = %s
+                WHERE id = %s
+            ''', (tracks_json, tracks_time_json, album_id))
+
+            db.commit()
+            cursor.close()
+
+            # 返回给前端：正确的秒数数组，前端可直接渲染和跳转
+            return jsonify({
+                "code": 200,
+                "msg": "曲目列表保存成功！秒数已同步保存",
+                "data": {
+                    "tracks": new_tracks,
+                    "tracks_time": trackSecArr
+                }
+            })
+        except Exception as e:
+            print(f"❌ 编辑曲目保存失败：{str(e)}")
+            traceback.print_exc()
+            return jsonify({"code": 500, "msg": f"保存曲目失败：{str(e)}"}), 500
