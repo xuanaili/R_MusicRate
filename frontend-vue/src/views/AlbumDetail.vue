@@ -91,6 +91,7 @@
       @update:playMode="val => playMode = val"
       @update:playlistTabs="val => playlistTabs = val"
       @update:activeTabIndex="val => activeTabIndex = val"
+      @jump-album-detail="handleJumpAlbumDetail"
     />
 
     <!-- ✅ 底部播放器区域 核心重构：精准坐标对齐+透明背景 -->

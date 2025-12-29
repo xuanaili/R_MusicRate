@@ -45,27 +45,28 @@
           class="playlist-list common-scroll-list"
           v-if="currentPlaylist.length > 0"
         >
-          <div
-            class="playlist-item album-play-item common-album-card"
-            :class="{active: currentTrackIndex === idx, dragging: dragStartIndex === idx, placeholder: dragPlaceholderIndex === idx}"
-            v-for="(album, idx) in currentPlaylist"
-            :key="album.sortId"
-            @click="handlePlayTrack(idx)"
-            draggable="true"
-            @dragstart="handleDragStart(idx)"
-            @dragover.prevent="handleDragOver(idx)"
-            @dragleave="handleDragLeave(idx)"
-            @dragend="handleDragEnd(idx)"
-            @drop.prevent="handleDrop(idx)"
-          >
-            <div class="track-info album-info full-single-line">
-              <span class="track-num">{{ idx + 1 }}</span>
-              <!-- ✅ 核心新增：专辑名点击跳转详情页，阻止冒泡避免触发播放 -->
-              <span class="track-name" @click.stop="handleJumpAlbumDetail(idx)">{{ album.album_name }}</span>
-              <span class="track-album"> {{ album.singer }} | 评分:{{ album.my_score || 0.0 }}</span>
-            </div>
-            <span class="track-del" @click.stop="handleDelTrack(idx)">×</span>
-          </div>
+<!-- ✅ 核心修改1：卡片点击=跳转详情页 ｜ 序号点击=播放歌曲 完美分离 -->
+<div
+  class="playlist-item album-play-item common-album-card"
+  :class="{active: currentTrackIndex === idx, dragging: dragStartIndex === idx, placeholder: dragPlaceholderIndex === idx}"
+  v-for="(album, idx) in currentPlaylist"
+  :key="album.sortId"
+  draggable="true"
+  @dragstart="handleDragStart(idx)"
+  @dragover.prevent="handleDragOver(idx)"
+  @dragleave="handleDragLeave(idx)"
+  @dragend="handleDragEnd(idx)"
+  @drop.prevent="handleDrop(idx)"
+  @click="handleJumpAlbumDetail(idx)"
+>
+  <div class="track-info album-info full-single-line">
+    <!-- ✅ 核心新增：点击序号 = 播放当前专辑，阻止冒泡不触发跳转 -->
+    <span class="track-num" @click.stop="handlePlayTrack(idx)">{{ idx + 1 }}</span>
+    <span class="track-name">{{ album.album_name }}</span>
+    <span class="track-album"> {{ album.singer }} | 评分:{{ album.my_score || 0.0 }}</span>
+  </div>
+  <span class="track-del" @click.stop="handleDelTrack(idx)">×</span>
+</div>
         </div>
         <div class="empty-playlist" v-else>
           暂无专辑，从下方拖拽/点击添加整张专辑吧～
@@ -126,7 +127,6 @@
             @dragend="handleDragAlbumEnd"
           >
             <div class="album-info no-cover full-single-line">
-              <!-- ✅ 核心新增：下方专辑名点击跳转详情页，阻止冒泡避免触发添加 -->
               <span class="album-name" @click.stop="handleJumpAlbumDetailByItem(album)">{{ album.album_name }}</span>
               <span class="album-singer"> {{ album.singer }} | 评分:{{ album.my_score || 0.0 }}</span>
             </div>
@@ -169,8 +169,9 @@ export default {
       localActiveTabIndex: this.activeTabIndex,
       isDragging: false,
       dragTimer: null, // ✅ 新增：防抖定时器，杜绝高频触发
-          // ✅ 新增：播放模式映射常量，前后端统一
-    playModeMap: { order: '顺序播放', single: '单曲循环', random: '随机播放' },
+      playModeMap: { order: '顺序播放', single: '单曲循环', random: '随机播放' },
+      // ✅ 核心修复2：变量名拼写错误！ isDragingAction → isDraggingAction (少了一个g)
+      isDraggingAction: false
     };
   },
   computed: {
@@ -240,7 +241,6 @@ export default {
         this.localActiveTabIndex = newVal;
       }
     },
-    // ✅ 优化：拖拽锁+防抖emit，彻底杜绝主线程阻塞
     localPlaylistTabs: {
       deep: true,
       handler(newVal) {
@@ -260,7 +260,7 @@ export default {
     this.filterAlbums = [...this.albumList];
   },
   beforeDestroy() {
-    clearTimeout(this.dragTimer) // ✅ 销毁定时器，防止内存泄漏
+    clearTimeout(this.dragTimer)
   },
   methods: {
     addPlaylistTab() {
@@ -278,39 +278,36 @@ export default {
       }
     },
 
-    // ✅✅✅ 【彻底修复卡死 - 重写所有拖拽逻辑 零卡顿核心】
-    // 核心原则：1.拖拽全程 非响应式操作 2.只在结束时一次性更新 3.防抖emit 4.新增占位视觉反馈
     handleDragStart(idx) {
       this.dragStartIndex = idx;
       this.dragPlaceholderIndex = -1;
       this.isDragging = true;
-      // ✅ 拖拽元素透明化，体验更好
       event.dataTransfer.effectAllowed = 'move';
+      event.preventDefault();
+      // ✅ 绑定正确的变量名
+      this.isDraggingAction = true;
+      setTimeout(() => {
+        this.isDraggingAction = false;
+      }, 100);
     },
-    // ✅ 新增：拖拽悬浮时的占位索引，实现视觉跟随
     handleDragOver(idx) {
       if (this.dragStartIndex === -1 || this.dragStartIndex === idx) return;
       this.dragPlaceholderIndex = idx;
     },
-    // ✅ 优化：离开时清空占位
     handleDragLeave(idx) {
       if (this.dragPlaceholderIndex === idx) {
         this.dragPlaceholderIndex = -1;
       }
     },
-    // ✅ 核心：拖拽放下，只执行一次数组操作+一次更新，零重渲染
     handleDrop(dropIndex) {
       if (this.dragStartIndex === -1 || this.dragStartIndex === dropIndex) return;
       const currTracks = [...this.currentPlaylist];
       const dragItem = currTracks.splice(this.dragStartIndex, 1)[0];
       currTracks.splice(dropIndex, 0, dragItem);
-      // 一次性赋值，仅触发1次响应式更新
       this.localPlaylistTabs[this.localActiveTabIndex].tracks = currTracks;
       this.resetDragStatus();
     },
-    // ✅ 修复BUG：拖拽到外部删除，逻辑严谨+无状态混乱，是卡死的核心修复点
     handleDragEnd(dragIndex) {
-      // 判断：拖拽开始过 + 不在歌单区域内 = 拖拽到外部，执行删除
       if (this.dragStartIndex !== -1 && this.dragPlaceholderIndex === -1) {
         this.localPlaylistTabs[this.localActiveTabIndex].tracks.splice(dragIndex, 1);
         if (dragIndex === this.currentTrackIndex) {
@@ -320,19 +317,18 @@ export default {
       }
       this.resetDragStatus();
     },
-    // ✅ 新增：统一重置拖拽状态，避免状态混乱导致的无限更新
     resetDragStatus() {
       this.isDragging = false;
       this.dragStartIndex = -1;
       this.dragPlaceholderIndex = -1;
-      // 防抖同步父组件，杜绝高频emit阻塞
+      // ✅ 核心修复3：重置拖拽锁变量
+      this.isDraggingAction = false;
       clearTimeout(this.dragTimer)
       this.dragTimer = setTimeout(() => {
         this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
       }, 50);
     },
 
-    // 下半区专辑拖拽添加歌单 - 保留原逻辑+轻微优化
     handleDragAlbumStart(album) {
       this.dragAlbumData = album;
       event.dataTransfer.effectAllowed = 'copy';
@@ -345,20 +341,17 @@ export default {
       }
     },
 
-    // 播放模式切换 - 无修改
-togglePlayMode() {
-  let newMode = 'order';
-  if (this.playMode === 'order') newMode = 'single';
-  else if (this.playMode === 'single') newMode = 'random';
-  else if (this.playMode === 'random') newMode = 'order';
-  this.$emit('update:playMode', newMode);
-  // ✅ 修复提示文案：获取新模式的文本
-  const newModeText = newMode === 'order' ? '顺序播放' : newMode === 'single' ? '单曲循环' : '随机播放';
-  this.$message?.success(`✅ 已切换为：${newModeText}`);
-  this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
-},
+    togglePlayMode() {
+      let newMode = 'order';
+      if (this.playMode === 'order') newMode = 'single';
+      else if (this.playMode === 'single') newMode = 'random';
+      else if (this.playMode === 'random') newMode = 'order';
+      this.$emit('update:playMode', newMode);
+      const newModeText = newMode === 'order' ? '顺序播放' : newMode === 'single' ? '单曲循环' : '随机播放';
+      this.$message?.success(`✅ 已切换为：${newModeText}`);
+      this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
+    },
 
-    // 筛选排序 - 优化：浅拷贝改为直接赋值，减少内存占用
     filterAndSortAlbums() {
       let filterList = this.albumList;
       const searchKey = this.albumSearchKey.trim().toLowerCase();
@@ -369,7 +362,6 @@ togglePlayMode() {
           return albumName.includes(searchKey) || singer.includes(searchKey);
         });
       }
-      // 排序不生成新数组，原地排序，提升性能
       switch (this.sortType) {
         case 'addTime':
           filterList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -383,21 +375,19 @@ togglePlayMode() {
       }
       this.filterAlbums = filterList;
     },
-
+    // ✅ 播放方法：只负责向父组件派发播放事件，无其他逻辑
     handlePlayTrack(index) {
       this.$emit('play-track', index);
     },
     handleDelTrack(index) {
       this.localPlaylistTabs[this.localActiveTabIndex].tracks.splice(index, 1);
       if (index === this.currentTrackIndex) this.$emit('update:currentTrackIndex', -1);
-      // ========== ✅ 新增：删除歌曲后，强制emit更新父组件，触发保存 ==========
       this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
     },
     handleRemoveAllTracks() {
       this.localPlaylistTabs[this.localActiveTabIndex].tracks = [];
       this.$emit('update:currentTrackIndex', -1);
       this.$message?.success('已清空当前歌单');
-      // ========== ✅ 新增：清空歌单后，强制emit更新父组件，触发保存 ==========
       this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
     },
     handleAddThisAlbumTracks(album) {
@@ -416,58 +406,53 @@ togglePlayMode() {
     },
     handleClose() {
       this.$emit('close-sidebar');
-      // ========== ✅ 新增：主动触发父组件保存，兜底逻辑，百分百触发 ==========
       this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(this.localPlaylistTabs)));
       this.saveUserPlaylistData && this.saveUserPlaylistData()
     },
 
-// ✅✅✅ 播放列表-专辑名跳转详情页 【最终终极版 地址绝对正确：/album/detail/真实album_id】
-    async handleJumpAlbumDetail(idx) {
-      const albumItem = this.currentPlaylist[idx];
-      console.log('👉 点击专辑名，准备查询专辑ID并跳转', albumItem);
-      // 1. 第一层校验：防空、防数据异常
-      if (!albumItem || !albumItem.source_pool_id) {
-        this.$message?.warning('该专辑信息异常，无关联ID');
-        return;
-      }
-      const sourcePoolId = Number(albumItem.source_pool_id);
-      if (sourcePoolId < 1) {
-        this.$message?.warning('无效的专辑关联ID');
-        return;
-      }
+// ✅✅✅ 跳转详情页核心方法：修改判断条件为正确的变量名，逻辑不变
+async handleJumpAlbumDetail(idx) {
+  // ✅ 修复：判断正确的拖拽锁变量名
+  if (this.isDraggingAction) return;
+  const albumItem = this.currentPlaylist[idx];
+  console.log('👉 点击专辑块，准备查询专辑ID并跳转', albumItem);
+  if (!albumItem || !albumItem.source_pool_id) {
+    this.$message?.warning('该专辑信息异常，无关联ID');
+    return;
+  }
+  const sourcePoolId = Number(albumItem.source_pool_id);
+  if (sourcePoolId < 1) {
+    this.$message?.warning('无效的专辑关联ID');
+    return;
+  }
 
-      try {
-        // 2. 调用后端新增的专属接口，精准查询当前用户的真实album_id
-        const res = await this.$axios.get('/api/album/get-id-by-source', {
-          params: {source_pool_id: sourcePoolId}
-        });
-        // 3. 接口返回成功，拿到真实album_id，执行【正确路径跳转】
-        if (res.data.code === 200 && res.data.data?.album_id) {
-          const realAlbumId = res.data.data.album_id;
-          console.log('✅ 精准匹配成功：source_pool_id=', sourcePoolId, ' → album_id=', realAlbumId);
-          // ========== ✅核心修正：跳转地址改为【路径参数】，绝对正确 ✅ ==========
-          this.$router.push({
-            path: `/album/detail/${realAlbumId}`, // 路径参数：/album/detail/27
-            query: {id: realAlbumId}             // 查询参数：?id=27
-          });
-          // ========== 原有体验优化逻辑 ==========
-          this.handleClose(); // 跳转后关闭播放列表
-          this.$emit('update:currentTrackIndex', -1); // 暂停当前播放的音频
-        } else if (res.data.code === 404) {
-          this.$message?.info(res.data.msg);
-        } else {
-          this.$message?.error(res.data.msg || '查询专辑信息失败');
-        }
-      } catch (err) {
-        console.error('❌ 查询专辑ID失败：', err);
-        this.$message?.error('跳转失败，请稍后重试');
-      }
-    },
+  try {
+    const res = await this.$axios.get('/api/album/get-id-by-source', {
+      params: {source_pool_id: sourcePoolId}
+    });
+    if (res.data.code === 200 && res.data.data?.album_id) {
+      const realAlbumId = res.data.data.album_id;
+      console.log('✅ 精准匹配成功：source_pool_id=', sourcePoolId, ' → album_id=', realAlbumId);
+      // ✅ 核心关键：直接在子组件执行跳转！不需要经过父组件转发，彻底解决问题
+      this.$router.push({
+        path: `/album/detail/${realAlbumId}`,
+        query: {id: realAlbumId}
+      });
+      this.handleClose();
+      this.$emit('update:currentTrackIndex', -1);
+    } else if (res.data.code === 404) {
+      this.$message?.info(res.data.msg);
+    } else {
+      this.$message?.error(res.data.msg || '查询专辑信息失败');
+    }
+  } catch (err) {
+    console.error('❌ 查询专辑ID失败：', err);
+    this.$message?.error('跳转失败，请稍后重试');
+  }
+},
 
-// ✅✅✅ 下方可添加专辑列表-专辑名跳转 【同逻辑 地址修正版】
     async handleJumpAlbumDetailByItem(album) {
       console.log('👉 点击可添加专辑名，准备查询专辑ID并跳转', album);
-
       if (!album || !album.source_pool_id) {
         this.$message?.warning('该专辑信息异常，无关联ID');
         return;
@@ -477,17 +462,14 @@ togglePlayMode() {
         this.$message?.warning('无效的专辑关联ID');
         return;
       }
-
       try {
         const res = await this.$axios.get('/api/album/get-id-by-source', {
           params: {source_pool_id: sourcePoolId}
         });
         if (res.data.code === 200 && res.data.data?.album_id) {
-          // ========== ✅核心修正：正确路径跳转 ✅ ==========
-          console.log('yyyyyyy')
           this.$router.push({
-            path: `/album/detail/${res.data.data.album_id}`, // 路径参数：/album/detail/27
-            query: {id: res.data.data.album_id}             // 查询参数：?id=27
+            path: `/album/detail/${res.data.data.album_id}`,
+            query: {id: res.data.data.album_id}
           });
           this.handleClose();
         } else if (res.data.code === 404) {
@@ -520,7 +502,7 @@ togglePlayMode() {
   position: fixed;
   top: 0;
   right: 0;
-  width: 380px;
+	width: 380px;
   height: 100vh;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(5px);
@@ -537,7 +519,6 @@ togglePlayMode() {
   will-change: transform;
 }
 
-/* 顶部横向歌单样式 */
 .playlist-tab-container {
   width: 100%;
   padding-bottom: 10px;
@@ -548,7 +529,7 @@ togglePlayMode() {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+	width: 100%;
   overflow-x: auto;
   white-space: nowrap;
   scrollbar-width: thin;
@@ -622,7 +603,6 @@ togglePlayMode() {
   transform: scale(1.05);
 }
 
-/* 全局统一样式 - 上下排序/按钮/卡片完全一致 核心类 */
 .common-tool-bar {
   display: flex;
   justify-content: space-between;
@@ -685,7 +665,7 @@ togglePlayMode() {
   width: 100%;
   margin-bottom: 6px;
   transform: translateZ(0);
-  user-select: none; /* ✅ 新增：禁止拖拽时选中文本，减少卡顿 */
+  user-select: none;
 }
 
 .common-album-card:hover {
@@ -708,7 +688,6 @@ togglePlayMode() {
   border-radius: 2px;
 }
 
-/* 序号+专辑名+歌手+评分 完全在同一行 */
 .full-single-line {
   display: flex;
   align-items: center;
@@ -726,6 +705,10 @@ togglePlayMode() {
   color: v-bind(mainColorDarkDouble);
   font-weight: 500;
   flex-shrink: 0;
+  cursor: pointer;
+}
+.track-num:hover {
+  color: #dc2626;
 }
 
 .track-name {
@@ -760,7 +743,6 @@ togglePlayMode() {
   color: #666;
 }
 
-/* 上半部分样式 */
 .playlist-section {
   width: 100%;
   flex-shrink: 0;
@@ -790,15 +772,14 @@ togglePlayMode() {
   background: v-bind(activeMenuBg);
   border-left: 3px solid v-bind(mainColorDark);
 }
-
+/* ✅ 样式优化：卡片默认是点击手势，拖拽时才是移动手势 */
 .album-play-item {
-  cursor: move;
+  cursor: pointer;
 }
-
-/* ✅ 新增：拖拽元素样式 - 透明化+占位高亮，核心视觉优化 */
 .album-play-item.dragging {
   opacity: 0.4;
   background: rgba(255, 255, 255, 0.1);
+  cursor: move;
 }
 
 .album-play-item.placeholder {
@@ -822,12 +803,11 @@ togglePlayMode() {
 
 .empty-playlist {
   text-align: center;
-  padding: 20px 0;
+	padding: 20px 0;
   color: #666;
   font-size: 14px;
 }
 
-/* 下半部分核心：固定位置 + 不滚动 + 样式完全和上半部分统一 */
 .common-fixed-section {
   width: 100%;
   flex-shrink: 0;
@@ -866,11 +846,11 @@ togglePlayMode() {
 .playlist-mask {
   position: fixed;
   top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.2);
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(2px);
-  z-index: 9998;
+	z-index: 9998;
 }
 </style>
