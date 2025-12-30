@@ -150,7 +150,7 @@ export default {
   data() {
     return {
       tagSearchInput: '',
-      allTagOptions: ['Pop', 'Rock', 'Jazz', 'Classical', 'Hip-hop', 'Electronic', 'Folk', 'R&B', 'Country', 'Metal'],
+      allTagOptions: ['Pop', 'Rock', 'Jazz', 'Classical', 'Hip-hop', 'Electronic', 'Folk', 'R&B', 'Country', 'Metal','Jazz Rap','Abstract Hip-Hop','UK Hip-Hop','Cool Jazz'],
       filteredTagOptions: [],
       selectedMyTags: [],
       tagStatsData: [],

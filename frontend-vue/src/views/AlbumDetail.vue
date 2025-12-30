@@ -265,7 +265,9 @@ export default {
       albumList: [],
       saveTimer: null,
       // ✅✅✅ 核心修复2：新增加载状态锁，控制所有异步操作时序
-      albumLoading: true
+      albumLoading: true,
+          currentPlaySourcePoolId: 0,  // 专门存 album_pool 的id=17
+    currentPlayRealAlbumId: 0,   // 专门存 用户专辑表的id=27
     };
   },
   computed: {
@@ -364,6 +366,8 @@ $route: {
     this.checkUserComment();
     this.getPublicComments();
     if (this.album.source_pool_id) await this.getAlbumAudioInfo().catch(() => console.log('音频加载失败'));
+    this.currentAlbumId = -1; // ✅ 初始化默认值：无播放，下标为-1
+this.currentTrackIndex = -1;
     await this.getUserHasAudioAlbums();
     await this.getUserPlaylistData();
     this.autoPlayCurrentAlbumAudio();
@@ -379,8 +383,13 @@ $route: {
           const data = res.data.data;
           this.playlistTabs = data.playlist || [{name: '默认歌单', tracks: []}];
           this.activeTabIndex = data.current_playlist_id || 0;
-          this.currentAlbumId = data.current_album_id || 0;
-          this.playMode = data.play_mode || 'order';
+this.currentPlaylistId = data.current_playlist_id || 0;
+// ✅ 后端返回的 current_album_id 就是「歌单下标」，直接赋值
+this.currentAlbumId = data.current_album_id || -1;
+// ✅ 播放索引 和 歌单下标 必须完全一致，同步赋值
+this.currentTrackIndex = this.currentAlbumId;
+this.playMode = data.play_mode || 'order';
+console.log('✅ 从后端加载播放下标：current_album_id = ', this.currentAlbumId);
         }
       } catch (_err) {
         console.error('❌ 获取用户播放列表失败');
@@ -396,11 +405,13 @@ $route: {
           await this.$axios.post('/api/playlist/save-user-playlist-data', {
             playlist: this.playlistTabs,
             activeTabIndex: this.activeTabIndex,
+            current_playlist_id: this.activeTabIndex,
             current_album_id: this.currentAlbumId,
             play_mode: this.playMode
           }, {
             headers: {Authorization: localStorage.getItem('token') || ''}
           })
+          console.log('✅ 上传给后端的current_album_id(歌单下标)：', this.currentAlbumId);
         } catch (_err) {
           console.error('❌ 保存播放列表失败');
         } finally {
@@ -447,11 +458,9 @@ async handlePlayTrack(index, needJumpDetail = false) {
     return;
   }
 
-  // ========== ✅✅✅ 核心新增【必加】：切歌前，先上传上一首的时长，await确保上传完成 ==========
+  // ========== 1. 先暂停上一首，上传时长 ==========
   await this.pauseListeningTimer();
-  // ========== 新增结束 ==========
 
-  // 原有逻辑不变，无需修改
   const audio = this.$refs.audioRef;
   if (audio && this.isPlaying) {
     audio.pause();
@@ -466,8 +475,18 @@ async handlePlayTrack(index, needJumpDetail = false) {
       this.fileName = res.data.data.mp3_name
       this.duration = res.data.data.mp3_duration
       this.durationFormat = res.data.data.duration_format
-      this.currentTrackIndex = index;
-      this.currentAlbumId = index;
+
+      // ========== ✅✅✅ 核心强制赋值【重中之重】- 写死这三行，下标回归0 ==========
+      this.currentTrackIndex = index;    // 歌单播放下标（高亮用）
+      this.currentAlbumId = index;       // ✔️ 这个变量 100% 等于下标，再也不会是17/27
+      this.currentPlaylistId = this.activeTabIndex;
+      // ======================================================================
+
+      // ========== ✅✅✅ 新增：缓存当前播放项的【两个真实ID】，解决上传时长ID=0的问题 ==========
+      this.currentPlaySourcePoolId = playAlbum.source_pool_id; // 缓存 album_pool.id=17
+      this.currentPlayRealAlbumId = playAlbum.id; // 缓存 用户专辑表.id=27
+      // ======================================================================
+
       this.currentTime = 0;
       this.currentProgress = 0;
       if (needJumpDetail) {
@@ -495,6 +514,8 @@ async handlePlayTrack(index, needJumpDetail = false) {
         this.$message?.info('📢 点击底部专辑封面即可解锁播放～');
         audio.load();
       });
+      // ✅ 打印正确日志，确认下标是0
+      console.log(`✅ 播放成功：歌单下标 = current_album_id = ${index} | source_pool_id=${playAlbum.source_pool_id} | 真实专辑ID=${playAlbum.id}`);
     } else {
       this.$message.error('该专辑暂无音频资源，无法播放');
     }
@@ -542,7 +563,7 @@ async getAlbumAudioInfo() {
       this.duration = res.data.data.mp3_duration
       this.durationFormat = res.data.data.duration_format
       this.oldMp3Url = res.data.data.mp3_url
-      this.currentAlbumId = this.album.source_pool_id;
+console.log('⚠️ 跳过真实专辑ID赋值，保留歌单下标：', this.currentAlbumId);
     }
     // ✅ 新增：无论是否获取到音频，都返回promise，避免报错
     return Promise.resolve();
@@ -781,8 +802,12 @@ async handleEnded() {
     );
 
     if (res.data.code === 200 && res.data.data && res.data.data.current_album_id !== undefined) {
-      const { current_album_id: newTrackIndex } = res.data.data;
-      await this.handlePlayTrack(newTrackIndex, true);
+      const { current_album_id: newTrackIndex, current_playlist_id: newTabIndex } = res.data.data;
+this.currentPlaylistId = newTabIndex;
+this.currentAlbumId = newTrackIndex; // ✅ 同步赋值新下标
+this.currentTrackIndex = newTrackIndex; // ✅ 同步赋值播放索引
+await this.handlePlayTrack(newTrackIndex, true);
+console.log('✅ 切歌后新下标：current_album_id = ', newTrackIndex);
     } else {
       this.$message?.warning(res.data.msg || '已播放到最后一首，暂无更多专辑');
       this.currentTrackIndex = -1;

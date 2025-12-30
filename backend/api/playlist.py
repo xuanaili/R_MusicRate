@@ -214,7 +214,7 @@ def register_playlist_routes(app):
 
             # 3. 核心逻辑：根据播放模式计算新的current_album_id
             new_album_id = current_album_id
-            if play_mode == 'loop':
+            if play_mode == 'single':
                 # 🔹 循环播放：单曲循环，专辑ID不变
                 new_album_id = current_album_id
             elif play_mode == 'order':
