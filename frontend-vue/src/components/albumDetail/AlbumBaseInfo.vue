@@ -39,8 +39,9 @@
               v-for="(tag, idx) in selectedMyTags"
               :key="idx"
               :style="{backgroundColor: mainColorDark}"
+              :title="getTagFullText(tag)"
             >
-              {{ tag }}
+              {{ getTagMainText(tag) }}
               <span class="tag-close" @click="removeMyTag(idx)">×</span>
             </div>
           </div>
@@ -48,7 +49,7 @@
             <input
               v-model="tagSearchInput"
               @input="filterTagOptions"
-              :placeholder="selectedMyTags.length >=5 ? '最多只能选择5个标签' : '搜索标签（如Pop、Rock）'"
+              :placeholder="selectedMyTags.length >=5 ? '最多只能选择5个标签' : '搜索标签（如Pop、Rock、说唱）'"
               class="tag-search-input"
               :disabled="selectedMyTags.length >=5"
             >
@@ -73,8 +74,9 @@
               :key="tag"
               @click="addMyTag(tag)"
               :class="{disabled: selectedMyTags.length >= 5}"
+              :title="getTagFullText(tag)"
             >
-              {{ tag }}
+              {{ getTagMainText(tag) }}
             </div>
           </div>
         </div>
@@ -120,7 +122,6 @@
 
 <script>
 import TagBubbleChart from '@/components/TagBubbleChart'
-// ✅ 改动1：导入全局config配置文件
 import config from '@/config/index.js'
 
 export default {
@@ -137,13 +138,11 @@ export default {
       required: true
     },
     mainColor: {
-      // 封面原始主色
       type: String,
       required: true,
       default: '#42b983'
     },
     mainColorDark: {
-      // 封面主色 加深1级 (按钮/下划线/已选标签背景)
       type: String,
       required: true,
       default: '#2f9465'
@@ -152,7 +151,6 @@ export default {
   data() {
     return {
       tagSearchInput: '',
-      // ✅ 改动2：彻底删除这一行 allTagOptions 数组，移到config里了
       filteredTagOptions: [],
       selectedMyTags: [],
       tagStatsData: [],
@@ -165,7 +163,6 @@ export default {
     };
   },
   computed: {
-    // 封面主色 加深2级 (所有文字的颜色，和编辑按钮hover同源)
     mainColorDarkDouble() {
       return this.darkenColor(this.mainColor, 0.3)
     }
@@ -179,7 +176,6 @@ export default {
           if (newVal.tags && Array.isArray(newVal.tags)) {
             this.selectedMyTags = [...newVal.tags].slice(0, 5);
           }
-          // ✅ 改动3：读取全局config里的标签数组，删除this.
           this.filteredTagOptions = [...config.albumTagOptions];
           this.filterTagOptions();
           if (this.albumPoolId) {
@@ -195,16 +191,24 @@ export default {
     }
   },
   methods: {
-    // 颜色加深算法 (复用原有方法，无改动)
     darkenColor(hex, amount) {
       const r = parseInt(hex.slice(1, 3), 16) * (1 - amount);
       const g = parseInt(hex.slice(3, 5), 16) * (1 - amount);
       const b = parseInt(hex.slice(5, 7), 16) * (1 - amount);
       return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
     },
+    // ✅ 新增：提取标签【】外的主体文字（默认展示）
+    getTagMainText(tag) {
+      if (!tag) return '';
+      const match = tag.match(/^(.*?)【/);
+      return match ? match[1].trim() : tag;
+    },
+    // ✅ 新增：获取标签完整文字（悬浮提示）
+    getTagFullText(tag) {
+      return tag || '';
+    },
     filterTagOptions() {
       const keyword = this.tagSearchInput.trim().toLowerCase();
-      // ✅ 改动4：读取全局config里的标签数组，删除this.
       this.filteredTagOptions = keyword
           ? config.albumTagOptions.filter(tag => tag.toLowerCase().includes(keyword) && !this.selectedMyTags.includes(tag))
           : config.albumTagOptions.filter(tag => !this.selectedMyTags.includes(tag));
@@ -295,7 +299,6 @@ export default {
 </script>
 
 <style scoped>
-/* 全局盒模型修复 */
 * {
   box-sizing: border-box;
 }
@@ -315,7 +318,6 @@ export default {
   margin-bottom: 0 !important;
 }
 
-/* 整体卡片背景全透明，无白色边框阴影 ✅核心修复：grid布局锁死行高，永不被撑开 */
 .new-base-info-card {
   display: grid;
   grid-template-columns: 1fr 2fr;
@@ -336,7 +338,6 @@ export default {
   box-shadow: none !important;
 }
 
-/* 所有区块无白色边框，透明背景 ✅核心修复：overflow:hidden 防止子元素溢出撑开 */
 .info-section {
   padding: 15px;
   background: transparent !important;
@@ -347,7 +348,6 @@ export default {
   overflow:hidden;
 }
 
-/* ✅ 提升优先级：标题下划线+文字颜色 强制生效 */
 .section-title {
   font-size: 16px;
   margin-bottom: 15px;
@@ -388,7 +388,6 @@ export default {
   border: none !important;
 }
 
-/* ✅ 封面占位图：✅【纯透明无蒙版】 彻底删除磨砂模糊，无任何背景效果 */
 .cover-placeholder {
   width: 300px;
   height: 300px;
@@ -418,7 +417,6 @@ export default {
 	padding: 0;
 }
 
-/* ✅ 提升优先级：专辑名称颜色强制生效 */
 .meta-album-name {
   font-size: 24px;
 	color: v-bind(mainColorDarkDouble) !important;
@@ -432,7 +430,6 @@ export default {
   font-size: 16px;
 }
 
-/* ✅ 提升优先级：歌手/发行时间等文字颜色强制生效 */
 .meta-label {
   width: 80px;
 	color: v-bind(mainColorDarkDouble) !important;
@@ -466,6 +463,11 @@ export default {
   border-radius: 4px;
   font-size: 14px;
   cursor: default;
+  transition: all 0.2s ease;
+}
+.selected-tag:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
 }
 
 .tag-close {
@@ -480,7 +482,6 @@ export default {
   max-width: 100%;
 }
 
-/* ✅ 核心修改：标签搜索框 → 【完全纯净透明】 删除所有蒙版/模糊/半透，仅保留文字颜色 */
 .tag-search-input {
   width: 100%;
   max-width: 200px;
@@ -507,7 +508,7 @@ export default {
   padding: 6px 12px;
   color: #fff;
   border: none;
-  border-radius: 4px;
+	border-radius: 4px;
   cursor: pointer;
   align-self: flex-start;
   font-size: 14px;
@@ -519,7 +520,6 @@ export default {
   opacity: 0.7;
 }
 
-/* ✅ 按钮hover → 封面主色加深再加深，和文字颜色一致 */
 .save-tags-btn:hover:not(:disabled), .intro-edit-btn:hover:not(:disabled) {
   background-color: v-bind(mainColorDarkDouble) !important;
   opacity: 0.95;
@@ -531,7 +531,6 @@ export default {
   flex-direction: column;
 }
 
-/* ✅ 核心修改：可选标签列表 → 【完全纯净透明】 删除所有蒙版/模糊/半透/边框，仅保留滚动和间距 */
 .tag-options-list {
   display: flex;
   flex-direction: column;
@@ -553,7 +552,6 @@ export default {
   border-radius:2px;
 }
 
-/* ✅ 可选标签文字 → 封面主色加深再加深 */
 .tag-option {
   padding:6px 10px;
   cursor:pointer;
@@ -562,9 +560,9 @@ export default {
   transition: background 0.2s;
 	color: v-bind(mainColorDarkDouble) !important;
 }
-
 .tag-option:hover:not(.disabled) {
-  background: rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.05) !important;
+  color: v-bind(mainColor) !important;
 }
 
 .tag-option.disabled {
@@ -573,7 +571,6 @@ export default {
   background: transparent !important;
 }
 
-/* ✅✅✅ 终极修复：简介区块 固定高度+永不撑开+内部滚动 核心代码 + 【纯透明无蒙版】 */
 .intro-section {
   display: flex;
   flex-direction: column;
@@ -584,7 +581,7 @@ export default {
   height: 100%;
   overflow: hidden;
 }
-/* ✅ 核心修改：简介加载中 → 【纯透明无蒙版】 删除所有模糊/半透，仅保留文字和布局 */
+
 .loading-intro {
   width: 100%;
   max-width: 90%;
@@ -601,7 +598,7 @@ export default {
 	border:none !important;
   overflow: hidden;
 }
-/* ✅ 核心修改：简介展示态 → 【纯透明无蒙版】 删除所有模糊/半透，仅保留文字、滚动、纯透背景 */
+
 .intro-display {
   width: 100%;
   max-width: 90%;
@@ -619,7 +616,7 @@ export default {
   overflow-y: auto;
   overflow-x: hidden;
 }
-/* ✅ 核心修改：简介编辑态 → 【纯透明无蒙版】 删除所有模糊/半透/边框，仅保留文字、滚动、纯透背景，无resize */
+
 .intro-textarea {
   width: 100%;
   max-width: 90%;
@@ -642,7 +639,6 @@ export default {
   color: #999;
 }
 
-/* ✅ 核心兜底：编辑按钮 顶级层级+置顶，点击无任何遮挡 */
 .intro-edit-btn {
   padding: 8px 16px;
   color: #fff;
@@ -663,7 +659,6 @@ export default {
   opacity: 0.7;
 }
 
-/* ✅✅✅ 核心修改+兜底：气泡图区块 → 【纯透明无蒙版】+高度缩减+溢出隐藏，彻底无任何背景，远离播放器 */
 .tag-chart-section {
   display: flex;
   flex-direction: column;
@@ -677,7 +672,6 @@ export default {
   overflow: hidden;
 }
 
-/* ✅ 全局美化滚动条 - 简介/标签列表通用，贴合主题色 */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;

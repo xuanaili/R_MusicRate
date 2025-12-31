@@ -2,27 +2,46 @@
   <div class="search-pool-container">
     <h2>专辑搜索池（所有用户的专辑副本）</h2>
 
-    <!-- 搜索区域 -->
-    <div class="search-area">
-      <input
-        v-model="searchKeyword"
-        type="text"
-        placeholder="搜索专辑名/歌手/标签..."
-        class="search-input"
-      >
-      <button @click="searchAlbums" class="search-btn">搜索</button>
-      <button @click="resetSearch" class="reset-btn">重置</button>
+    <!-- 🔴 新增提示文案：明确告知用户默认展示规则 -->
+    <div class="tip-text">
+      <i class="el-icon-info"></i> 无搜索条件时，默认展示 <b>最近添加的10张专辑</b> | 输入关键词可查看全部匹配结果
     </div>
 
-    <!-- 操作按钮 -->
+    <!-- 两个独立的搜索区域，分开搜索专辑名歌手 + 标签 -->
+    <div class="search-area-wrap">
+      <!-- 第一个搜索框：专辑名 / 歌手 搜索 -->
+      <div class="search-area">
+        <input
+          v-model="nameSingerKeyword"
+          type="text"
+          placeholder="搜索专辑名/歌手..."
+          class="search-input"
+        >
+        <button @click="searchByNameSinger" class="search-btn">专辑/歌手搜索</button>
+      </div>
+
+      <!-- 第二个搜索框：标签 专属搜索 -->
+      <div class="search-area">
+        <input
+          v-model="tagKeyword"
+          type="text"
+          placeholder="搜索标签（摇滚/华语/怀旧等）..."
+          class="search-input"
+        >
+        <button @click="searchByTag" class="search-btn tag-search-btn">标签搜索</button>
+      </div>
+    </div>
+
+    <!-- 操作按钮 + 统一重置按钮 -->
     <div class="action-btns">
       <button @click="goAddOriginalAlbum" class="add-original-btn">新增原创专辑</button>
+      <button @click="resetSearch" class="reset-btn">重置所有搜索条件</button>
     </div>
 
     <!-- 搜索结果列表 -->
     <div v-if="loading" class="loading-tip">加载中...</div>
     <div v-else-if="searchResult.length === 0" class="empty-tip">
-      {{ searchKeyword ? '未找到匹配的专辑副本' : '暂无专辑副本数据' }}
+      {{ hasSearchKeyword ? '未找到匹配的专辑副本' : '暂无专辑副本数据' }}
     </div>
     <div v-else class="album-pool-list">
       <!-- 核心：引入封装的子组件，循环传参 + 监听事件 -->
@@ -37,8 +56,8 @@
       />
     </div>
 
-    <!-- 分页控件 -->
-    <div v-if="pagination.total > 0" class="pagination">
+    <!-- 只有输入搜索条件时，才显示分页 -->
+    <div v-if="hasSearchKeyword && pagination.total > 0" class="pagination">
       <button
         @click="changePage(1)"
         :disabled="pagination.page === 1 || loading"
@@ -72,11 +91,11 @@ import AlbumPoolItem from '@/components/item/AlbumPoolItem.vue'
 
 export default {
   name: 'SearchAlbumPool',
-  // 注册子组件
   components: { AlbumPoolItem },
   data() {
     return {
-      searchKeyword: '',      // 搜索关键词
+      nameSingerKeyword: '',  // 专辑名/歌手 搜索关键词
+      tagKeyword: '',         // 标签 搜索关键词
       searchResult: [],       // 搜索结果
       loading: false,         // 加载状态
       page: 1,                // 当前页
@@ -90,6 +109,12 @@ export default {
       isAdmin: false          // 是否为管理员
     }
   },
+  computed: {
+    // 判断是否有输入搜索关键词，用于空数据提示、分页显示、搜索逻辑判断
+    hasSearchKeyword() {
+      return this.nameSingerKeyword.trim() || this.tagKeyword.trim()
+    }
+  },
   created() {
     // 检查登录状态
     if (!localStorage.getItem('token')) {
@@ -98,31 +123,30 @@ export default {
     }
     // 获取用户是否为管理员
     this.isAdmin = localStorage.getItem('is_admin') === '1';
-    // 初始化加载所有专辑副本
-    this.searchAlbums();
+    // 初始化加载【最新10条】专辑副本
+    this.searchByNameSinger();
   },
   methods: {
-    // 搜索专辑副本（支持关键词+分页）
-    searchAlbums() {
+    // 核心方法1：按【专辑名/歌手】搜索，调用后端专属接口
+    searchByNameSinger() {
       this.loading = true;
       this.$axios({
-        url: '/api/album/pool/search',
+        url: '/api/album/pool/search/name-singer',
         method: 'GET',
         headers: {
           'Authorization': localStorage.getItem('token') || '',
           'Content-Type': 'application/json'
         },
         params: {
-          keyword: this.searchKeyword.trim(),
-          page: this.page,
-          page_size: this.pageSize
+          keyword: this.nameSingerKeyword.trim(),
+          page: this.hasSearchKeyword ? this.page : 1,
+          page_size: this.hasSearchKeyword ? this.pageSize : 10
         }
       })
       .then(res => {
         this.loading = false;
         if (res.data.code === 200) {
           this.searchResult = res.data.data.list || [];
-          console.log(this.searchResult)
           this.pagination = {
             total: res.data.data.total || 0,
             page: res.data.data.page || 1,
@@ -130,34 +154,77 @@ export default {
             total_pages: Math.ceil((res.data.data.total || 0) / (res.data.data.page_size || 10))
           };
         } else {
-          alert('搜索失败：' + res.data.msg);
+          alert('专辑/歌手搜索失败：' + res.data.msg);
           this.searchResult = [];
         }
       })
-          .catch(err => {
-            this.loading = false;
-            console.error('搜索专辑池失败：', err);
-            alert('搜索失败，请检查后端是否启动！');
-          });
+      .catch(err => {
+        this.loading = false;
+        console.error('专辑/歌手搜索失败：', err);
+        alert('搜索失败，请检查后端是否启动！');
+      });
     },
 
-    // 重置搜索
+    // 核心方法2：按【标签】搜索，调用后端专属接口
+    searchByTag() {
+      this.loading = true;
+      this.$axios({
+        url: '/api/album/pool/search/tags',
+        method: 'GET',
+        headers: {
+          'Authorization': localStorage.getItem('token') || '',
+          'Content-Type': 'application/json'
+        },
+        params: {
+          tag: this.tagKeyword.trim(),
+          page: this.hasSearchKeyword ? this.page : 1,
+          page_size: this.hasSearchKeyword ? this.pageSize : 10
+        }
+      })
+      .then(res => {
+        this.loading = false;
+        if (res.data.code === 200) {
+          this.searchResult = res.data.data.list || [];
+          this.pagination = {
+            total: res.data.data.total || 0,
+            page: res.data.data.page || 1,
+            page_size: res.data.data.page_size || 10,
+            total_pages: Math.ceil((res.data.data.total || 0) / (res.data.data.page_size || 10))
+          };
+        } else {
+          alert('标签搜索失败：' + res.data.msg);
+          this.searchResult = [];
+        }
+      })
+      .catch(err => {
+        this.loading = false;
+        console.error('标签搜索失败：', err);
+        alert('搜索失败，请检查后端是否启动！');
+      });
+    },
+
+    // 重置所有搜索条件：清空两个输入框、页码归1、加载【最新10条】
     resetSearch() {
-      this.searchKeyword = '';
+      this.nameSingerKeyword = '';
+      this.tagKeyword = '';
       this.page = 1;
-      this.searchAlbums();
+      this.searchByNameSinger();
     },
 
-    // 切换页码
+    // 切换页码：只在【有搜索条件】时生效
     changePage(newPage) {
-      if (newPage < 1 || newPage > this.pagination.total_pages || newPage === this.page) {
+      if (newPage < 1 || newPage > this.pagination.total_pages || newPage === this.page || !this.hasSearchKeyword) {
         return;
       }
       this.page = newPage;
-      this.searchAlbums();
+      if(this.tagKeyword.trim()){
+        this.searchByTag()
+      }else{
+        this.searchByNameSinger()
+      }
     },
 
-    // 复制专辑为我的副本
+    // 复制专辑
     copyAlbum(albumId) {
       if (!confirm('确定要复制该专辑为你的副本吗？')) {
         return;
@@ -170,26 +237,26 @@ export default {
           'Content-Type': 'application/json'
         }
       })
-          .then(res => {
-            if (res.data.code === 200) {
-              alert('复制成功！已添加到你的专辑列表');
-              this.$router.push(`/albumDetail`);
-            } else {
-              alert('复制失败：' + res.data.msg);
-            }
-          })
-          .catch(err => {
-            console.error('复制专辑失败：', err);
-            alert('复制失败！' + err.message);
-          });
+      .then(res => {
+        if (res.data.code === 200) {
+          alert('复制成功！已添加到你的专辑列表');
+          this.$router.push(`/albumDetail`);
+        } else {
+          alert('复制失败：' + res.data.msg);
+        }
+      })
+      .catch(err => {
+        console.error('复制专辑失败：', err);
+        alert('复制失败！' + err.message);
+      });
     },
 
-    // 查看专辑详情
+    // 查看详情
     viewAlbumDetail(poolId) {
       this.$router.push(`/album/pool/detail/${poolId}`);
     },
 
-    // 删除专辑搜索池中的专辑（仅管理员可调用）
+    // 删除专辑（仅管理员）
     deletePoolAlbum(poolId) {
       if (!this.isAdmin) {
         alert('无权限执行此操作！');
@@ -206,21 +273,25 @@ export default {
           'Content-Type': 'application/json'
         }
       })
-          .then(res => {
-            if (res.data.code === 200) {
-              alert('删除成功！');
-              this.searchAlbums();
-            } else {
-              alert('删除失败：' + res.data.msg);
-            }
-          })
-          .catch(err => {
-            console.error('删除专辑失败：', err);
-            alert('删除失败！' + (err.response?.data?.msg || err.message));
-          });
+      .then(res => {
+        if (res.data.code === 200) {
+          alert('删除成功！');
+          if(this.tagKeyword.trim()){
+            this.searchByTag()
+          }else{
+            this.searchByNameSinger()
+          }
+        } else {
+          alert('删除失败：' + res.data.msg);
+        }
+      })
+      .catch(err => {
+        console.error('删除专辑失败：', err);
+        alert('删除失败！' + (err.response?.data?.msg || err.message));
+      });
     },
 
-    // 跳转到新增原创专辑页面
+    // 新增原创专辑
     goAddOriginalAlbum() {
       this.$router.push('/add-album');
     }
@@ -235,16 +306,39 @@ export default {
   padding: 20px;
 }
 
+h2 {
+  margin-bottom: 10px;
+}
+
+/* 🔴 新增提示文案样式 */
+.tip-text {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 15px;
+  padding: 8px 12px;
+  background-color: #f5fafe;
+  border-left: 3px solid #42b983;
+  border-radius: 4px;
+}
+
+.search-area-wrap {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
 .search-area {
   display: flex;
   gap: 10px;
-  margin-bottom: 20px;
   align-items: center;
+  flex: 1;
+  min-width: 300px;
 }
 
 .search-input {
   flex: 1;
-  padding: 8px 12px;
+	padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
@@ -253,6 +347,26 @@ export default {
 .search-btn {
   padding: 8px 20px;
   background: #42b983;
+  color: white;
+  border: none;
+	border-radius: 4px;
+  cursor: pointer;
+}
+
+.tag-search-btn {
+  background: #007acc;
+}
+
+.action-btns {
+  margin-bottom: 20px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.add-original-btn {
+  padding: 8px 20px;
+  background: #007acc;
   color: white;
   border: none;
   border-radius: 4px;
@@ -264,20 +378,7 @@ export default {
   background: #999;
   color: white;
   border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.action-btns {
-  margin-bottom: 20px;
-}
-
-.add-original-btn {
-  padding: 8px 20px;
-  background: #007acc;
-  color: white;
-  border: none;
-  border-radius: 4px;
+	border-radius: 4px;
   cursor: pointer;
 }
 
@@ -291,7 +392,6 @@ export default {
   margin-top: 20px;
 }
 
-/* 分页样式 */
 .pagination {
   display: flex;
   align-items: center;

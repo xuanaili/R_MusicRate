@@ -211,7 +211,7 @@ export default {
         album_name: '',
         singer: '',
         release_year: '',
-        duration_type:'LP',
+        duration_type: 'LP',
         cover_img: '',
         tracks: [],
         tracks_time: [],
@@ -260,7 +260,7 @@ export default {
       showMenu: false,
       // ✅✅✅ 播放列表核心数据【完整初始化，对接后端接口】
       showPlaylistSidebar: false,
-      playlistTabs: [ { name: '默认歌单', tracks: [] } ],
+      playlistTabs: [{name: '默认歌单', tracks: []}],
       activeTabIndex: 0,
       currentTrackIndex: -1,
       playMode: 'order',
@@ -270,8 +270,8 @@ export default {
       saveTimer: null,
       // ✅✅✅ 核心修复2：新增加载状态锁，控制所有异步操作时序
       albumLoading: true,
-          currentPlaySourcePoolId: 0,  // 专门存 album_pool 的id=17
-    currentPlayRealAlbumId: 0,   // 专门存 用户专辑表的id=27
+      currentPlaySourcePoolId: 0,  // 专门存 album_pool 的id=17
+      currentPlayRealAlbumId: 0,   // 专门存 用户专辑表的id=27
     };
   },
   computed: {
@@ -321,31 +321,31 @@ export default {
       }
     },
 // ✅✅✅ 修复核心：路由监听逻辑【完美版】- 跳转后自动刷新数据+自动播放音频，无需手动刷新
-$route: {
-  deep: true,
-  immediate: true,
-  handler(to) {
-    if (to.path.includes('/album/detail') && (to.params.id || to.query.id)) {
-      const albumId = Number(to.params.id || to.query.id);
-      if (albumId && albumId !== this.album.id) {
-        this.resetAlbumPageData();
-        this.getAlbumDetail(albumId).then(() => {
-          this.getAlbumPoolRealId();
-          this.checkUserComment();
-          this.getPublicComments();
-          setTimeout(() => {
-            if (this.album.source_pool_id) {
-              this.getAlbumAudioInfo().then(() => {
-                // ✅ 改为直接调用播放方法，而不是autoPlay，跳转后必播放
-                this.autoPlayCurrentAlbumAudio();
-              }).catch(() => console.log('音频加载失败'));
-            }
-          }, 100); // 延时100ms，确保音频资源加载完成
-        });
-      }
-    }
-  },
-},
+    $route: {
+      deep: true,
+      immediate: true,
+      handler(to) {
+        if (to.path.includes('/album/detail') && (to.params.id || to.query.id)) {
+          const albumId = Number(to.params.id || to.query.id);
+          if (albumId && albumId !== this.album.id) {
+            this.resetAlbumPageData();
+            this.getAlbumDetail(albumId).then(() => {
+              this.getAlbumPoolRealId();
+              this.checkUserComment();
+              this.getPublicComments();
+              setTimeout(() => {
+                if (this.album.source_pool_id) {
+                  this.getAlbumAudioInfo().then(() => {
+                    // ✅ 改为直接调用播放方法，而不是autoPlay，跳转后必播放
+                    this.autoPlayCurrentAlbumAudio();
+                  }).catch(() => console.log('音频加载失败'));
+                }
+              }, 100); // 延时100ms，确保音频资源加载完成
+            });
+          }
+        }
+      },
+    },
   },
   async created() {
     if (!localStorage.getItem('token')) {
@@ -373,7 +373,7 @@ $route: {
     this.getPublicComments();
     if (this.album.source_pool_id) await this.getAlbumAudioInfo().catch(() => console.log('音频加载失败'));
     this.currentAlbumId = -1; // ✅ 初始化默认值：无播放，下标为-1
-this.currentTrackIndex = -1;
+    this.currentTrackIndex = -1;
     await this.getUserHasAudioAlbums();
     this.autoPlayCurrentAlbumAudio();
   },
@@ -388,13 +388,13 @@ this.currentTrackIndex = -1;
           const data = res.data.data;
           this.playlistTabs = data.playlist || [{name: '默认歌单', tracks: []}];
           this.activeTabIndex = data.current_playlist_id || 0;
-this.currentPlaylistId = data.current_playlist_id || 0;
+          this.currentPlaylistId = data.current_playlist_id || 0;
 // ✅ 后端返回的 current_album_id 就是「歌单下标」，直接赋值
-this.currentAlbumId = data.current_album_id || -1;
+          this.currentAlbumId = data.current_album_id || -1;
 // ✅ 播放索引 和 歌单下标 必须完全一致，同步赋值
-this.currentTrackIndex = this.currentAlbumId;
-this.playMode = data.play_mode || 'order';
-console.log('✅ 从后端加载播放下标：current_album_id = ', this.currentAlbumId);
+          this.currentTrackIndex = this.currentAlbumId;
+          this.playMode = data.play_mode || 'order';
+          console.log('✅ 从后端加载播放下标：current_album_id = ', this.currentAlbumId);
         }
       } catch (_err) {
         console.error('❌ 获取用户播放列表失败');
@@ -431,123 +431,123 @@ console.log('✅ 从后端加载播放下标：current_album_id = ', this.curren
     },
 
 // ✅✅✅ 自动播放当前专辑音频 - 兼容浏览器策略+静默失败+优化用户体验
-autoPlayCurrentAlbumAudio() {
-  const audio = this.$refs.audioRef;
-  if (this.audioSrc && audio) {
-    // 先重置播放进度，避免上次播放残留进度
-    this.currentTime = 0;
-    this.currentProgress = 0;
-    audio.currentTime = 0;
-    // 执行自动播放
-    audio.play().then(() => {
-      this.isPlaying = true;
-      this.startListeningTimer(); // ✅✅✅ 新增：自动播放成功，触发开始计时API
-      console.log('✅ 专辑音频自动播放成功');
-    }).catch((err) => {
-      console.log('ℹ️ 浏览器策略限制自动播放，需要用户手动交互解锁：', err.message);
-      this.isPlaying = false;
-    });
-  }
-  this.saveUserPlaylistData();
-},
-
-async handlePlayTrack(index, needJumpDetail = false) {
-  const currentList = this.currentPlaylist;
-  if (currentList.length === 0 || index < 0 || index >= currentList.length) {
-    this.$message?.warning('播放索引无效，请重试');
-    return;
-  }
-  const playAlbum = currentList[index];
-  if (!playAlbum || !playAlbum.source_pool_id) {
-    this.$message?.error('该专辑暂无音频资源，无法播放');
-    return;
-  }
-
-  // ========== 1. 先暂停上一首，上传时长 ==========
-  await this.pauseListeningTimer();
-
-  const audio = this.$refs.audioRef;
-  if (audio && this.isPlaying) {
-    audio.pause();
-    this.isPlaying = false;
-  }
-  try {
-    const res = await this.$axios.get(`/api/album/pool/audio/info/${playAlbum.source_pool_id}`, {
-      headers: {Authorization: localStorage.getItem('token') || ''}
-    })
-    if (res.data.code === 200 && res.data.data.mp3_url) {
-      this.audioSrc = res.data.data.mp3_url
-      this.fileName = res.data.data.mp3_name
-      this.duration = res.data.data.mp3_duration
-      this.durationFormat = res.data.data.duration_format
-
-      // ========== ✅✅✅ 核心强制赋值【重中之重】- 写死这三行，下标回归0 ==========
-      this.currentTrackIndex = index;    // 歌单播放下标（高亮用）
-      this.currentAlbumId = index;       // ✔️ 这个变量 100% 等于下标，再也不会是17/27
-      this.currentPlaylistId = this.activeTabIndex;
-      // ======================================================================
-
-      // ========== ✅✅✅ 新增：缓存当前播放项的【两个真实ID】，解决上传时长ID=0的问题 ==========
-      this.currentPlaySourcePoolId = playAlbum.source_pool_id; // 缓存 album_pool.id=17
-      this.currentPlayRealAlbumId = playAlbum.id; // 缓存 用户专辑表.id=27
-      // ======================================================================
-
-      this.currentTime = 0;
-      this.currentProgress = 0;
-      if (needJumpDetail) {
-        const albumIdRes = await this.$axios.get('/api/album/get-id-by-source', {
-          params: { source_pool_id: playAlbum.source_pool_id },
-          headers: {Authorization: localStorage.getItem('token') || ''}
+    autoPlayCurrentAlbumAudio() {
+      const audio = this.$refs.audioRef;
+      if (this.audioSrc && audio) {
+        // 先重置播放进度，避免上次播放残留进度
+        this.currentTime = 0;
+        this.currentProgress = 0;
+        audio.currentTime = 0;
+        // 执行自动播放
+        audio.play().then(() => {
+          this.isPlaying = true;
+          this.startListeningTimer(); // ✅✅✅ 新增：自动播放成功，触发开始计时API
+          console.log('✅ 专辑音频自动播放成功');
+        }).catch((err) => {
+          console.log('ℹ️ 浏览器策略限制自动播放，需要用户手动交互解锁：', err.message);
+          this.isPlaying = false;
         });
-        if (albumIdRes.data.code === 200 && albumIdRes.data.data?.album_id) {
-          const realAlbumId = albumIdRes.data.data.album_id;
-          const currentRouteAlbumId = Number(this.$route.params.id || this.$route.query.id);
-          if (realAlbumId !== currentRouteAlbumId) {
-            this.$router.replace({
-              path: `/album/detail/${realAlbumId}`,
-              query: { id: realAlbumId }
-            });
-          }
-        }
       }
-      audio.currentTime = 0;
-      audio.play().then(() => {
-        this.isPlaying = true;
-        this.startListeningTimer(); // 播放新歌，开始计时
-      }).catch(() => {
+      this.saveUserPlaylistData();
+    },
+
+    async handlePlayTrack(index, needJumpDetail = false) {
+      const currentList = this.currentPlaylist;
+      if (currentList.length === 0 || index < 0 || index >= currentList.length) {
+        this.$message?.warning('播放索引无效，请重试');
+        return;
+      }
+      const playAlbum = currentList[index];
+      if (!playAlbum || !playAlbum.source_pool_id) {
+        this.$message?.error('该专辑暂无音频资源，无法播放');
+        return;
+      }
+
+      // ========== 1. 先暂停上一首，上传时长 ==========
+      await this.pauseListeningTimer();
+
+      const audio = this.$refs.audioRef;
+      if (audio && this.isPlaying) {
+        audio.pause();
         this.isPlaying = false;
-        this.$message?.info('📢 点击底部专辑封面即可解锁播放～');
-        audio.load();
-      });
-      // ✅ 打印正确日志，确认下标是0
-      console.log(`✅ 播放成功：歌单下标 = current_album_id = ${index} | source_pool_id=${playAlbum.source_pool_id} | 真实专辑ID=${playAlbum.id}`);
-    } else {
-      this.$message.error('该专辑暂无音频资源，无法播放');
-    }
-  } catch (err) {
-    console.error('❌ 获取播放音频失败：', err);
-    this.$message.error('播放失败，该专辑暂无音频资源');
-  }
-  this.saveUserPlaylistData();
-},
+      }
+      try {
+        const res = await this.$axios.get(`/api/album/pool/audio/info/${playAlbum.source_pool_id}`, {
+          headers: {Authorization: localStorage.getItem('token') || ''}
+        })
+        if (res.data.code === 200 && res.data.data.mp3_url) {
+          this.audioSrc = res.data.data.mp3_url
+          this.fileName = res.data.data.mp3_name
+          this.duration = res.data.data.mp3_duration
+          this.durationFormat = res.data.data.duration_format
+
+          // ========== ✅✅✅ 核心强制赋值【重中之重】- 写死这三行，下标回归0 ==========
+          this.currentTrackIndex = index;    // 歌单播放下标（高亮用）
+          this.currentAlbumId = index;       // ✔️ 这个变量 100% 等于下标，再也不会是17/27
+          this.currentPlaylistId = this.activeTabIndex;
+          // ======================================================================
+
+          // ========== ✅✅✅ 新增：缓存当前播放项的【两个真实ID】，解决上传时长ID=0的问题 ==========
+          this.currentPlaySourcePoolId = playAlbum.source_pool_id; // 缓存 album_pool.id=17
+          this.currentPlayRealAlbumId = playAlbum.id; // 缓存 用户专辑表.id=27
+          // ======================================================================
+
+          this.currentTime = 0;
+          this.currentProgress = 0;
+          if (needJumpDetail) {
+            const albumIdRes = await this.$axios.get('/api/album/get-id-by-source', {
+              params: {source_pool_id: playAlbum.source_pool_id},
+              headers: {Authorization: localStorage.getItem('token') || ''}
+            });
+            if (albumIdRes.data.code === 200 && albumIdRes.data.data?.album_id) {
+              const realAlbumId = albumIdRes.data.data.album_id;
+              const currentRouteAlbumId = Number(this.$route.params.id || this.$route.query.id);
+              if (realAlbumId !== currentRouteAlbumId) {
+                this.$router.replace({
+                  path: `/album/detail/${realAlbumId}`,
+                  query: {id: realAlbumId}
+                });
+              }
+            }
+          }
+          audio.currentTime = 0;
+          audio.play().then(() => {
+            this.isPlaying = true;
+            this.startListeningTimer(); // 播放新歌，开始计时
+          }).catch(() => {
+            this.isPlaying = false;
+            this.$message?.info('📢 点击底部专辑封面即可解锁播放～');
+            audio.load();
+          });
+          // ✅ 打印正确日志，确认下标是0
+          console.log(`✅ 播放成功：歌单下标 = current_album_id = ${index} | source_pool_id=${playAlbum.source_pool_id} | 真实专辑ID=${playAlbum.id}`);
+        } else {
+          this.$message.error('该专辑暂无音频资源，无法播放');
+        }
+      } catch (err) {
+        console.error('❌ 获取播放音频失败：', err);
+        this.$message.error('播放失败，该专辑暂无音频资源');
+      }
+      this.saveUserPlaylistData();
+    },
 
 // 曲目跳转事件 - 异常捕获
-handleTrackJump(targetSec) {
-  if (!this.audioSrc) {
-    alert('暂无整轨音频资源，无法跳转播放！');
-    return;
-  }
-  const audio = this.$refs.audioRef;
-  audio.currentTime = targetSec;
-  this.currentTime = targetSec;
-  this.currentProgress = this.duration ? (targetSec / this.duration) * 100 : 0;
-  audio.play().then(() => {
-    this.isPlaying = true;
-    this.startListeningTimer(); // ✅✅✅ 新增：曲目跳转播放，触发开始计时API
-  }).catch(() => {
-    alert('📢 请点击底部专辑封面解锁播放权限后再试～');
-  });
-},
+    handleTrackJump(targetSec) {
+      if (!this.audioSrc) {
+        alert('暂无整轨音频资源，无法跳转播放！');
+        return;
+      }
+      const audio = this.$refs.audioRef;
+      audio.currentTime = targetSec;
+      this.currentTime = targetSec;
+      this.currentProgress = this.duration ? (targetSec / this.duration) * 100 : 0;
+      audio.play().then(() => {
+        this.isPlaying = true;
+        this.startListeningTimer(); // ✅✅✅ 新增：曲目跳转播放，触发开始计时API
+      }).catch(() => {
+        alert('📢 请点击底部专辑封面解锁播放权限后再试～');
+      });
+    },
 
     // 时间格式化
     formatTime(seconds) {
@@ -559,24 +559,24 @@ handleTrackJump(targetSec) {
 
     // 获取专辑音频信息
 // 获取专辑音频信息 - ✅ 核心优化：增加return Promise，确保自动播放时机准确
-async getAlbumAudioInfo() {
-  try {
-    const res = await this.$axios.get(`/api/album/pool/audio/info/${this.album.source_pool_id}`)
-    if (res.data.code === 200 && res.data.data.mp3_url) {
-      this.audioSrc = res.data.data.mp3_url
-      this.fileName = res.data.data.mp3_name
-      this.duration = res.data.data.mp3_duration
-      this.durationFormat = res.data.data.duration_format
-      this.oldMp3Url = res.data.data.mp3_url
-console.log('⚠️ 跳过真实专辑ID赋值，保留歌单下标：', this.currentAlbumId);
-    }
-    // ✅ 新增：无论是否获取到音频，都返回promise，避免报错
-    return Promise.resolve();
-  } catch (err) {
-    this.oldMp3Url = ''
-    return Promise.reject(err);
-  }
-},
+    async getAlbumAudioInfo() {
+      try {
+        const res = await this.$axios.get(`/api/album/pool/audio/info/${this.album.source_pool_id}`)
+        if (res.data.code === 200 && res.data.data.mp3_url) {
+          this.audioSrc = res.data.data.mp3_url
+          this.fileName = res.data.data.mp3_name
+          this.duration = res.data.data.mp3_duration
+          this.durationFormat = res.data.data.duration_format
+          this.oldMp3Url = res.data.data.mp3_url
+          console.log('⚠️ 跳过真实专辑ID赋值，保留歌单下标：', this.currentAlbumId);
+        }
+        // ✅ 新增：无论是否获取到音频，都返回promise，避免报错
+        return Promise.resolve();
+      } catch (err) {
+        this.oldMp3Url = ''
+        return Promise.reject(err);
+      }
+    },
     // 获取用户有音频的专辑列表
     async getUserHasAudioAlbums() {
       try {
@@ -697,75 +697,75 @@ console.log('⚠️ 跳过真实专辑ID赋值，保留歌单下标：', this.cu
 
 
 // ✅✅✅ 终极修复版 - 播放暂停切换 【彻底解决暂停进度条归零】
-togglePlayPause() {
-  const audio = this.$refs.audioRef;
-  if (!audio || !this.audioSrc) {
-    this.$message?.info('暂无音频资源，无法播放');
-    return;
-  }
-  if (this.isPlaying) {
-    // ----- 暂停逻辑：强制同步真实进度 + 跳过Vue异步更新，立即生效 -----
-    audio.pause();
-    // 1. 读取原生audio的真实进度（绝对准确，不会错）
-    const realCurrentTime = audio.currentTime || 0;
-    const realProgress = this.duration && this.duration > 0 ? (realCurrentTime / this.duration) * 100 : 0;
-    // 2. 同步赋值给页面变量，确保是数字且非负
-    this.currentTime = Math.max(0, realCurrentTime);
-    this.currentProgress = Math.max(0, realProgress);
-    // 3. ✅ 关键核心：强制Vue立即更新DOM，跳过异步队列，解决视觉归零
-    this.$forceUpdate();
-    this.isPlaying = false;
-    this.pauseListeningTimer(); // 只传时长，不碰进度
-  } else {
-    // 播放逻辑不变
-    audio.play().then(() => {
-      this.isPlaying = true;
-      this.startListeningTimer();
-    }).catch(() => {
-      this.isPlaying = false;
-      this.$message?.warning('📢 播放失败，请检查音频资源是否有效～');
-    });
-  }
-},
+    togglePlayPause() {
+      const audio = this.$refs.audioRef;
+      if (!audio || !this.audioSrc) {
+        this.$message?.info('暂无音频资源，无法播放');
+        return;
+      }
+      if (this.isPlaying) {
+        // ----- 暂停逻辑：强制同步真实进度 + 跳过Vue异步更新，立即生效 -----
+        audio.pause();
+        // 1. 读取原生audio的真实进度（绝对准确，不会错）
+        const realCurrentTime = audio.currentTime || 0;
+        const realProgress = this.duration && this.duration > 0 ? (realCurrentTime / this.duration) * 100 : 0;
+        // 2. 同步赋值给页面变量，确保是数字且非负
+        this.currentTime = Math.max(0, realCurrentTime);
+        this.currentProgress = Math.max(0, realProgress);
+        // 3. ✅ 关键核心：强制Vue立即更新DOM，跳过异步队列，解决视觉归零
+        this.$forceUpdate();
+        this.isPlaying = false;
+        this.pauseListeningTimer(); // 只传时长，不碰进度
+      } else {
+        // 播放逻辑不变
+        audio.play().then(() => {
+          this.isPlaying = true;
+          this.startListeningTimer();
+        }).catch(() => {
+          this.isPlaying = false;
+          this.$message?.warning('📢 播放失败，请检查音频资源是否有效～');
+        });
+      }
+    },
 
 // ========== ✅✅✅ 新增：调用后端 开始播放计时API ========== ✅✅✅
-async startListeningTimer() {
-  const token = localStorage.getItem('token') || '';
-  if (!token || !this.album.id || !this.audioSrc) return;
-  try {
-    await this.$axios.post(
-      `/api/album/listening/start/${this.album.id}`,
-      {},
-      { headers: { Authorization: token } }
-    );
-    console.log(`✅ 触发播放计时：专辑ID=${this.album.id}，开始累计时长`);
-  } catch (err) {
-    console.log(`ℹ️ 播放计时接口调用失败(不影响播放)：`, err.message);
-  }
-},
+    async startListeningTimer() {
+      const token = localStorage.getItem('token') || '';
+      if (!token || !this.album.id || !this.audioSrc) return;
+      try {
+        await this.$axios.post(
+            `/api/album/listening/start/${this.album.id}`,
+            {},
+            {headers: {Authorization: token}}
+        );
+        console.log(`✅ 触发播放计时：专辑ID=${this.album.id}，开始累计时长`);
+      } catch (err) {
+        console.log(`ℹ️ 播放计时接口调用失败(不影响播放)：`, err.message);
+      }
+    },
 
 // ✅✅✅ 终极修复版 - 暂停计时上传时长：只暂停音频+传时长，【绝对不重置】任何进度数据！！！
-async pauseListeningTimer() {
-  const token = localStorage.getItem('token') || '';
-  const audio = this.$refs.audioRef;
-  // 满足条件才执行上传，不满足直接静默返回
-  if (!token || !this.album.id || !this.audioSrc || !audio) return;
+    async pauseListeningTimer() {
+      const token = localStorage.getItem('token') || '';
+      const audio = this.$refs.audioRef;
+      // 满足条件才执行上传，不满足直接静默返回
+      if (!token || !this.album.id || !this.audioSrc || !audio) return;
 
-  try {
-    await this.$axios.post(
-      `/api/album/listening/pause/${this.album.id}`,
-      {},
-      { headers: { Authorization: token } }
-    );
-    console.log(`✅ [成功] 上传时长到数据库：专辑ID=${this.album.id}`);
-  } catch (err) {
-    console.log(`⚠️ [上传失败] 专辑ID=${this.album.id}：`, err.response?.data?.msg || err.message);
-  } finally {
-    // ✅ 只做2件事：暂停原生音频 + 修改播放状态，【无任何其他代码】
-    audio.pause();
-    this.isPlaying = false;
-  }
-},
+      try {
+        await this.$axios.post(
+            `/api/album/listening/pause/${this.album.id}`,
+            {},
+            {headers: {Authorization: token}}
+        );
+        console.log(`✅ [成功] 上传时长到数据库：专辑ID=${this.album.id}`);
+      } catch (err) {
+        console.log(`⚠️ [上传失败] 专辑ID=${this.album.id}：`, err.response?.data?.msg || err.message);
+      } finally {
+        // ✅ 只做2件事：暂停原生音频 + 修改播放状态，【无任何其他代码】
+        audio.pause();
+        this.isPlaying = false;
+      }
+    },
     handleTimeUpdate() {
       const audio = this.$refs.audioRef;
       if (!audio) return;
@@ -783,59 +783,58 @@ async pauseListeningTimer() {
       audio.currentTime = this.currentTime;
     },
 
-async handleEnded() {
-  this.isPlaying = false;
-  this.currentProgress = 0;
-  this.currentTime = 0;
-  await this.pauseListeningTimer(); // ✅ 必须await，确保时长上传完成再切歌
-  const audio = this.$refs.audioRef;
-  if (!audio || !this.audioSrc || this.currentPlaylist.length === 0) return;
+    async handleEnded() {
+      this.isPlaying = false;
+      this.currentProgress = 0;
+      this.currentTime = 0;
+      await this.pauseListeningTimer(); // ✅ 必须await，确保时长上传完成再切歌
+      const audio = this.$refs.audioRef;
+      if (!audio || !this.audioSrc || this.currentPlaylist.length === 0) return;
 
 
+      console.log(this)
+      // 单曲循环：本地直接重播，不走接口，效率最高
+      if (this.playMode === 'single') {
+        audio.currentTime = 0;
+        audio.play().then(() => {
+          this.isPlaying = true;
+          this.startListeningTimer();
+        }).catch(() => this.isPlaying = false);
+        this.saveUserPlaylistData();
+        return;
+      }
 
-  console.log(this)
-  // 单曲循环：本地直接重播，不走接口，效率最高
-  if (this.playMode === 'single') {
-    audio.currentTime = 0;
-    audio.play().then(() => {
-      this.isPlaying = true;
-      this.startListeningTimer();
-    }).catch(() => this.isPlaying = false);
-    this.saveUserPlaylistData();
-    return;
-  }
+      try {
+        const res = await this.$axios.post(
+            '/api/playlist/switch-next-album',
+            {
+              playlist: this.playlistTabs,
+              current_playlist_id: this.currentPlaylistId,
+              current_album_id: this.currentAlbumId,
+              play_mode: this.playMode
+            },
+            {headers: {Authorization: localStorage.getItem('token') || ''}}
+        );
 
-  try {
-    const res = await this.$axios.post(
-      '/api/playlist/switch-next-album',
-      {
-        playlist: this.playlistTabs,
-        current_playlist_id: this.currentPlaylistId,
-        current_album_id: this.currentAlbumId,
-        play_mode: this.playMode
-      },
-      { headers: { Authorization: localStorage.getItem('token') || '' } }
-    );
-
-    if (res.data.code === 200 && res.data.data && res.data.data.current_album_id !== undefined) {
-      const { current_album_id: newTrackIndex, current_playlist_id: newTabIndex } = res.data.data;
-this.currentPlaylistId = newTabIndex;
-this.currentAlbumId = newTrackIndex; // ✅ 同步赋值新下标
-this.currentTrackIndex = newTrackIndex; // ✅ 同步赋值播放索引
-await this.handlePlayTrack(newTrackIndex, true);
-console.log('✅ 切歌后新下标：current_album_id = ', newTrackIndex);
-    } else {
-      this.$message?.warning(res.data.msg || '已播放到最后一首，暂无更多专辑');
-      this.currentTrackIndex = -1;
-      this.audioSrc = '';
-    }
-  } catch (err) {
-    console.error('❌ 切歌接口调用失败：', err);
-    this.$message?.error('切换下一曲失败，请重试');
-  } finally {
-    this.saveUserPlaylistData();
-  }
-},
+        if (res.data.code === 200 && res.data.data && res.data.data.current_album_id !== undefined) {
+          const {current_album_id: newTrackIndex, current_playlist_id: newTabIndex} = res.data.data;
+          this.currentPlaylistId = newTabIndex;
+          this.currentAlbumId = newTrackIndex; // ✅ 同步赋值新下标
+          this.currentTrackIndex = newTrackIndex; // ✅ 同步赋值播放索引
+          await this.handlePlayTrack(newTrackIndex, true);
+          console.log('✅ 切歌后新下标：current_album_id = ', newTrackIndex);
+        } else {
+          this.$message?.warning(res.data.msg || '已播放到最后一首，暂无更多专辑');
+          this.currentTrackIndex = -1;
+          this.audioSrc = '';
+        }
+      } catch (err) {
+        console.error('❌ 切歌接口调用失败：', err);
+        this.$message?.error('切换下一曲失败，请重试');
+      } finally {
+        this.saveUserPlaylistData();
+      }
+    },
 
     updateAlbumData(updatedData) {
       this.album = {...this.album, ...updatedData};
@@ -894,14 +893,14 @@ console.log('✅ 切歌后新下标：current_album_id = ', newTrackIndex);
     },
 
 // ✅ 修正版：支持加深/提亮，自动限制RGB值在0-255之间，杜绝非法色值
-darkenColor(hex, amount) {
-  const r = Math.min(255, Math.max(0, parseInt(hex.slice(1, 3), 16) * (1 - amount)));
-  const g = Math.min(255, Math.max(0, parseInt(hex.slice(3, 5), 16) * (1 - amount)));
-  const b = Math.min(255, Math.max(0, parseInt(hex.slice(5, 7), 16) * (1 - amount)));
-  // 补零+转16进制，避免出现 #f 这种不完整色值
-  const toHex = (val) => Math.round(val).toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-},
+    darkenColor(hex, amount) {
+      const r = Math.min(255, Math.max(0, parseInt(hex.slice(1, 3), 16) * (1 - amount)));
+      const g = Math.min(255, Math.max(0, parseInt(hex.slice(3, 5), 16) * (1 - amount)));
+      const b = Math.min(255, Math.max(0, parseInt(hex.slice(5, 7), 16) * (1 - amount)));
+      // 补零+转16进制，避免出现 #f 这种不完整色值
+      const toHex = (val) => Math.round(val).toString(16).padStart(2, '0');
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    },
 
     saveAlbumIntro(introContent) {
       this.$axios({
@@ -1394,18 +1393,18 @@ darkenColor(hex, amount) {
     }
   },
 // 路由离开守卫，强制保存播放列表 ✅✅✅ 新增暂停计时
-beforeRouteLeave(to, from, next) {
-  if (this.saveTimer) clearTimeout(this.saveTimer);
-  this.saveUserPlaylistData();
-  this.pauseListeningTimer(); // ✅✅✅ 新增：离开页面，自动暂停计时，保存时长
-  next();
-},
-beforeUnmount() {
-  if (this.audioSrc && this.audioSrc.includes('blob:')) {
-    URL.revokeObjectURL(this.audioSrc);
-  }
-  this.pauseListeningTimer(); // ✅✅✅ 新增：组件销毁，暂停计时
-},
+  beforeRouteLeave(to, from, next) {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveUserPlaylistData();
+    this.pauseListeningTimer(); // ✅✅✅ 新增：离开页面，自动暂停计时，保存时长
+    next();
+  },
+  beforeUnmount() {
+    if (this.audioSrc && this.audioSrc.includes('blob:')) {
+      URL.revokeObjectURL(this.audioSrc);
+    }
+    this.pauseListeningTimer(); // ✅✅✅ 新增：组件销毁，暂停计时
+  },
 };
 </script>
 

@@ -485,42 +485,37 @@ async handleJumpAlbumDetail(idx) {
   }
 },
 
-async handleJumpAlbumDetailByItem(album) {
-  console.log('👉 点击可添加专辑名，准备查询专辑ID并跳转', album);
-  if (!album || !album.source_pool_id) {
-    this.$message?.warning('该专辑信息异常，无关联ID');
-    return;
-  }
-  const sourcePoolId = Number(album.source_pool_id);
-  if (sourcePoolId < 1) {
-    this.$message?.warning('无效的专辑关联ID');
-    return;
-  }
-  try {
-    const res = await this.$axios.get('/api/album/get-id-by-source', {
-      params: {source_pool_id: sourcePoolId}
-    });
-    if (res.data.code === 200 && res.data.data?.album_id) {
-
-      // ============ ↓↓↓ 核心新增代码 ↓↓↓ 必须加 ============
-      await this.handlePauseAndUploadDuration();
-      // ============ ↑↑↑ 核心新增代码 ↑↑↑ 必须加 ============
-
-      this.$router.push({
-        path: `/album/detail/${res.data.data.album_id}`,
-        query: {id: res.data.data.album_id}
-      });
-      this.handleClose();
-    } else if (res.data.code === 404) {
-      this.$message?.info(res.data.msg);
-    } else {
-      this.$message?.error(res.data.msg || '查询专辑信息失败');
+    async handleJumpAlbumDetailByItem(album) {
+      console.log('👉 点击可添加专辑名，准备查询专辑ID并跳转', album);
+      if (!album || !album.source_pool_id) {
+        this.$message?.warning('该专辑信息异常，无关联ID');
+        return;
+      }
+      const sourcePoolId = Number(album.source_pool_id);
+      if (sourcePoolId < 1) {
+        this.$message?.warning('无效的专辑关联ID');
+        return;
+      }
+      try {
+        const res = await this.$axios.get('/api/album/get-id-by-source', {
+          params: {source_pool_id: sourcePoolId}
+        });
+        if (res.data.code === 200 && res.data.data?.album_id) {
+          this.$router.push({
+            path: `/album/detail/${res.data.data.album_id}`,
+            query: {id: res.data.data.album_id}
+          });
+          this.handleClose();
+        } else if (res.data.code === 404) {
+          this.$message?.info(res.data.msg);
+        } else {
+          this.$message?.error(res.data.msg || '查询专辑信息失败');
+        }
+      } catch (err) {
+        console.error('❌ 查询专辑ID失败：', err);
+        this.$message?.error('跳转失败，请稍后重试');
+      }
     }
-  } catch (err) {
-    console.error('❌ 查询专辑ID失败：', err);
-    this.$message?.error('跳转失败，请稍后重试');
-  }
-},
   }
 };
 </script>

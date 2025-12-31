@@ -17,7 +17,7 @@
           backgroundColor: item.color
         }"
       >
-        <div class="bubble-label">{{ item.tag }}</div>
+<div class="bubble-label">{{ item.tag.match(/【(.*?)】/)?.[1] || item.tag }}</div>
         <div class="bubble-value">{{ item.percent }}%</div>
       </div>
     </div>

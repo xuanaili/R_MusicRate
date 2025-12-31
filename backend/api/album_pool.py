@@ -29,7 +29,7 @@ def register_album_pool_routes(app):
         # 切片并返回
         return value_str[:max_length]
 
-    # ========== ✅ 新增核心：封装标签统计复用函数（把原接口的逻辑抽出来） ==========
+    # ========== ✅ 核心复用：封装标签统计复用函数（所有接口共用） ==========
     def get_album_tag_stats(album_pool_id, cursor):
         """
         复用标签统计逻辑，给搜索接口调用
@@ -96,6 +96,15 @@ def register_album_pool_routes(app):
                         "color": color
                     })
         return result
+
+    # ========== 通用JSON解析容错函数 ==========
+    def safe_json_loads(s):
+        if s is None or s == "":
+            return None
+        try:
+            return json.loads(s)
+        except (json.JSONDecodeError, TypeError):
+            return None
 
     # ========== 修复：获取专辑标签统计接口（气泡图用） - 修正数据来源 ==========
     @app.route('/api/album/<int:album_pool_id>/tag-statistics', methods=['GET', 'OPTIONS'])
@@ -205,15 +214,6 @@ def register_album_pool_routes(app):
                 # 无数据返回200状态码 + 404业务码，友好提示
                 return jsonify({"code": 404, "msg": "未找到该公共专辑", "data": {}}), 200
 
-            # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
-            def safe_json_loads(s):
-                if s is None or s == "":
-                    return None
-                try:
-                    return json.loads(s)
-                except (json.JSONDecodeError, TypeError):
-                    return None
-
             # 处理所有JSON字段（包含tracks）
             album['tags'] = safe_json_loads(album.get('tags')) or []
             album['main_type'] = safe_json_loads(album.get('main_type')) or []
@@ -238,14 +238,15 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取失败：{str(e)}", "data": {}}), 200
 
-    # 2. 专辑搜索池 - 搜索接口（完整修复：新增tracks字段返回 + 新增album_intro）
-    @app.route('/api/album/pool/search', methods=['GET', 'OPTIONS'])
+    # ✅✅✅ 拆分接口1：【专辑名+歌手 专属搜索】- 只搜专辑名、歌手、专辑简介，精准匹配基础信息
+    @app.route('/api/album/pool/search/name-singer', methods=['GET', 'OPTIONS'])
     @login_required
-    def search_album_pool():
+    def search_album_pool_by_name_singer():
         if request.method == 'OPTIONS':
             return jsonify({"code": 200, "msg": "success"}), 200
         try:
             keyword = request.args.get('keyword', '').strip()
+            keyword_lower = keyword.lower()
             page = int(request.args.get('page', DEFAULT_PAGE))
             page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
 
@@ -257,7 +258,7 @@ def register_album_pool_routes(app):
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # 核心修复：字段名改为u.username，移除多余符号
+            # 核心：只对【专辑名、歌手、专辑简介】做模糊搜索，纯基础信息匹配，无标签逻辑
             query = """
                 SELECT ap.*, u.username as create_user_name 
                 FROM album_pool ap
@@ -265,12 +266,15 @@ def register_album_pool_routes(app):
                 WHERE 1=1
             """
             params = []
-            if keyword:
-                query += " AND (ap.album_name LIKE %s OR ap.singer LIKE %s OR ap.tags LIKE %s OR ap.main_type LIKE %s OR ap.tracks LIKE %s OR ap.album_intro LIKE %s)"
-                params.extend(
-                    [f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%'])
+            if keyword_lower:
+                query += " AND (ap.album_name LIKE %s OR ap.singer LIKE %s OR ap.album_intro LIKE %s)"
+                params.extend([
+                    f'%{keyword}%',
+                    f'%{keyword}%',
+                    f'%{keyword}%'
+                ])
 
-            # 查询总条数（修复字段名引用）
+            # 查询总条数
             count_query = query.replace("SELECT ap.*, u.username as create_user_name", "SELECT COUNT(*) as total")
             cursor.execute(count_query, params)
             total = cursor.fetchone()['total']
@@ -281,22 +285,11 @@ def register_album_pool_routes(app):
             cursor.execute(query, params)
             album_list = cursor.fetchall()
 
-            # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
-            def safe_json_loads(s):
-                if s is None or s == "":
-                    return None
-                try:
-                    return json.loads(s)
-                except (json.JSONDecodeError, TypeError):
-                    return None
-
-            # 解析结果（新增tracks字段 + album_intro）
+            # 最终返回的结果集
             result_list = []
             for album in album_list:
-                # 无用户名时显示"未知用户"
                 create_user_name = album.get('create_user_name') or "未知用户"
-
-                # ✅✅✅ 核心新增：调用工具函数，获取当前专辑的标签统计数据
+                # 计算聚合标签（仅前端展示，不参与搜索）
                 album_tag_stats = get_album_tag_stats(album['id'], cursor)
 
                 result_list.append({
@@ -307,15 +300,15 @@ def register_album_pool_routes(app):
                     "release_year": album['release_year'],
                     "main_type": safe_json_loads(album.get('main_type')) or [],
                     "tags": safe_json_loads(album.get('tags')) or [],
-                    "tracks": safe_json_loads(album.get('tracks')) or [],  # 新增tracks字段
-                    "album_intro": album.get('album_intro', '') or '',  # 新增专辑简介字段
-                    "duration_type": album.get('duration_type', 'LP') or 'LP',  # 新增：专辑类型
+                    "tracks": safe_json_loads(album.get('tracks')) or [],
+                    "album_intro": album.get('album_intro', '') or '',
+                    "duration_type": album.get('duration_type', 'LP') or 'LP',
                     "my_score": album['my_score'],
-                    "create_user": album['create_user'],  # 保留原user_id
-                    "create_user_name": create_user_name,  # 新增：用户名
+                    "create_user": album['create_user'],
+                    "create_user_name": create_user_name,
                     "create_time": album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album.get(
                         'create_time') else '',
-                    "tag_statistics": album_tag_stats,  # ✅✅✅ 追加返回【标签统计数据】
+                    "tag_statistics": album_tag_stats,
                 })
 
             total_pages = (total + page_size - 1) // page_size
@@ -330,16 +323,124 @@ def register_album_pool_routes(app):
 
             return jsonify({
                 "code": 200,
-                "msg": "搜索专辑池成功",
+                "msg": "按专辑名/歌手搜索成功",
                 "data": {
                     "list": result_list,
                     "pagination": pagination
                 }
             })
         except Exception as e:
-            print(f"❌ 搜索专辑池出错：{str(e)}")
+            print(f"❌ 按专辑名/歌手搜索出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"搜索专辑池失败：{str(e)}", "data": {}}), 200
+            return jsonify({"code": 500, "msg": f"搜索失败：{str(e)}", "data": {}}), 200
+
+    # ✅✅✅ 拆分接口2：【标签 专属搜索】- 只搜聚合标签+原始标签，纯标签维度精准匹配，无基础信息干扰
+    @app.route('/api/album/pool/search/tags', methods=['GET', 'OPTIONS'])
+    @login_required
+    def search_album_pool_by_tags():
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
+        try:
+            tag_keyword = request.args.get('tag', '').strip()
+            tag_keyword_lower = tag_keyword.lower()
+            page = int(request.args.get('page', DEFAULT_PAGE))
+            page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
+
+            if page < 1:
+                page = 1
+            if page_size < 1 or page_size > 50:
+                page_size = DEFAULT_PAGE_SIZE
+
+            if not tag_keyword_lower:
+                return jsonify({
+                    "code": 400,
+                    "msg": "标签搜索关键词不能为空！",
+                    "data": {"list": [],
+                             "pagination": {"total": 0, "page": page, "page_size": page_size, "total_pages": 0}}
+                }), 200
+
+            db = get_db()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+
+            # 核心：查询全部公共专辑，不做SQL过滤，所有过滤逻辑在Python中按标签匹配
+            query = """
+                SELECT ap.*, u.username as create_user_name 
+                FROM album_pool ap
+                LEFT JOIN users u ON ap.create_user = u.user_id
+                ORDER BY ap.create_time DESC
+            """
+            cursor.execute(query)
+            album_list = cursor.fetchall()
+            total = len(album_list)
+
+            # 分页切片处理
+            offset = (page - 1) * page_size
+            album_list = album_list[offset:offset + page_size]
+
+            # 最终返回的结果集
+            result_list = []
+            # 遍历每一条专辑数据，纯标签匹配逻辑
+            for album in album_list:
+                create_user_name = album.get('create_user_name') or "未知用户"
+                # 第一步：为当前专辑，计算出【前端展示的完整聚合标签】
+                album_tag_stats = get_album_tag_stats(album['id'], cursor)
+                # 提取聚合标签的纯文本列表（转小写去重）
+                album_all_tags = [item['tag'].lower() for item in album_tag_stats]
+                # 提取专辑原始标签的纯文本列表（兼容数据库里的JSON原始标签）
+                album_origin_tags = safe_json_loads(album.get('tags')) or []
+                album_origin_tags = [tag.lower().strip() for tag in album_origin_tags if tag and tag.strip()]
+                # 合并：原始标签+聚合标签 = 所有可能的标签，去重
+                all_match_tags = list(set(album_all_tags + album_origin_tags))
+
+                # 核心判断【标签关键词是否匹配】精准匹配+包含匹配
+                tag_match = False
+                if tag_keyword_lower:
+                    tag_match = tag_keyword_lower in all_match_tags or any(
+                        [tag_keyword_lower in tag for tag in all_match_tags])
+
+                # 符合标签匹配条件的专辑，才加入最终结果集
+                if tag_match:
+                    result_list.append({
+                        "id": album['id'],
+                        "album_name": album['album_name'],
+                        "cover_img": album['cover_img'],
+                        "singer": album['singer'],
+                        "release_year": album['release_year'],
+                        "main_type": safe_json_loads(album.get('main_type')) or [],
+                        "tags": safe_json_loads(album.get('tags')) or [],
+                        "tracks": safe_json_loads(album.get('tracks')) or [],
+                        "album_intro": album.get('album_intro', '') or '',
+                        "duration_type": album.get('duration_type', 'LP') or 'LP',
+                        "my_score": album['my_score'],
+                        "create_user": album['create_user'],
+                        "create_user_name": create_user_name,
+                        "create_time": album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album.get(
+                            'create_time') else '',
+                        "tag_statistics": album_tag_stats,  # 前端展示的标签，原样返回
+                    })
+
+            total_pages = (total + page_size - 1) // page_size
+            pagination = {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages
+            }
+
+            cursor.close()
+
+            return jsonify({
+                "code": 200,
+                "msg": "按标签搜索专辑池成功",
+                "data": {
+                    "list": result_list,
+                    "pagination": pagination
+                }
+            })
+        except Exception as e:
+            print(f"❌ 按标签搜索专辑池出错：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"标签搜索失败：{str(e)}", "data": {}}), 200
 
     # 3. 删除公共专辑接口（✅最终完美版：级联删除【音频资源+封面+用户数据+专辑】，无残留+无报错）
     @app.route('/api/album/pool/delete/<int:pool_id>', methods=['DELETE', 'OPTIONS'])
@@ -546,14 +647,6 @@ def register_album_pool_routes(app):
                               'tracks', 'album_intro', 'duration_type']
             update_log = []
 
-            def safe_json_loads(s):
-                if not s:
-                    return None
-                try:
-                    return json.loads(s)
-                except:
-                    return None
-
             # 预处理tracks
             original_pool_tracks = safe_json_loads(album.get('tracks')) or []
             new_pool_tracks = data.get('tracks', original_pool_tracks)
@@ -734,14 +827,6 @@ def register_album_pool_routes(app):
                 }), 200
 
             # ===== 数据处理，原有逻辑不变 =====
-            def safe_json_loads(s):
-                if s is None or s == "":
-                    return None
-                try:
-                    return json.loads(s)
-                except (json.JSONDecodeError, TypeError):
-                    return None
-
             pool_tracks = safe_json_loads(pool_album.get('tracks')) or []
             pool_tracks = [track.strip() for track in pool_tracks if track and track.strip()]
             tracks_json = json.dumps(pool_tracks) if pool_tracks else json.dumps([])
