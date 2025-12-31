@@ -98,7 +98,6 @@ export default {
   flex-direction: column;
   height: 280px;
   width: 100%;
-  /* ✅ 双重保险：容器内无任何边框和内边距残留 */
   border: none !important;
   padding-top: 0 !important;
   margin-top: 0 !important;
@@ -109,15 +108,13 @@ export default {
   display: none !important;
 }
 
-/* 核心：磨砂蒙版样式 无任何边框 */
+/* ✅ 核心修改：移除所有磨砂/蒙版/半透明背景，改为完全透明，保留原有定位和圆角 */
 .bubble-chart {
   position: relative;
   width: 100%;
   height: 100%;
   flex: 1;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: transparent !important; /* 完全透明核心 */
   border-radius: 6px;
   overflow: hidden;
   min-height: 200px;
@@ -130,7 +127,7 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-	color: v-bind(mainColorDarkDouble) !important;
+	color: v-bind(mainColor) !important; /* 适配透明背景，直接用主色 */
 	font-size: 14px;
 }
 
@@ -163,6 +160,7 @@ export default {
 	text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3) !important;
 }
 
+/* ✅ 无数据容器同步改为完全透明 */
 .no-chart-data {
   width: 100%;
   height: 100%;
@@ -171,9 +169,7 @@ export default {
   align-items: center;
   color: #999;
 	font-size: 14px;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: transparent !important; /* 完全透明核心 */
   border-radius: 6px;
   border: none !important;
 }

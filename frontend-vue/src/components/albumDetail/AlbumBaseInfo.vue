@@ -327,7 +327,7 @@ export default {
   border-radius: 8px;
   margin-bottom: 0 !important;
   min-height: 650px;
-  margin-top: 0 !important;
+	margin-top: 0 !important;
   align-self: flex-start;
   width: calc(100vw - 270px - 50px);
   max-width: 100%;
@@ -368,7 +368,7 @@ export default {
   bottom: 0;
   width: 100%;
   height: 4px;
-  border-radius: 2px;
+	border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
@@ -388,14 +388,12 @@ export default {
   border: none !important;
 }
 
-/* 封面占位图：透明磨砂无白色边框 */
+/* ✅ 封面占位图：✅【纯透明无蒙版】 彻底删除磨砂模糊，无任何背景效果 */
 .cover-placeholder {
   width: 300px;
   height: 300px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.3);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: transparent !important;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -417,7 +415,7 @@ export default {
 .meta-section {
   display: flex;
   flex-direction: column;
-  padding: 0;
+	padding: 0;
 }
 
 /* ✅ 提升优先级：专辑名称颜色强制生效 */
@@ -482,7 +480,7 @@ export default {
   max-width: 100%;
 }
 
-/* 搜索框：透明磨砂+加深再加深文字+灰色提示占位符 */
+/* ✅ 核心修改：标签搜索框 → 【完全纯净透明】 删除所有蒙版/模糊/半透，仅保留文字颜色 */
 .tag-search-input {
   width: 100%;
   max-width: 200px;
@@ -490,21 +488,19 @@ export default {
   border-radius: 4px;
   font-size: 14px;
   box-sizing: border-box;
-  background: rgba(255,255,255,0.3);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: transparent !important;
   border: none !important;
 	color: v-bind(mainColorDarkDouble) !important;
 }
 
 .tag-search-input::placeholder {
-  color: #999;
+  color: v-bind(mainColorDarkDouble) !important;
   opacity: 1;
 }
 
 .tag-search-input:disabled {
   cursor: not-allowed;
-  background: rgba(255,255,255,0.2) !important;
+  background: transparent !important;
 }
 
 .save-tags-btn {
@@ -535,7 +531,7 @@ export default {
   flex-direction: column;
 }
 
-/* 标签下拉列表：透明磨砂无白色边框 */
+/* ✅ 核心修改：可选标签列表 → 【完全纯净透明】 删除所有蒙版/模糊/半透/边框，仅保留滚动和间距 */
 .tag-options-list {
   display: flex;
   flex-direction: column;
@@ -544,9 +540,7 @@ export default {
   overflow-y:auto;
   border-radius:4px;
   padding:5px;
-  background: rgba(255,255,255,0.3);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: transparent !important;
   border:none !important;
 }
 
@@ -570,16 +564,16 @@ export default {
 }
 
 .tag-option:hover:not(.disabled) {
-  background: rgba(255,255,255,0.5);
+  background: rgba(255,255,255,0.1);
 }
 
 .tag-option.disabled {
   color: rgba(0,0,0,0.3) !important;
   cursor:not-allowed;
-  background: rgba(255,255,255,0.2);
+  background: transparent !important;
 }
 
-/* ✅✅✅ 终极修复：简介区块 固定高度+永不撑开+内部滚动 核心代码 */
+/* ✅✅✅ 终极修复：简介区块 固定高度+永不撑开+内部滚动 核心代码 + 【纯透明无蒙版】 */
 .intro-section {
   display: flex;
   flex-direction: column;
@@ -590,6 +584,7 @@ export default {
   height: 100%;
   overflow: hidden;
 }
+/* ✅ 核心修改：简介加载中 → 【纯透明无蒙版】 删除所有模糊/半透，仅保留文字和布局 */
 .loading-intro {
   width: 100%;
   max-width: 90%;
@@ -601,13 +596,12 @@ export default {
   align-items: center;
 	color: v-bind(mainColorDarkDouble) !important;
   font-size: 14px;
-  background: rgba(255,255,255,0.3);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: transparent !important;
   border-radius:4px;
 	border:none !important;
   overflow: hidden;
 }
+/* ✅ 核心修改：简介展示态 → 【纯透明无蒙版】 删除所有模糊/半透，仅保留文字、滚动、纯透背景 */
 .intro-display {
   width: 100%;
   max-width: 90%;
@@ -618,15 +612,14 @@ export default {
   height: 200px;
   max-height: 200px;
   color: v-bind(mainColorDarkDouble) !important;
-  background: rgba(255,255,255,0.3);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: transparent !important;
   white-space: pre-wrap;
   word-wrap: break-word;
 	border:none !important;
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* ✅ 核心修改：简介编辑态 → 【纯透明无蒙版】 删除所有模糊/半透/边框，仅保留文字、滚动、纯透背景，无resize */
 .intro-textarea {
   width: 100%;
   max-width: 90%;
@@ -636,9 +629,7 @@ export default {
   line-height: 1.5;
   height: 200px;
   max-height: 200px;
-  background: rgba(255,255,255,0.3);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: transparent !important;
 	color: v-bind(mainColorDarkDouble) !important;
 	border:none !important;
   position: relative;
@@ -656,7 +647,7 @@ export default {
   padding: 8px 16px;
   color: #fff;
   border: none;
-  border-radius: 4px;
+	border-radius: 4px;
   cursor: pointer;
   align-self: flex-start;
   font-size: 14px;
@@ -672,7 +663,7 @@ export default {
   opacity: 0.7;
 }
 
-/* ✅✅✅ 核心兜底：气泡图区块 上移+高度缩减，彻底远离播放器 */
+/* ✅✅✅ 核心修改+兜底：气泡图区块 → 【纯透明无蒙版】+高度缩减+溢出隐藏，彻底无任何背景，远离播放器 */
 .tag-chart-section {
   display: flex;
   flex-direction: column;

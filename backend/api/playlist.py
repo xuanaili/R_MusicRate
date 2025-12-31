@@ -74,7 +74,6 @@ def register_playlist_routes(app):
             if not current_user_id:
                 return jsonify({"code": 401, "msg": "用户未登录，请先登录"}), 401
             current_user_id = int(current_user_id)
-            print(current_user_id)
             db = get_db()
             cursor = db.cursor(pymysql.cursors.DictCursor)
 
@@ -84,10 +83,8 @@ def register_playlist_routes(app):
                 WHERE user_id = %s
             '''
             cursor.execute(select_sql, (current_user_id,))
-            print(cursor)
             user_playlist_info = cursor.fetchone()
 
-            print(user_playlist_info)
 
             default_playlist = [{"name": "默认歌单", "tracks": []}]
             default_playlist_str = json.dumps(default_playlist, ensure_ascii=False)
