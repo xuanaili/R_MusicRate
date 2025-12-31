@@ -4,7 +4,7 @@
     <div v-if="!hasComment" class="comment-input-card">
       <textarea
         v-model="commentContent"
-        placeholder="分享你的听后感..."
+        placeholder="分享你的看法"
         class="comment-textarea"
         rows="3"
         :disabled="hasComment"
@@ -44,6 +44,13 @@
       >
         最多点赞
       </button>
+      <button
+        class="tab-item sort-btn"
+        :class="{active: sortType === 'listen'}"
+        @click="$emit('sort-change', 'listen')"
+      >
+        最长听取
+      </button>
     </div>
 
     <div
@@ -57,10 +64,10 @@
         :key="myComment.id"
         :style="{border: 'none', backgroundColor: 'transparent'}"
       >
-        <!-- ✅ 新增：竖线容器 - 包裹用户名+评论内容 -->
         <div class="comment-left-line-wrapper">
           <div class="comment-header" :style="{backgroundColor: 'transparent'}">
             <span class="comment-username" :style="{color: mainColorDarkDouble, fontWeight: '600'}">{{ myComment.username }}</span>
+            <span class="listen-duration sort-text-style">{{ formatListenTime(myComment.listening_duration) }}</span>
             <span class="my-tag" :style="{backgroundColor:mainColorDark, color: '#ffffff'}">我的评论</span>
             <span v-if="myComment.is_admin" class="admin-tag">管理员</span>
           </div>
@@ -76,7 +83,8 @@
               :class="{liked: myComment.like_user_ids.includes(currentUserId)}"
               :style="{color: myComment.like_user_ids.includes(currentUserId) ? '#e53935' : mainColorDark}"
             >
-              👍 {{ myComment.like_count }}
+              <img src="/点赞.svg" width="16" height="16" style="object-fit: contain;" />
+              {{ myComment.like_count }}
             </button>
             <button
               class="delete-comment-btn"
@@ -96,18 +104,10 @@
         :key="comment.id"
         :style="{backgroundColor: 'transparent', border: 'none'}"
       >
-        <button
-          class="block-btn"
-          @click="$emit('block-comment', comment.id)"
-          title="屏蔽这条评论"
-          :style="{backgroundColor:mainColorDark, color: '#ffffff'}"
-        >
-          🚫
-        </button>
-        <!-- ✅ 新增：竖线容器 - 包裹用户名+评论内容 -->
         <div class="comment-left-line-wrapper">
           <div class="comment-header" :style="{backgroundColor: 'transparent'}">
             <span class="comment-username" :style="{color: mainColorDarkDouble, fontWeight:600}">{{ comment.username }}</span>
+            <span class="listen-duration sort-text-style">{{ formatListenTime(comment.listening_duration) }}</span>
             <span v-if="comment.is_admin" class="admin-tag">管理员</span>
           </div>
           <div class="comment-content" :style="{color: mainColorDarkDouble, backgroundColor: 'transparent'}">{{ comment.content }}</div>
@@ -122,13 +122,23 @@
               :class="{liked: comment.like_user_ids.includes(currentUserId)}"
               :style="{color: comment.like_user_ids.includes(currentUserId) ? '#e53935' : mainColorDark}"
             >
-              👍 {{ comment.like_count }}
+              <img src="/点赞.svg" width="16" height="16" style="object-fit: contain;" />
+              {{ comment.like_count }}
+            </button>
+            <!-- ✅ 核心修改：屏蔽按钮添加和点赞按钮相同的 class 逻辑 + 统一样式 -->
+            <button
+              class="like-btn block-btn"
+              @click="$emit('block-comment', comment.id)"
+              title="屏蔽这条评论"
+              :style="{color: mainColorDark, marginLeft: '10px'}"
+            >
+              <img src="/屏蔽.svg" width="16" height="16" style="object-fit: contain;" />
             </button>
             <button
               v-if="isAdmin || comment.user_id == currentUserId"
               class="delete-comment-btn"
               @click="$emit('delete-comment', comment.id)"
-              :style="{backgroundColor: mainColorDark, color: '#ffffff'}"
+              :style="{backgroundColor: mainColorDark, color: '#ffffff', marginLeft: '10px'}"
             >
               删除
             </button>
@@ -137,7 +147,7 @@
       </div>
     </div>
 
-    <p class="no-comment" :style="{color: mainColorDarkDouble}">暂无评论，快来抢沙发~</p>
+    <p class="no-comment" :style="{color: mainColorDarkDouble}" v-if="publicComments.length === 0">暂无评论，快来抢沙发~</p>
 
     <div class="block-tip" v-if="blockedCommentIds.length > 0" :style="{color: mainColorDarkDouble}">
       已屏蔽 <span>{{ blockedCommentIds.length }}</span> 条评论
@@ -256,6 +266,20 @@ export default {
       const g = parseInt(hex.slice(3, 5), 16);
       const b = parseInt(hex.slice(5, 7), 16);
       return (r * 299 + g * 587 + b * 114) / 1000;
+    },
+    formatListenTime(seconds) {
+      if (!seconds || isNaN(seconds) || seconds < 0) {
+        return '0min';
+      }
+      const totalMinutes = Math.floor(seconds / 60);
+      const hour = Math.floor(totalMinutes / 60);
+      const minute = totalMinutes % 60;
+      const minuteText = minute.toString().padStart(2, '0');
+      if (hour === 0) {
+        return `${minuteText}min`;
+      } else {
+        return `${hour}h${minuteText}min`;
+      }
     }
   }
 };
@@ -268,7 +292,6 @@ h2 {
   font-weight: 600;
 }
 
-/* 发布评论外层容器 纯透明 */
 .comment-input-card {
   padding: 20px;
 	border-radius: 8px;
@@ -279,11 +302,10 @@ h2 {
 	border: none !important;
 }
 
-/* 输入框保留轻微蒙版 */
 .comment-textarea {
   width: 100%;
-  padding: 8px;
-  border: none !important;
+	padding: 8px;
+	border: none !important;
 	border-radius: 4px;
   resize: vertical;
   font-size: 14px;
@@ -292,6 +314,7 @@ h2 {
   background: rgba(255, 255, 255, 0.2) !important;
   outline: none;
   color: v-bind(mainColorDarkDouble) !important;
+  font-family: inherit;
 }
 
 .comment-textarea::placeholder {
@@ -332,7 +355,7 @@ h2 {
 
 .comment-has-tip {
   width: 100%;
-  padding: 12px 0;
+	padding: 12px 0;
 	border: none;
 	border-radius: 6px;
   text-align: center;
@@ -394,6 +417,28 @@ h2 {
   opacity: 1 !important;
 }
 
+.sort-text-style {
+  font-size: 15px;
+  color: v-bind(mainColorDarkDouble);
+	font-weight: 600;
+	line-height: 1;
+	background: transparent;
+	padding: 0;
+	margin: 0;
+  position: relative;
+}
+.sort-text-style::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -10px;
+  width: 100%;
+	height: 4px;
+	border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
+  opacity: 1 !important;
+}
+
 .comments-list-container {
   margin-top: 20px;
 }
@@ -411,8 +456,9 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+	padding: 6px 8px;
 	border-radius: 4px;
+  flex-wrap: nowrap;
 }
 
 .my-tag {
@@ -429,22 +475,20 @@ h2 {
 	border-radius: 10px;
 }
 
-/* ✅ 核心新增：左侧竖线容器 - 关键样式 */
 .comment-left-line-wrapper {
   position: relative;
-  padding-left: 16px; /* 竖线和内容的间距 */
-  margin-bottom: 8px; /* 和底部横线的间距 */
+	padding-left: 16px;
+  margin-bottom: 8px;
 }
-/* ✅ 左侧竖线 - 样式与排序按钮横线完全一致 */
 .comment-left-line-wrapper::before {
   content: '';
   position: absolute;
   left: -30px;
-  top: 0; /* 对齐用户名顶部 */
-  bottom: 0; /* 对齐评论内容底部 */
-  width: 4px; /* 和排序按钮横线高度一致 */
-  border-radius: 2px; /* 和排序按钮横线圆角一致 */
-  background-color: v-bind(mainColorDark) !important; /* 和排序按钮横线颜色一致 */
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
 }
 
 .comment-content {
@@ -452,7 +496,7 @@ h2 {
   margin-bottom: 0;
   font-size: 14px;
   font-weight: 400;
-  padding: 8px;
+	padding: 8px;
 	border-radius: 4px;
 }
 
@@ -462,7 +506,7 @@ h2 {
   align-items: center;
   font-size: 12px;
   font-weight: 400;
-  padding: 6px 8px;
+	padding: 6px 8px;
 	border-radius: 4px;
 }
 
@@ -472,7 +516,8 @@ h2 {
 
 .comment-actions {
   display: flex;
-  gap: 10px;
+  gap: 0;
+  align-items: center;
 }
 
 .like-btn {
@@ -485,10 +530,16 @@ h2 {
 	padding: 4px 8px;
 	border-radius: 4px;
   transition: all 0.2s;
+  font-size: 12px;
 }
 
 .like-btn:hover {
   background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* ✅ 核心修改：屏蔽按钮继承点赞按钮样式，无需额外属性 */
+.block-btn {
+  /* 仅保留独立标识，样式完全继承 like-btn */
 }
 
 .delete-comment-btn {
@@ -496,35 +547,12 @@ h2 {
 	border: none;
 	border-radius: 4px;
   cursor: pointer;
-  font-size: 12px;
+	font-size: 12px;
   transition: all 0.2s;
 }
 
 .delete-comment-btn:hover {
   opacity: 0.95;
-  filter: brightness(0.9);
-}
-
-.block-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-	border: none;
-	border-radius: 50%;
-	width: 24px;
-	height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-	font-size: 12px;
-  opacity: 0.7;
-  transition: all 0.2s;
-  z-index: 2;
-}
-
-.block-btn:hover {
-  opacity: 1;
   filter: brightness(0.9);
 }
 
@@ -544,7 +572,7 @@ h2 {
 	border-radius: 4px;
   font-size: 15px;
   font-weight: 600;
-  text-align: center;
+	text-align: center;
 	border: none !important;
 }
 </style>

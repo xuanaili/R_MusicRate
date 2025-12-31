@@ -2,16 +2,12 @@
 export default {
   // 专辑/音乐 通用标签库 ✅新增这一段
   albumTagOptions: [
-    'Pop',
-    'Rock',
-    'Jazz',
-    'Classical',
-    'Hip-hop',
-    'Electronic',
-    'Folk',
-    'R&B',
-    'Country',
-    'Metal',
+      'Mandopop【普通话流行】',
+      'Contemporary_RB【现代R&B】',
+      'Pop【流行】',
+      'Bedroom_Pop【卧室流行】',
+      'Afro_Jazz【非洲爵士】',
+      'Singer_Songwriter【创作歌手】',
     'Jazz Rap【爵士说唱】',
     'Abstract Hip-Hop【抽象说唱】',
     'UK Hip-Hop【英伦说唱】',

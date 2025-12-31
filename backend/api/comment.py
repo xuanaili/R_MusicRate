@@ -27,6 +27,8 @@ def register_comment_routes(app):
             music_id = data.get('musicId')
             comment = data.get('comment')
             score = data.get('score', 0)
+            # ============ 新增：获取前端传入的听取时长 ============
+            listening_duration = data.get('listening_duration', 0)
 
             # 校验必填字段
             if not music_id or not comment:
@@ -45,7 +47,11 @@ def register_comment_routes(app):
 
             # 更新评论和评分
             comments = json.loads(album["comments"]) if album["comments"] else []
-            comments.append(comment)
+            # ============ 新增：评论改为对象格式，存入内容+听取时长 ============
+            comments.append({
+                "content": comment,
+                "listening_duration": listening_duration
+            })
             new_score = album["score"]
             if score > 0:
                 new_score = round((album["score"] + score) / 2, 1)
@@ -84,6 +90,7 @@ def register_comment_routes(app):
                     "tracks": json.loads(a["tracks"]) if a["tracks"] else [],
                     "review": json.loads(a["review"]) if a["review"] else {},
                     "score": a["score"],
+                    # ============ 保持原解析逻辑，直接返回包含时长的评论对象 ============
                     "comments": json.loads(a["comments"]) if a["comments"] else []
                 }
                 album_list.append(a_dict)
@@ -106,6 +113,8 @@ def register_comment_routes(app):
 
             data = request.get_json()
             comment = data.get('comment')
+            # ============ 新增：获取前端传入的听取时长 ============
+            listening_duration = data.get('listening_duration', 0)
 
             # 校验必填字段
             if not comment:
@@ -124,7 +133,11 @@ def register_comment_routes(app):
 
             # 更新评论
             comments = json.loads(album["comments"]) if album["comments"] else []
-            comments.append(comment)
+            # ============ 新增：评论改为对象格式，存入内容+听取时长 ============
+            comments.append({
+                "content": comment,
+                "listening_duration": listening_duration
+            })
 
             # 保存更新（评分保持不变）
             cursor.execute(f'''
@@ -194,6 +207,8 @@ def register_comment_routes(app):
             data = request.get_json()
             album_id = data.get('album_id')
             content = data.get('content', '').strip()
+            # ============ 新增：获取前端传入的听取时长，核心修改 ============
+            listening_duration = data.get('listening_duration', 0)
 
             # ===== 1. 基础参数校验 =====
             if not album_id or not content:
@@ -223,14 +238,14 @@ def register_comment_routes(app):
                 return jsonify({"code": 404, "msg": "用户不存在！"}), 404
             username = user['username']
 
-            # ===== 4. 插入评论 =====
+            # ===== 4. 插入评论 核心修改：新增 listening_duration 字段入库 =====
             create_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             sql = '''
                 INSERT INTO album_comments (
-                    album_id, user_id, username, content, create_time
-                ) VALUES (%s, %s, %s, %s, %s)
+                    album_id, user_id, username, content, listening_duration, create_time
+                ) VALUES (%s, %s, %s, %s, %s, %s)
             '''
-            cursor.execute(sql, (album_id, current_user_id, username, content, create_time))
+            cursor.execute(sql, (album_id, current_user_id, username, content, listening_duration, create_time))
             db.commit()
             comment_id = cursor.lastrowid
             cursor.close()
@@ -245,7 +260,7 @@ def register_comment_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"发布评论失败：{str(e)}"}), 500
 
-    #4. 获取专辑的所有公共评论
+    #4. 获取专辑的所有公共评论 核心修改：查询结果中包含 listening_duration 并返回前端
     @app.route('/api/album/pool/comment/list/<int:album_id>', methods=['GET', 'OPTIONS'])
     @login_required
     def get_public_album_comments(album_id):
@@ -256,9 +271,9 @@ def register_comment_routes(app):
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # 查询评论（按时间倒序）
+            # 查询评论（按时间倒序） 核心修改：SELECT 中新增 listening_duration 字段
             sql = '''
-                SELECT id, album_id, user_id, username, content, create_time, like_count, like_user_ids
+                SELECT id, album_id, user_id, username, content, listening_duration, create_time, like_count, like_user_ids
                 FROM album_comments 
                 WHERE album_id = %s
                 ORDER BY create_time DESC
@@ -273,6 +288,8 @@ def register_comment_routes(app):
                 comment['create_time'] = comment['create_time'].strftime('%Y-%m-%d %H:%M:%S')
                 # 解析点赞用户列表
                 comment['like_user_ids'] = comment['like_user_ids'].split(',') if comment['like_user_ids'] else []
+                # 兜底：确保时长字段是数字类型，防止空值
+                comment['listening_duration'] = comment['listening_duration'] or 0
 
             return jsonify({
                 "code": 200,

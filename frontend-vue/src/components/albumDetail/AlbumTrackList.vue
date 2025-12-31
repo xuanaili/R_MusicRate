@@ -34,8 +34,8 @@
                   :class="{active: activeTab === 'tracks' ? isTrackEditMode : isFavouriteEditMode}"
                 >
                   {{ activeTab === 'tracks'
-                    ? (isTrackEditMode ? '✅ 保存曲目' : '✏️ 编辑曲目')
-                    : (isFavouriteEditMode ? '✅ 保存时间戳' : '✏️ 编辑时间戳')
+                    ? (isTrackEditMode ? '保存曲目' : '编辑曲目')
+                    : (isFavouriteEditMode ? '保存时间戳' : '编辑时间戳')
                   }}
                 </button>
 
@@ -47,7 +47,7 @@
                   :class="{active: isDurationMode}"
                   style="margin-left: 8px;"
                 >
-                  {{ isDurationMode ? '⏰ 切换为时间戳输入' : '🕒 切换为时长输入' }}
+                  {{ isDurationMode ? '切换为时间戳' : '切换为时长' }}
                 </button>
               </div>
             </div>
@@ -192,7 +192,7 @@
         <div class="rate-container">
           <div class="rate-content-wrap">
             <div class="rate-text-area">
-              <h3>个人感觉评分 (0-100)</h3>
+              <h3>整体感觉</h3>
 <div class="rate-score">{{ score.toFixed(1) }} 分</div>
               <button class="reset-rate-btn" @click="resetRating">重置评分</button>
             </div>
@@ -230,91 +230,53 @@ export default {
       required: true,
       default: () => ({})
     },
-    tracks: {
-      type: Array,
-      default: () => []
-    },
-    tracksTime: {
-      type: Array,
-      default: () => []
-    },
-    favourite_tracks: {
-      type: Array,
-      default: () => []
-    },
-    favourite_tracks_time: {
-      type: Array,
-      default: () => []
-    },
-    mainColor: {
-      type: String,
-      required: true,
-      default: '#42b983'
-    },
-    mainColorDark: {
-      type: String,
-      required: true,
-      default: '#2f9465'
-    },
-    mainColorDarkDouble: {
-      type: String,
-      required: true,
-      default: '#257d51'
-    },
+    tracks: { type: Array, default: () => [] },
+    tracksTime: { type: Array, default: () => [] },
+    favourite_tracks: { type: Array, default: () => [] },
+    favourite_tracks_time: { type: Array, default: () => [] },
+    mainColor: { type: String, required: true, default: '#42b983' },
+    mainColorDark: { type: String, required: true, default: '#2f9465' },
+    mainColorDarkDouble: { type: String, required: true, default: '#257d51' },
     mainColorWhite: {type: String, required: true, default: '#57c592'},
     mainColorWhiteDouble: {type: String, required: true, default: '#6cd1a1'}
   },
   data() {
     return {
-      activeTab: 'tracks', // tracks=单曲列表 favourite=喜欢时间戳
-      isTrackEditMode: false, // 普通曲目编辑状态
-      isFavouriteEditMode: false, // 喜欢时间戳编辑状态
-      trackList: [], // 普通曲目数据 {name: '', duration: '', sec: 秒数, score: 评分0-100, playDuration:'' 单曲时长}
-      favouriteTrackList: [], // 收藏曲目数据 {name: '', duration: '', sec: 秒数}
-      // 评分组件相关数据
-      score: 0,        // 最终评分 0-100 【全局个人感觉评分】
-      isRating: false, // 是否正在按压评分
-      ratingTimer: null,// 评分定时器
-      // ✅ 单首曲目评分相关 - 新增存储当前滑块DOM
+      activeTab: 'tracks',
+      isTrackEditMode: false,
+      isFavouriteEditMode: false,
+      trackList: [],
+      favouriteTrackList: [],
+      score: 0,        // 全局个人感觉评分
+      isRating: false,
+      ratingTimer: null,
       isTrackScoring: false,
       currentTrackIdx: -1,
-      currentSliderDom: null, // 存储当前操作的进度条DOM节点
-      // ✅ 时长/时间戳 切换模式状态
+      currentSliderDom: null,
       isDurationMode: false,
-      // ✅ 纯拖尾特效 - 移除主球相关数据，只保留拖尾数组
-      ballAnimationId: null,  // 动画帧ID
-      tailBalls: [],          // 拖尾小球数组 [{dom, alpha}]
-      wrapDom: null,        // 动画容器dom
+      ballAnimationId: null,
+      tailBalls: [],
+      wrapDom: null,
+      isScalingUp: true,
 
-
-      isScalingUp: true, // 新增：true=放大，false=缩小
     };
   },
   watch: {
-    tracks: {
-      handler() {
-        this.initTrackList(true);
-      }, deep: true
-    },
-    tracksTime: {
-      handler() {
-        this.initTrackList(true);
-      }, deep: true
-    },
-    favourite_tracks: {
-      handler() {
-        this.initFavouriteTrackList();
-      }, deep: true
-    },
-    favourite_tracks_time: {
-      handler() {
-        this.initFavouriteTrackList();
-      }, deep: true
-    },
+    tracks: { handler() {this.initTrackList(true)}, deep: true },
+    tracksTime: { handler() {this.initTrackList(true)}, deep: true },
+    favourite_tracks: { handler() {this.initFavouriteTrackList()}, deep: true },
+    favourite_tracks_time: { handler() {this.initFavouriteTrackList()}, deep: true },
+    // ✅ 修复核心1：监听 album.id 变化（切专辑的核心监听），必加！！！
+    // 路由跳转新专辑时，组件复用，只有album.id变化，这里是触发「保存旧评分+读取新评分」的核心入口
     album: {
-      handler() {
+      handler(newVal, oldVal) {
+        // 当专辑ID变化时：先保存【上一张专辑】的评分 → 再初始化新专辑数据 → 再读取新专辑评分
+        if(oldVal && oldVal.id && newVal && newVal.id && oldVal.id !== newVal.id) {
+          this.saveAllScore(); // 保存上一张专辑的评分，永不丢失
+        }
         this.initTrackList(true);
         this.initFavouriteTrackList();
+        this.getAllScore(); // 读取新专辑的历史评分
       }, deep: true
     }
   },
@@ -322,25 +284,18 @@ export default {
     this.initTrackList();
     this.initFavouriteTrackList();
     this.getAllScore();
-    // ✅ 初始化拖尾动画
-    this.$nextTick(() => {
-      this.initBallAnimation();
-    });
-    // ✅ 窗口大小变化重新适配
+    this.$nextTick(() => { this.initBallAnimation(); });
     window.addEventListener('resize', this.initBallAnimation);
   },
   activated() {
     this.initTrackList(true);
     this.initFavouriteTrackList();
     this.getAllScore();
-    // ✅ 组件激活时重新初始化动画
-    this.$nextTick(() => {
-      this.initBallAnimation();
-    });
+    this.$nextTick(() => { this.initBallAnimation(); });
   },
   deactivated() {
-    this.saveAllScore();
-    this.destroyBallAnimation(); // 停止动画
+    this.saveAllScore(); // 组件失活时保存
+    this.destroyBallAnimation();
   },
   beforeDestroy() {
     clearInterval(this.ratingTimer);
@@ -348,10 +303,8 @@ export default {
     this.currentTrackIdx = -1;
     this.currentSliderDom = null;
     document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
-    this.saveAllScore();
-    // ✅ 销毁动画，防止内存泄漏
+    this.saveAllScore(); // 组件销毁时保存
     this.destroyBallAnimation();
-    // ✅ 移除窗口监听
     window.removeEventListener('resize', this.initBallAnimation);
   },
   methods: {
@@ -359,9 +312,9 @@ export default {
       try {
         const albumId = this.album.id;
         if (!albumId) return;
-        let scoreList = [this.score];
+        let scoreList = [this.score]; // 第一位是全局评分
         this.trackList.forEach(item => {
-          scoreList.push(item.score || 0);
+          scoreList.push(item.score || 0); // 后面是每首单曲的评分
         });
         await this.$axios.put(`/api/album/score/save/${albumId}`, {
           score_list: scoreList
@@ -371,6 +324,7 @@ export default {
             'Content-Type': 'application/json'
           }
         });
+        console.log('✅ 评分保存成功：', albumId, scoreList);
       } catch (err) {
         console.error('保存评分失败：', err);
       }
@@ -380,35 +334,40 @@ export default {
         const albumId = this.album.id;
         if (!albumId) return;
         const res = await this.$axios.get(`/api/album/score/get/${albumId}`, {
-          headers: {
-            'Authorization': localStorage.getItem('token') || ''
-          }
+          headers: { 'Authorization': localStorage.getItem('token') || '' }
         });
         if (res.data.code === 200 && res.data.data.score_list) {
           const scoreList = res.data.data.score_list;
           if (Array.isArray(scoreList) && scoreList.length > 0) {
-            this.score = scoreList[0] || 0;
+            this.score = scoreList[0] || 0; // 第一位赋值全局评分
+            // 循环赋值每首单曲评分
             this.trackList.forEach((item, idx) => {
               item.score = scoreList[idx + 1] || 0;
             });
           }
         }
+        console.log('✅ 评分读取成功：', albumId, this.score);
       } catch (err) {
         console.error('读取评分失败：', err);
       }
     },
+    // ✅ 修复核心2：新增【主动触发保存评分】的方法，给父组件调用，必加！！！
+    // 父组件切歌/关侧边栏时，调用这个方法，强制保存当前评分
+    async triggerSaveScore() {
+      await this.saveAllScore();
+    },
+    // ✅ 修复核心3：新增【主动触发读取评分】的方法，可选加
+    async triggerGetScore() {
+      await this.getAllScore();
+    },
+
+    // 以下是你原有所有方法，完全不变，直接复制保留 ↓↓↓
     timeToSeconds(timeStr) {
       if (!timeStr || timeStr.length === 0) return 0;
       let timeArr = timeStr.split(':').map(item => Number(item)).filter(item => !isNaN(item));
       let hours = 0, minutes = 0, seconds = 0;
-      if (timeArr.length === 2) {
-        minutes = timeArr[0];
-        seconds = timeArr[1];
-      } else if (timeArr.length === 3) {
-        hours = timeArr[0];
-        minutes = timeArr[1];
-        seconds = timeArr[2];
-      }
+      if (timeArr.length === 2) { minutes = timeArr[0]; seconds = timeArr[1]; }
+      else if (timeArr.length === 3) { hours = timeArr[0]; minutes = timeArr[1]; seconds = timeArr[2]; }
       minutes = Math.min(Math.max(minutes, 0), 59);
       seconds = Math.min(Math.max(seconds, 0), 59);
       hours = Math.max(hours, 0);
@@ -426,17 +385,13 @@ export default {
       if (!val) return '';
       let filterVal = val.replace(/[^0-9:]/g, '');
       const colonCount = filterVal.split(':').length - 1;
-      if (colonCount > 2) {
-        filterVal = filterVal.substring(0, filterVal.lastIndexOf(':'));
-      }
+      if (colonCount > 2) filterVal = filterVal.substring(0, filterVal.lastIndexOf(':'));
       return filterVal;
     },
     initTrackList(keepScore = false) {
       const oldScoreMap = {};
       if (keepScore && this.trackList.length > 0) {
-        this.trackList.forEach((item, idx) => {
-          oldScoreMap[idx] = item.score || 0;
-        });
+        this.trackList.forEach((item, idx) => { oldScoreMap[idx] = item.score || 0; });
       }
       this.trackList = [];
       const trackNames = Array.isArray(this.tracks) && this.tracks.length > 0 ? this.tracks : [];
@@ -446,10 +401,8 @@ export default {
           const dbSec = trackSecs[idx] || 0;
           this.trackList.push({
             name: name.trim() || '未知曲目',
-            sec: dbSec,
-            duration: this.secondsToTime(dbSec),
-            playDuration: '0:00:00',
-            score: keepScore ? oldScoreMap[idx] || 0 : 0
+            sec: dbSec, duration: this.secondsToTime(dbSec),
+            playDuration: '0:00:00', score: keepScore ? oldScoreMap[idx] || 0 : 0
           });
         });
       } else {
@@ -463,11 +416,7 @@ export default {
       if (trackNames.length > 0) {
         trackNames.forEach((name, idx) => {
           const dbSec = trackSecs[idx] || 0;
-          this.favouriteTrackList.push({
-            name: name.trim() || '未知曲目',
-            sec: dbSec,
-            duration: this.secondsToTime(dbSec)
-          });
+          this.favouriteTrackList.push({ name: name.trim() || '未知曲目', sec: dbSec, duration: this.secondsToTime(dbSec) });
         });
       } else {
         this.favouriteTrackList = [{name: '未知曲目', sec: 0, duration: '0:00:00'}];
@@ -489,9 +438,7 @@ export default {
     toggleDurationMode() {
       this.isDurationMode = !this.isDurationMode;
       if (this.isDurationMode) {
-        this.trackList.forEach(item => {
-          item.playDuration = item.playDuration || '0:00:00';
-        })
+        this.trackList.forEach(item => { item.playDuration = item.playDuration || '0:00:00'; })
       }
     },
     handleDurationInputBlur(idx) {
@@ -505,9 +452,7 @@ export default {
     calcTrackTimestamp() {
       let totalSec = 0;
       this.trackList.forEach((track, idx) => {
-        if (idx === 0) {
-          totalSec = 0;
-        }
+        if (idx === 0) totalSec = 0;
         track.duration = this.secondsToTime(totalSec);
         track.sec = totalSec;
         const playSec = this.timeToSeconds(track.playDuration);
@@ -517,44 +462,31 @@ export default {
     async toggleEditStatus(type) {
       if (type === 'tracks') {
         if (this.isTrackEditMode) {
-          if (this.isDurationMode) {
-            this.calcTrackTimestamp();
-          }
+          if (this.isDurationMode) this.calcTrackTimestamp();
           await this.saveTrackList('tracks');
           this.isTrackEditMode = false;
           this.isDurationMode = false;
-        } else {
-          this.isTrackEditMode = true;
-        }
+        } else { this.isTrackEditMode = true; }
       } else {
         if (this.isFavouriteEditMode) {
           await this.saveTrackList('favourite');
           this.isFavouriteEditMode = false;
-        } else {
-          this.isFavouriteEditMode = true;
-        }
+        } else { this.isFavouriteEditMode = true; }
       }
     },
     addNewTrack(type) {
       if (type === 'tracks') {
         this.trackList.push({name: '', duration: '0:00:00', sec: 0, playDuration: '0:00:00', score: 0});
-        if (this.isDurationMode) {
-          this.calcTrackTimestamp();
-        }
+        if (this.isDurationMode) this.calcTrackTimestamp();
       } else {
         this.favouriteTrackList.push({name: '', duration: '0:00:00', sec: 0});
       }
     },
     deleteTrack(type, idx) {
       let targetList = type === 'tracks' ? this.trackList : this.favouriteTrackList;
-      if (targetList.length <= 1) {
-        alert('至少保留1条哦！');
-        return;
-      }
+      if (targetList.length <= 1) { alert('至少保留1条哦！'); return; }
       targetList.splice(idx, 1);
-      if (type === 'tracks' && this.isDurationMode) {
-        this.calcTrackTimestamp();
-      }
+      if (type === 'tracks' && this.isDurationMode) this.calcTrackTimestamp();
     },
     async saveTrackList(type) {
       try {
@@ -563,37 +495,23 @@ export default {
           submitList = this.trackList.map(item => item.name.trim() || '未知曲目');
           submitSecArr = this.trackList.map(item => item.sec || 0);
           apiUrl = `/api/album/update/tracks/${this.album.id}`;
-          emitKey1 = 'tracks';
-          emitKey2 = 'tracks_time';
+          emitKey1 = 'tracks'; emitKey2 = 'tracks_time';
         } else {
           submitList = this.favouriteTrackList.map(item => item.name.trim() || '未知曲目');
           submitSecArr = this.favouriteTrackList.map(item => item.sec || 0);
           apiUrl = `/api/album/update/favourite_tracks/${this.album.id}`;
-          emitKey1 = 'favourite_tracks';
-          emitKey2 = 'favourite_tracks_time';
+          emitKey1 = 'favourite_tracks'; emitKey2 = 'favourite_tracks_time';
         }
         const fullTrackList = submitList.map(item => ({name: item}));
-
         const res = await this.$axios.put(apiUrl, {
-          tracks: submitList,
-          full_tracks: fullTrackList,
-          tracks_time: submitSecArr
+          tracks: submitList, full_tracks: fullTrackList, tracks_time: submitSecArr
         }, {
-          headers: {
-            'Authorization': localStorage.getItem('token') || '',
-            'Content-Type': 'application/json'
-          }
+          headers: { 'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json' }
         });
-
         if (res.data.code === 200) {
           alert(type === 'tracks' ? '✅ 曲目列表保存成功！' : '✅ 喜欢时间戳保存成功！');
-          this.$emit('update-album-data', {
-            [emitKey1]: submitList,
-            [emitKey2]: submitSecArr
-          });
-        } else {
-          alert(`❌ 保存失败：${res.data.msg}`);
-        }
+          this.$emit('update-album-data', { [emitKey1]: submitList, [emitKey2]: submitSecArr });
+        } else { alert(`❌ 保存失败：${res.data.msg}`); }
       } catch (err) {
         console.error('保存失败：', err);
         alert(err.response?.data?.msg || '❌ 保存失败，请重试！');
@@ -609,44 +527,30 @@ export default {
       const targetSec = this.favouriteTrackList[idx].sec || 0;
       this.$emit('track-jump', targetSec);
     },
-  // ✅ 重写评分逻辑：增速变慢 + 循环缩放
-  startRating() {
-    this.isRating = true;
-    this.isScalingUp = true; // 初始为放大状态
-    clearInterval(this.ratingTimer); // 先清除旧定时器，防止叠加
-
-    this.ratingTimer = setInterval(() => {
-      if (this.isScalingUp) {
-        // 放大阶段：增速变慢，每次+0.5（原先是+1，速度减半）
-        if (this.score < 100) {
-          this.score += 0.5;
+    startRating() {
+      this.isRating = true;
+      this.isScalingUp = true;
+      clearInterval(this.ratingTimer);
+      this.ratingTimer = setInterval(() => {
+        if (this.isScalingUp) {
+          if (this.score < 100) this.score += 0.5;
+          else this.isScalingUp = false;
         } else {
-          // 达到100，切换为缩小状态
-          this.isScalingUp = false;
+          if (this.score > 0) this.score -= 0.5;
+          else this.isScalingUp = true;
         }
-      } else {
-        // 缩小阶段：减速缩小，每次-0.5
-        if (this.score > 0) {
-          this.score -= 0.5;
-        } else {
-          // 达到0，切换为放大状态
-          this.isScalingUp = true;
-        }
-      }
-    }, 20); // 定时器间隔20ms（原10ms），进一步降低速率，更平缓
-  },
-
-  stopRating() {
-    this.isRating = false;
-    clearInterval(this.ratingTimer);
-  },
-
-  resetRating() {
-    this.score = 0;
-    this.isRating = false;
-    this.isScalingUp = true; // 重置缩放状态
-    clearInterval(this.ratingTimer);
-  },
+      }, 20);
+    },
+    stopRating() {
+      this.isRating = false;
+      clearInterval(this.ratingTimer);
+    },
+    resetRating() {
+      this.score = 0;
+      this.isRating = false;
+      this.isScalingUp = true;
+      clearInterval(this.ratingTimer);
+    },
     startTrackScore(e, idx) {
       this.isTrackScoring = true;
       this.currentTrackIdx = idx;
@@ -678,8 +582,6 @@ export default {
       this.currentSliderDom = e.currentTarget;
       this.calcTrackScore(e);
     },
-
-    // ✅ ✅ ✅ 纯拖尾特效核心方法 - 无主球+零延迟+精准贴合 ✅ ✅ ✅
     initBallAnimation() {
       this.destroyBallAnimation();
       this.wrapDom = this.$refs.ballWrap;
@@ -688,17 +590,13 @@ export default {
     },
     handleMouseMove(e) {
       if (!this.wrapDom) return;
-      const x = e.offsetX;
-      const y = e.offsetY;
-      // 直接生成拖尾，无主球、无过渡动画，百分百跟手，零延迟
+      const x = e.offsetX; const y = e.offsetY;
       this.createTailBall(x, y);
     },
     createTailBall(x, y) {
-      const ballSize = Math.floor(Math.random() * 12) + 6; // 随机尺寸6-18px，拖尾更细腻
-      const halfSize = ballSize / 2; // 精准居中，零偏移
+      const ballSize = Math.floor(Math.random() * 12) + 6;
+      const halfSize = ballSize / 2;
       const ballDom = document.createElement('div');
-      // ✅ 修改1：删除随机彩色池，改用【主色渐变系列】从mainColorDarkDouble 到 mainColorWhiteDouble 渐变
-      // 同色系渐变过渡，包含深浅/高亮/渐变三种效果，视觉统一不杂乱
       const mainGradients = [
         `linear-gradient(135deg, ${this.mainColorDarkDouble} 0%, ${this.mainColorDark} 100%)`,
         `linear-gradient(135deg, ${this.mainColorDark} 0%, ${this.mainColor} 100%)`,
@@ -707,7 +605,6 @@ export default {
         `linear-gradient(135deg, ${this.mainColorDarkDouble} 0%, ${this.mainColorWhiteDouble} 100%)`
       ];
       const randomColor = mainGradients[Math.floor(Math.random() * mainGradients.length)];
-      // 核心：无任何transition过渡，纯即时渲染，零延迟；精准居中鼠标
       ballDom.style.cssText = `
         position:absolute; width:${ballSize}px; height:${ballSize}px; border-radius:50%;
         background:${randomColor}; pointer-events:none; z-index:998;
@@ -721,13 +618,9 @@ export default {
         this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
         return;
       }
-      // ✅ 修改2：微调拖尾消失速度，配合渐变颜色更丝滑
       this.tailBalls = this.tailBalls.filter(ball => {
-        ball.alpha -= 0.01; // 放慢消失速度，渐变拖尾更明显
-        if (ball.alpha <= 0) {
-          ball.dom.remove();
-          return false;
-        }
+        ball.alpha -= 0.01;
+        if (ball.alpha <= 0) { ball.dom.remove(); return false; }
         ball.dom.style.opacity = ball.alpha;
         ball.dom.style.transform = `scale(${ball.alpha})`;
         return true;

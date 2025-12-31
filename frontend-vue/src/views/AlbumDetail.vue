@@ -29,6 +29,7 @@
       />
 
       <AlbumTrackList
+        ref="albumTrackListRef"
         v-if="activeTab === 'tracks'"
         :album="album"
         :tracks="album.tracks || ['未知曲目']"
@@ -239,7 +240,8 @@ export default {
         is_customized: 0,
         album_intro: '',
         tags: [],
-        main_type: []
+        main_type: [],
+
       },
       activeTab: 'base',
       newCommentContent: '',
@@ -287,6 +289,7 @@ export default {
       albumLoading: true,
       currentPlaySourcePoolId: 0,  // 专门存 album_pool 的id=17
       currentPlayRealAlbumId: 0,   // 专门存 用户专辑表的id=27
+
     };
   },
   computed: {
@@ -984,11 +987,18 @@ export default {
       const myComment = this.filteredComments.find(comment => comment.user_id == this.currentUserId);
       const otherComments = this.filteredComments.filter(comment => comment.user_id != this.currentUserId);
 
-      if (this.sortType === 'time') {
-        otherComments.sort((a, b) => new Date(b.create_time) - new Date(a.create_time));
-      } else if (this.sortType === 'like') {
-        otherComments.sort((a, b) => b.like_count - a.like_count);
-      }
+  if (this.sortType === 'time') {
+    // 最新时间：创建时间降序 ✔️ 原有逻辑不变
+    otherComments.sort((a, b) => new Date(b.create_time) - new Date(a.create_time));
+  } else if (this.sortType === 'like') {
+    // 最多点赞：点赞数降序 ✔️ 原有逻辑不变
+    otherComments.sort((a, b) => b.like_count - a.like_count);
+  } else if (this.sortType === 'listen') {
+    // ✅✅✅ 新增核心：最长听取 排序规则
+    // 规则：听取时间 listening_duration 数值越大，越排在前面
+    // 容错处理：兼容 null/undefined/NaN，默认赋值0，防止排序报错
+    otherComments.sort((a, b) => (b.listening_duration || 0) - (a.listening_duration || 0));
+  }
 
       this.myComment = myComment;
       this.otherComments = otherComments;
@@ -1354,7 +1364,8 @@ export default {
           },
           data: {
             album_id: this.albumPoolId,
-            content: content
+            content: content,
+        listening_duration: this.album.listening_duration || 0
           }
         });
 
@@ -1430,6 +1441,7 @@ export default {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveUserPlaylistData();
     this.pauseListeningTimer(); // ✅✅✅ 新增：离开页面，自动暂停计时，保存时长
+    this.$refs.albumTrackListRef?.triggerSaveScore();
     next();
   },
   beforeUnmount() {

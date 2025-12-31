@@ -271,16 +271,44 @@ export default {
     this.handlePauseAndUploadDuration();
   },
   methods: {
-// ✅✅✅ 【彻底重构】子组件公共暂停方法 - 只做一件事：通知父组件执行上传+暂停，无任何其他逻辑
+// 父组件的 methods 中，找到这个方法，完整替换！
 async handlePauseAndUploadDuration() {
-  if (this.currentTrackIndex > -1) {
-    // 核心：只派发事件，告诉父组件「立刻暂停音频+上传时长」，无其他逻辑
-    this.$emit('trigger-upload-duration');
-    // 重置子组件的播放索引，清除状态残留
-    this.$emit('update:currentTrackIndex', -1);
-    console.log('✅ 子组件：已通知父组件执行暂停+上传时长');
+  try {
+    // ============ ✅✅✅ 核心新增 第一行：强制保存当前专辑的所有评分（全局评分+单曲评分） ============
+    if (this.$parent?.$refs?.albumTrackListRef) {
+      await this.$parent.$refs.albumTrackListRef.triggerSaveScore();
+      console.log('✅ 父组件触发：专辑评分保存成功');
+    }
+
+    // ============ 你原有逻辑不变：上传听歌时长 + 暂停音频 ============
+    if (this.audioRef && !this.audioRef.paused) {
+      this.audioRef.pause();
+    }
+    if (this.currentAlbumId && this.listenDuration > 0) {
+      await this.$axios.post('/api/listen/duration/save', {
+        album_id: this.currentAlbumId,
+        duration: this.listenDuration
+      }, {
+        headers: { Authorization: localStorage.getItem('token') || '' }
+      });
+      console.log('✅ 父组件：听歌时长上传成功');
+    }
+    this.isPlaying = false;
+    this.listenDuration = 0;
+  } catch (err) {
+    console.error('暂停/上传时长/保存评分 失败：', err);
   }
 },
+    // ============ ✅✅✅ 新增方法1：主动触发读取当前专辑评分（给路由切换用） ============
+async triggerGetAlbumScore() {
+  if (this.$refs.albumTrackListRef && this.album.id) {
+    await this.$refs.albumTrackListRef.triggerGetScore();
+    console.log('✅ 父组件触发：读取专辑评分成功');
+  }
+},
+
+
+
     addPlaylistTab() {
       const tabName = prompt('请输入歌单名称：', '我的新歌单');
       if (tabName && tabName.trim()) {
@@ -441,71 +469,39 @@ async handlePauseAndUploadDuration() {
       this.saveUserPlaylistData && this.saveUserPlaylistData()
     },
 
-async handleJumpAlbumDetail(idx) {
-  if (this.isDraggingAction) return;
-  const albumItem = this.currentPlaylist[idx];
-  console.log('👉 点击专辑块，准备查询专辑ID并跳转', albumItem);
-  if (!albumItem || !albumItem.source_pool_id) {
-    this.$message?.warning('该专辑信息异常，无关联ID');
-    return;
-  }
-  const sourcePoolId = Number(albumItem.source_pool_id);
-  if (sourcePoolId < 1) {
-    this.$message?.warning('无效的专辑关联ID');
-    return;
-  }
-
-  try {
-    const res = await this.$axios.get('/api/album/get-id-by-source', {
-      params: {source_pool_id: sourcePoolId}
-    });
-    if (res.data.code === 200 && res.data.data?.album_id) {
-      const realAlbumId = res.data.data.album_id;
-      console.log('✅ 精准匹配成功：source_pool_id=', sourcePoolId, ' → album_id=', realAlbumId);
-
-      // ============ ↓↓↓ 核心新增代码 ↓↓↓ 必须加 ============
-      // 跳转前：强制暂停播放 + 上传时长 + 重置播放状态，await确保执行完成
-      await this.handlePauseAndUploadDuration();
-      // ============ ↑↑↑ 核心新增代码 ↑↑↑ 必须加 ============
-
-      this.$router.push({
-        path: `/album/detail/${realAlbumId}`,
-        query: {id: realAlbumId}
-      });
-      this.handleClose();
-      this.$emit('update:currentTrackIndex', -1);
-    } else if (res.data.code === 404) {
-      this.$message?.info(res.data.msg);
-    } else {
-      this.$message?.error(res.data.msg || '查询专辑信息失败');
-    }
-  } catch (err) {
-    console.error('❌ 查询专辑ID失败：', err);
-    this.$message?.error('跳转失败，请稍后重试');
-  }
-},
-
-    async handleJumpAlbumDetailByItem(album) {
-      console.log('👉 点击可添加专辑名，准备查询专辑ID并跳转', album);
-      if (!album || !album.source_pool_id) {
+ async handleJumpAlbumDetail(idx) {
+      if (this.isDraggingAction) return;
+      const albumItem = this.currentPlaylist[idx];
+      console.log('👉 点击专辑块，准备查询专辑ID并跳转', albumItem);
+      if (!albumItem || !albumItem.source_pool_id) {
         this.$message?.warning('该专辑信息异常，无关联ID');
         return;
       }
-      const sourcePoolId = Number(album.source_pool_id);
+      const sourcePoolId = Number(albumItem.source_pool_id);
       if (sourcePoolId < 1) {
         this.$message?.warning('无效的专辑关联ID');
         return;
       }
+
       try {
         const res = await this.$axios.get('/api/album/get-id-by-source', {
           params: {source_pool_id: sourcePoolId}
         });
         if (res.data.code === 200 && res.data.data?.album_id) {
+          const realAlbumId = res.data.data.album_id;
+          console.log('✅ 精准匹配成功：source_pool_id=', sourcePoolId, ' → album_id=', realAlbumId);
+
+          // ============ ↓↓↓ ✅ 核心修改：await 等待评分保存完成 ↓↓↓ ============
+          // 原代码：this.handlePauseAndUploadDuration();
+          // 修复后：必须加 await，确保「评分保存+暂停」执行完毕再跳转，数据绝不丢失
+          await this.handlePauseAndUploadDuration();
+
           this.$router.push({
-            path: `/album/detail/${res.data.data.album_id}`,
-            query: {id: res.data.data.album_id}
+            path: `/album/detail/${realAlbumId}`,
+            query: {id: realAlbumId}
           });
           this.handleClose();
+          this.$emit('update:currentTrackIndex', -1);
         } else if (res.data.code === 404) {
           this.$message?.info(res.data.msg);
         } else {
@@ -515,7 +511,42 @@ async handleJumpAlbumDetail(idx) {
         console.error('❌ 查询专辑ID失败：', err);
         this.$message?.error('跳转失败，请稍后重试');
       }
+    },
+
+async handleJumpAlbumDetailByItem(album) {
+  console.log('👉 点击可添加专辑名，准备查询专辑ID并跳转', album);
+  if (!album || !album.source_pool_id) {
+    this.$message?.warning('该专辑信息异常，无关联ID');
+    return;
+  }
+  const sourcePoolId = Number(album.source_pool_id);
+  if (sourcePoolId < 1) {
+    this.$message?.warning('无效的专辑关联ID');
+    return;
+  }
+  try {
+    const res = await this.$axios.get('/api/album/get-id-by-source', {
+      params: {source_pool_id: sourcePoolId}
+    });
+    if (res.data.code === 200 && res.data.data?.album_id) {
+      // ============ ↓↓↓ 核心新增 必须加 await 等待保存完成 ↓↓↓ ============
+      await this.handlePauseAndUploadDuration();
+      // ================================================================
+      this.$router.push({
+        path: `/album/detail/${res.data.data.album_id}`,
+        query: {id: res.data.data.album_id}
+      });
+      this.handleClose();
+    } else if (res.data.code === 404) {
+      this.$message?.info(res.data.msg);
+    } else {
+      this.$message?.error(res.data.msg || '查询专辑信息失败');
     }
+  } catch (err) {
+    console.error('❌ 查询专辑ID失败：', err);
+    this.$message?.error('跳转失败，请稍后重试');
+  }
+}
   }
 };
 </script>

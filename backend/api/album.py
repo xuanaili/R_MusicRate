@@ -341,7 +341,8 @@ def register_album_routes(app):
                 "sync_pool_update": album.get("sync_pool_update", 1),
                 "is_customized": album.get("is_customized", 0),
                 "tracks_time": safe_json_loads(album.get("tracks_time")),
-                "favourite_tracks_time": safe_json_loads(album.get("favourite_tracks_time"))
+                "favourite_tracks_time": safe_json_loads(album.get("favourite_tracks_time")),
+            "listening_duration": album.get("listening_duration", 0) or 0
             }
             return jsonify({"code": 200, "msg": "获取专辑详情成功！", "data": album_dict})
         except Exception as e:
