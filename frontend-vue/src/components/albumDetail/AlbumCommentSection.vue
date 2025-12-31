@@ -160,7 +160,7 @@ export default {
       default: () => ({})
     },
     albumPoolId: {
-      type: String,
+      type: [String, Number],
       required: true,
       default: ''
     },

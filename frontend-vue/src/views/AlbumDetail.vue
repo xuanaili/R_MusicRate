@@ -40,71 +40,71 @@
       />
 
       <AlbumReviewEditor
-        v-if="activeTab === 'review'"
-        :album="album"
-        :main-color="albumMainColor"
-        :main-color-dark="albumMainColorDark"
-        @add-review="addSingleReview"
-        @delete-single="deleteSingleReview"
-        @delete-all="deleteAllReview"
+          v-if="activeTab === 'review'"
+          :album="album"
+          :main-color="albumMainColor"
+          :main-color-dark="albumMainColorDark"
+          @add-review="addSingleReview"
+          @delete-single="deleteSingleReview"
+          @delete-all="deleteAllReview"
       />
 
       <AlbumCommentSection
-        v-if="activeTab === 'comments'"
-        :album="album"
-        :album-pool-id="albumPoolId"
-        :current-user-id="currentUserId"
-        :is-admin="isAdmin"
-        :blocked-comment-ids="blockedCommentIds"
-        :sort-type="sortType"
-        :public-comments="publicComments"
-        :has-comment="hasComment"
-        :my-comment="myComment"
-        :other-comments="otherComments"
-        :main-color="albumMainColor"
-        :main-color-dark="albumMainColorDark"
-        :main-color-dark-double="albumMainColorDarkDouble"
-        :main-color-white="albumMainColorWhite"
-        :main-color-white-double="albumMainColorWhiteDouble"
+          v-if="activeTab === 'comments'"
+          :album="album"
+          :album-pool-id="albumPoolId"
+          :current-user-id="currentUserId"
+          :is-admin="isAdmin"
+          :blocked-comment-ids="blockedCommentIds"
+          :sort-type="sortType"
+          :public-comments="publicComments"
+          :has-comment="hasComment"
+          :my-comment="myComment"
+          :other-comments="otherComments"
+          :main-color="albumMainColor"
+          :main-color-dark="albumMainColorDark"
+          :main-color-dark-double="albumMainColorDarkDouble"
+          :main-color-white="albumMainColorWhite"
+          :main-color-white-double="albumMainColorWhiteDouble"
 
-        @sort-change="changeSortType"
-        @block-comment="blockComment"
-        @unblock-all="unblockAllComments"
-        @submit-comment="submitPublicComment"
-        @like-comment="likePublicComment"
-        @delete-comment="deletePublicComment"
-        @update-comment-content="(val) => newCommentContent = val"
+          @sort-change="changeSortType"
+          @block-comment="blockComment"
+          @unblock-all="unblockAllComments"
+          @submit-comment="submitPublicComment"
+          @like-comment="likePublicComment"
+          @delete-comment="deletePublicComment"
+          @update-comment-content="(val) => newCommentContent = val"
       />
     </main>
 
     <!-- ✅ 核心修改：播放列表组件传参完整，双向绑定+防抖保存 -->
-<PlayerPlaylist
-  :visible="showPlaylistSidebar"
-  :main-color-dark="albumMainColorDark"
-  :main-color-dark-double="albumMainColorDarkDouble"
-  :active-menu-bg="activeMenuBg"
-  :current-user-id="currentUserId"
-  :albumList="albumList"
-  :current-track-index="currentTrackIndex"
-  :play-mode="playMode"
-  :playlistTabs="playlistTabs"
-  :activeTabIndex="activeTabIndex"
-  :currentAlbumId="currentAlbumId"
-  :currentPlaylistId="currentPlaylistId"
-  @play-track="handlePlayTrack"
-  @close-sidebar="handleClosePlaylistSidebar"
-  @update:currentTrackIndex="val => currentTrackIndex = val"
-  @update:playMode="val => playMode = val"
-  @update:playlistTabs="val => playlistTabs = val"
-  @update:activeTabIndex="val => activeTabIndex = val"
-  @trigger-upload-duration="pauseListeningTimer"
-/>
+    <PlayerPlaylist
+        :visible="showPlaylistSidebar"
+        :main-color-dark="albumMainColorDark"
+        :main-color-dark-double="albumMainColorDarkDouble"
+        :active-menu-bg="activeMenuBg"
+        :current-user-id="currentUserId"
+        :albumList="albumList"
+        :current-track-index="currentTrackIndex"
+        :play-mode="playMode"
+        :playlistTabs="playlistTabs"
+        :activeTabIndex="activeTabIndex"
+        :currentAlbumId="currentAlbumId"
+        :currentPlaylistId="currentPlaylistId"
+        @play-track="handlePlayTrack"
+        @close-sidebar="handleClosePlaylistSidebar"
+        @update:currentTrackIndex="val => currentTrackIndex = val"
+        @update:playMode="val => playMode = val"
+        @update:playlistTabs="val => playlistTabs = val"
+        @update:activeTabIndex="val => activeTabIndex = val"
+        @trigger-upload-duration="pauseListeningTimer"
+    />
 
     <!-- ✅ 底部播放器区域 核心重构：精准坐标对齐+透明背景 -->
     <div class="full-player-wrapper">
       <div class="album-rotate-box" @click="togglePlayPause" v-if="audioSrc && album.cover_img">
         <div class="album-rotate-circle" :class="{playing: isPlaying}">
-          <img :src="album.cover_img" alt="专辑封面" class="album-rotate-img" />
+          <img :src="album.cover_img" alt="专辑封面" class="album-rotate-img"/>
         </div>
       </div>
       <div class="album-rotate-box no-cover" v-else>
@@ -116,12 +116,12 @@
       <div class="player-right-box">
         <div class="music-player-core">
           <input
-            type="range"
-            class="progress-bar"
-            :value="currentProgress"
-            min="0"
-            max="100"
-            @input="handleProgressChange"
+              type="range"
+              class="progress-bar"
+              :value="currentProgress"
+              min="0"
+              max="100"
+              @input="handleProgressChange"
           />
           <div class="time-text">
             {{ formatTime(currentTime) }} / {{ durationFormat }}
@@ -131,12 +131,12 @@
             <span class="volume-icon">🔊</span>
             <div class="volume-dropdown" v-show="showVolume">
               <input
-                type="range"
-                class="volume-bar"
-                v-model="volume"
-                min="0"
-                max="1"
-                step="0.05"
+                  type="range"
+                  class="volume-bar"
+                  v-model="volume"
+                  min="0"
+                  max="1"
+                  step="0.05"
               />
             </div>
           </div>
@@ -150,7 +150,8 @@
               <button class="menu-btn upload-btn" @click="showUploadSidebar = true" v-if="isAdmin">
                 {{ audioSrc ? '更新音频' : '上传音频' }}
               </button>
-              <button class="menu-btn delete-btn" @click="handleDeleteAudio" v-if="isAdmin && audioSrc">删除音频</button>
+              <button class="menu-btn delete-btn" @click="handleDeleteAudio" v-if="isAdmin && audioSrc">删除音频
+              </button>
             </div>
           </div>
         </div>
@@ -164,16 +165,16 @@
         <button class="close-btn" @click="showUploadSidebar = false">×</button>
       </div>
       <div
-        class="upload-area"
-        @dragover.prevent
-        @drop.prevent="handleDrop"
+          class="upload-area"
+          @dragover.prevent
+          @drop.prevent="handleDrop"
       >
         <input
-          type="file"
-          ref="fileInput"
-          accept=".mp3"
-          class="file-input"
-          @change="handleFileChange"
+            type="file"
+            ref="fileInput"
+            accept=".mp3"
+            class="file-input"
+            @change="handleFileChange"
         />
         <div class="upload-tips">
           <p>📂 点击上传 或 拖拽MP3文件到此处</p>
@@ -181,7 +182,9 @@
         </div>
       </div>
       <div v-if="fileName" class="file-name">{{ fileName }}</div>
-      <div class="upload-status" :class="{success: statusClass === 'success', error: statusClass === 'error'}">{{ statusText }}</div>
+      <div class="upload-status" :class="{success: statusClass === 'success', error: statusClass === 'error'}">
+        {{ statusText }}
+      </div>
     </div>
     <div class="mask" v-show="showUploadSidebar" @click="showUploadSidebar = false"></div>
 
@@ -197,7 +200,7 @@ import AlbumReviewEditor from '@/components/albumDetail/AlbumReviewEditor'
 import AlbumCommentSection from '@/components/albumDetail/AlbumCommentSection'
 import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
 // ✅ 核心新增：引入评分计算工具函数
-import { calculateAlbumTotalScore } from '@/utils/scoreCalc.js'
+import {calculateAlbumTotalScore} from '@/utils/scoreCalc.js'
 
 export default {
   name: 'AlbumDetail',
@@ -1506,7 +1509,7 @@ export default {
   font-size: 14px;
   transition: all 0.2s;
   border-radius: 4px;
-	padding-left: 8px;
+  padding-left: 8px;
 }
 
 .menu-item:hover {
@@ -1669,7 +1672,7 @@ h4 {
   display: flex;
   flex-direction: column;
   align-items: center;
-	width: 20px;
+  width: 20px;
 }
 
 .volume-icon {
@@ -1738,7 +1741,7 @@ h4 {
   padding: 3px 0;
   min-width: 80px;
   z-index: 999;
-  border: 1px solid rgba(0,0,0,0.05);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .menu-btn.playlist-btn {
@@ -1794,7 +1797,7 @@ h4 {
   background: white;
   z-index: 999;
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
-	padding: 20px;
+  padding: 20px;
   box-sizing: border-box;
   overflow-y: auto;
 }

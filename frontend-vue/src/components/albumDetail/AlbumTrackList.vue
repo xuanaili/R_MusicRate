@@ -175,18 +175,16 @@
         </div>
       </div>
 
-      <!-- ✅ 右侧：弹性40% 上=评分组件(左文右图) | 下=节奏组件【自适应固定位置】 -->
+      <!-- ✅ 右侧：弹性40% 上=评分组件 | 下=节奏组件（透明+无标题） -->
       <div class="right-panel">
-        <!-- 上半部分：个人感觉评分组件 - 左侧标题分数按钮 + 右侧评分圆【修复后正常显示】 -->
+        <!-- 上半部分：个人感觉评分组件 -->
         <div class="rate-container">
           <div class="rate-content-wrap">
-            <!-- 左侧：标题 + 分数 + 重置按钮 -->
             <div class="rate-text-area">
               <h3>个人感觉评分 (0-100)</h3>
               <div class="rate-score">{{ score }} 分</div>
               <button class="reset-rate-btn" @click="resetRating">🔄 重置评分</button>
             </div>
-            <!-- 右侧：评分圆 【修复核心区，圆形正常显示】 -->
             <div class="rate-circle-area">
               <div class="outer-circle"
                 @mousedown="startRating"
@@ -199,9 +197,13 @@
           </div>
         </div>
 
-        <!-- 下半部分：节奏可视化组件 【✅ 引入抽离的独立音频可视化组件】 -->
+        <!-- 下半部分：节奏可视化组件 ✅ 隐藏标题+全透明背景+透明画布 -->
         <div class="rhythm-container">
-          <AudioWaveVisualizer :audio-element="audioElement" />
+          <!-- ✅ 移除标题 -->
+          <div class="ball-animation-wrap"
+               ref="ballWrap"
+               @mousemove="handleMouseMove"
+               @mouseleave="handleMouseLeave"></div>
         </div>
       </div>
     </div>
@@ -209,10 +211,8 @@
 </template>
 
 <script>
-import AudioWaveVisualizer from '@/components/AudioWave.vue';
 export default {
   name: 'AlbumTrackList',
-  components: { AudioWaveVisualizer },
   props: {
     album: {
       type: Object,
@@ -253,8 +253,10 @@ export default {
       currentSliderDom: null, // 存储当前操作的进度条DOM节点
       // ✅ 时长/时间戳 切换模式状态
       isDurationMode: false,
-      // 仅保留获取audio标签dom对象
-      audioElement: null
+      // ✅ 纯拖尾特效 - 移除主球相关数据，只保留拖尾数组
+      ballAnimationId: null,  // 动画帧ID
+      tailBalls: [],          // 拖尾小球数组 [{dom, alpha}]
+      wrapDom: null           // 动画容器dom
     };
   },
   watch: {
@@ -289,20 +291,25 @@ export default {
     this.initTrackList();
     this.initFavouriteTrackList();
     this.getAllScore();
+    // ✅ 初始化拖尾动画
     this.$nextTick(() => {
-      this.audioElement = this.$refs.audioRef;
+      this.initBallAnimation();
     });
+    // ✅ 窗口大小变化重新适配
+    window.addEventListener('resize', this.initBallAnimation);
   },
   activated() {
     this.initTrackList(true);
     this.initFavouriteTrackList();
     this.getAllScore();
+    // ✅ 组件激活时重新初始化动画
     this.$nextTick(() => {
-      this.audioElement = this.$refs.audioRef;
+      this.initBallAnimation();
     });
   },
   deactivated() {
     this.saveAllScore();
+    this.destroyBallAnimation(); // 停止动画
   },
   beforeDestroy() {
     clearInterval(this.ratingTimer);
@@ -311,6 +318,10 @@ export default {
     this.currentSliderDom = null;
     document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
     this.saveAllScore();
+    // ✅ 销毁动画，防止内存泄漏
+    this.destroyBallAnimation();
+    // ✅ 移除窗口监听
+    window.removeEventListener('resize', this.initBallAnimation);
   },
   methods: {
     async saveAllScore() {
@@ -616,16 +627,84 @@ export default {
       this.currentTrackIdx = idx;
       this.currentSliderDom = e.currentTarget;
       this.calcTrackScore(e);
+    },
+
+    // ✅ ✅ ✅ 纯拖尾特效核心方法 - 无主球+零延迟+精准贴合 ✅ ✅ ✅
+    initBallAnimation() {
+      this.destroyBallAnimation();
+      this.wrapDom = this.$refs.ballWrap;
+      if (!this.wrapDom) return;
+      this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
+    },
+    handleMouseMove(e) {
+      if (!this.wrapDom) return;
+      const x = e.offsetX;
+      const y = e.offsetY;
+      // 直接生成拖尾，无主球、无过渡动画，百分百跟手，零延迟
+      this.createTailBall(x, y);
+    },
+    createTailBall(x, y) {
+      const ballSize = Math.floor(Math.random() * 12) + 6; // 随机尺寸6-18px，拖尾更细腻
+      const halfSize = ballSize / 2; // 精准居中，零偏移
+      const ballDom = document.createElement('div');
+      // 丰富的彩色渐变池，视觉效果更好
+      const colors = [
+        'linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%)',
+        'linear-gradient(135deg, #06b6d4 0%, #22d3ef 100%)',
+        'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+        'linear-gradient(135deg, #db2777 0%, #f472b6 100%)',
+        'linear-gradient(135deg, #16a34a 0%, #4ade80 100%)',
+        'linear-gradient(135deg, #ea580c 0%, #fb923c 100%)'
+      ];
+      const randomColor = colors[Math.floor(Math.random() * colors.length)];
+      // 核心：无任何transition过渡，纯即时渲染，零延迟；精准居中鼠标
+      ballDom.style.cssText = `
+        position:absolute; width:${ballSize}px; height:${ballSize}px; border-radius:50%;
+        background:${randomColor}; pointer-events:none; z-index:998;
+        left:${x - halfSize}px; top:${y - halfSize}px;
+      `;
+      this.wrapDom.appendChild(ballDom);
+      this.tailBalls.push({ dom: ballDom, alpha: 1 });
+    },
+    renderBallAnimation() {
+      if (this.tailBalls.length === 0) {
+        this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
+        return;
+      }
+      // 拖尾丝滑淡出+缩放，保留动画美感，无卡顿
+      this.tailBalls = this.tailBalls.filter(ball => {
+        ball.alpha -= 0.012; // 微调消失速度，拖尾长度适中
+        if (ball.alpha <= 0) {
+          ball.dom.remove();
+          return false;
+        }
+        ball.dom.style.opacity = ball.alpha;
+        ball.dom.style.transform = `scale(${ball.alpha})`;
+        return true;
+      });
+      this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
+    },
+    handleMouseLeave() {
+      this.destroyBallAnimation();
+      this.$nextTick(() => this.initBallAnimation());
+    },
+    destroyBallAnimation() {
+      if (this.ballAnimationId) cancelAnimationFrame(this.ballAnimationId);
+      this.tailBalls.forEach(ball => ball.dom?.remove());
+      this.ballAnimationId = null;
+      this.tailBalls = [];
+      if (this.wrapDom) this.wrapDom.innerHTML = '';
     }
   }
 };
 </script>
 
+<!-- ✅ 样式修改核心点：1. 移除标题 2. 节奏组件背景透明 3. 动画画布透明 4. 隐藏光标 -->
 <style scoped>
 .tab-content {
   position: relative;
   width: 100%;
-  height: 100vh;
+	height: 100vh;
   box-sizing: border-box;
   padding: 10px;
   display: flex;
@@ -635,7 +714,7 @@ export default {
 .main-layout {
   display: flex;
   width: 100%;
-  height: 100%;
+	height: 100%;
   gap: 20px;
 }
 
@@ -643,7 +722,7 @@ export default {
   flex: 6;
   display: flex;
   flex-direction: column;
-  height: 100%;
+	height: 100%;
 }
 
 .right-panel {
@@ -651,7 +730,9 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  height: 100%;
+	height: 100%;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .sticky-top-box {
@@ -667,7 +748,7 @@ export default {
   display: flex;
   gap: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #e5e7eb;
+	border-bottom: 1px solid #e5e7eb;
   margin-bottom: 8px;
 }
 
@@ -694,7 +775,7 @@ export default {
   align-items: center;
   margin-bottom: 0;
   padding-bottom: 0;
-  border-bottom: none;
+	border-bottom: none;
   display: flex;
 }
 
@@ -721,7 +802,7 @@ export default {
   width: 100%;
   background: rgba(255, 255, 255, 0.8);
   border-radius: 8px;
-  padding: 20px;
+	padding: 20px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   flex-shrink: 0;
 }
@@ -730,7 +811,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+	width: 100%;
 }
 
 .rate-text-area {
@@ -739,7 +820,7 @@ export default {
   flex-direction: column;
   align-items: flex-start;
   gap: 15px;
-  padding-right: 20px;
+	padding-right: 20px;
 }
 
 .rate-text-area h3 {
@@ -750,7 +831,7 @@ export default {
 
 .rate-score {
   font-size: 24px;
-  font-weight: bold;
+	font-weight: bold;
   color: #2ea0d6;
   line-height: 1;
 }
@@ -773,7 +854,7 @@ export default {
 
 .rate-circle-area {
   width: 180px;
-  height: 180px;
+	height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -783,10 +864,10 @@ export default {
   width: 180px;
   height: 180px;
   border: 3px solid #2ea0d6;
-  border-radius: 50%;
+	border-radius: 50%;
   display: flex;
-  alignItems: center;
-  justifyContent: center;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   background: #f9fafb;
   transition: all 0.2s;
@@ -804,17 +885,32 @@ export default {
   opacity: 0.85;
 }
 
+/* ✅ 核心修改1：节奏组件 背景透明 + 移除内边距 + 无阴影 */
 .rhythm-container {
   width: 100%;
-  background: rgba(255, 255, 255, 0.8);
+  background: transparent;
   border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  padding: 0;
+  box-shadow: none;
+  box-sizing: border-box;
   flex: 1;
+  min-height: 350px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+/* ✅ 核心修改2：动画画布 背景透明 + 无圆角 + 默认光标 */
+.ball-animation-wrap {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background-color: transparent;
+  position: relative;
+  overflow: hidden;
+  cursor: default;
 }
 
 .tracks-container {
@@ -838,7 +934,7 @@ export default {
 .track-item {
   display: flex;
   align-items: center;
-  padding: 12px 15px;
+	padding: 12px 15px;
   border-bottom: 1px solid #f3f4f6;
   transition: background-color 0.2s;
 }
@@ -870,7 +966,7 @@ export default {
 .track-name {
   font-size: 15px;
   color: #111827;
-  font-weight: 500;
+	font-weight: 500;
   min-width: 180px;
 }
 
@@ -884,7 +980,7 @@ export default {
 .track-edit-content {
   display: flex;
   justify-content: space-between;
-  alignItems: center;
+  align-items: center;
   flex: 1;
   gap: 20px;
 }
@@ -908,7 +1004,7 @@ export default {
   width: 110px;
   padding: 6px 10px;
   border: 1px solid #d1d5db;
-  border-radius: 4px;
+	border-radius: 4px;
   font-size: 14px;
   color: #111827;
   text-align: center;
@@ -931,7 +1027,7 @@ export default {
   color: #dc2626;
   cursor: pointer;
   width: 24px;
-  height: 24px;
+	height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -951,7 +1047,7 @@ export default {
   background: #2ea0d6;
   color: #fff;
   border: none;
-  padding: 8px 16px;
+	padding: 8px 16px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
@@ -965,7 +1061,7 @@ export default {
 
 .edit-btn {
   background: #2ea0d6;
-  color: #fff;
+	color: #fff;
   border: none;
   padding: 6px 14px;
   border-radius: 6px;
@@ -988,9 +1084,9 @@ export default {
   color: #fff;
   border: none;
   padding: 6px 14px;
-  border-radius: 6px;
+	border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+	font-size: 14px;
   transition: all 0.2s;
 }
 
@@ -1008,7 +1104,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 5px;
+	padding: 0 5px;
 }
 
 .track-score-slider {
