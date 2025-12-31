@@ -134,11 +134,11 @@ export default {
           this.searchResult = [];
         }
       })
-      .catch(err => {
-        this.loading = false;
-        console.error('搜索专辑池失败：', err);
-        alert('搜索失败，请检查后端是否启动！');
-      });
+          .catch(err => {
+            this.loading = false;
+            console.error('搜索专辑池失败：', err);
+            alert('搜索失败，请检查后端是否启动！');
+          });
     },
 
     // 重置搜索
@@ -170,18 +170,18 @@ export default {
           'Content-Type': 'application/json'
         }
       })
-      .then(res => {
-        if (res.data.code === 200) {
-          alert('复制成功！已添加到你的专辑列表');
-          this.$router.push('/music');
-        } else {
-          alert('复制失败：' + res.data.msg);
-        }
-      })
-      .catch(err => {
-        console.error('复制专辑失败：', err);
-        alert('复制失败！' + err.message);
-      });
+          .then(res => {
+            if (res.data.code === 200) {
+              alert('复制成功！已添加到你的专辑列表');
+              this.$router.push(`/albumDetail`);
+            } else {
+              alert('复制失败：' + res.data.msg);
+            }
+          })
+          .catch(err => {
+            console.error('复制专辑失败：', err);
+            alert('复制失败！' + err.message);
+          });
     },
 
     // 查看专辑详情
@@ -206,18 +206,18 @@ export default {
           'Content-Type': 'application/json'
         }
       })
-      .then(res => {
-        if (res.data.code === 200) {
-          alert('删除成功！');
-          this.searchAlbums();
-        } else {
-          alert('删除失败：' + res.data.msg);
-        }
-      })
-      .catch(err => {
-        console.error('删除专辑失败：', err);
-        alert('删除失败！' + (err.response?.data?.msg || err.message));
-      });
+          .then(res => {
+            if (res.data.code === 200) {
+              alert('删除成功！');
+              this.searchAlbums();
+            } else {
+              alert('删除失败：' + res.data.msg);
+            }
+          })
+          .catch(err => {
+            console.error('删除专辑失败：', err);
+            alert('删除失败！' + (err.response?.data?.msg || err.message));
+          });
     },
 
     // 跳转到新增原创专辑页面
@@ -244,80 +244,80 @@ export default {
 
 .search-input {
   flex: 1;
-	padding: 8px 12px;
-	border: 1px solid #ddd;
-	border-radius: 4px;
-	font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
 }
 
 .search-btn {
-	padding: 8px 20px;
-	background: #42b983;
-	color: white;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
+  padding: 8px 20px;
+  background: #42b983;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .reset-btn {
-	padding: 8px 20px;
-	background: #999;
-	color: white;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
+  padding: 8px 20px;
+  background: #999;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .action-btns {
-	margin-bottom: 20px;
+  margin-bottom: 20px;
 }
 
 .add-original-btn {
-	padding: 8px 20px;
-	background: #007acc;
-	color: white;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
+  padding: 8px 20px;
+  background: #007acc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .loading-tip, .empty-tip {
-	text-align: center;
-	color: #666;
-	padding: 30px 0;
+  text-align: center;
+  color: #666;
+  padding: 30px 0;
 }
 
 .album-pool-list {
-	margin-top: 20px;
+  margin-top: 20px;
 }
 
 /* 分页样式 */
 .pagination {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	margin-top: 30px;
-	padding-top: 20px;
-	border-top: 1px solid #eee;
-	flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+  flex-wrap: wrap;
 }
 
 .page-btn {
-	padding: 6px 12px;
-	border: 1px solid #ddd;
-	border-radius: 4px;
-	background: #fff;
-	cursor: pointer;
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
 }
 
 .page-btn:disabled {
-	background: #f5f5f5;
-	color: #999;
-	cursor: not-allowed;
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
 }
 
 .page-info {
-	color: #666;
-	font-size: 14px;
+  color: #666;
+  font-size: 14px;
 }
 </style>

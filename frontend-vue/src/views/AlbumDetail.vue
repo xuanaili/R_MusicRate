@@ -61,6 +61,9 @@
         :main-color="albumMainColor"
         :main-color-dark="albumMainColorDark"
         :main-color-dark-double="albumMainColorDarkDouble"
+        :main-color-white="albumMainColorWhite"
+        :main-color-white-double="albumMainColorWhiteDouble"
+
         @sort-change="changeSortType"
         @block-comment="blockComment"
         @unblock-all="unblockAllComments"
@@ -692,21 +695,34 @@ console.log('⚠️ 跳过真实专辑ID赋值，保留歌单下标：', this.cu
     },
 
 
-// 播放暂停切换 - 异常捕获 ✅✅✅ 已加计时API调用
+// ✅✅✅ 终极修复版 - 播放暂停切换 【彻底解决暂停进度条归零】
 togglePlayPause() {
   const audio = this.$refs.audioRef;
-  if (!audio || !this.audioSrc) return;
+  if (!audio || !this.audioSrc) {
+    this.$message?.info('暂无音频资源，无法播放');
+    return;
+  }
   if (this.isPlaying) {
+    // ----- 暂停逻辑：强制同步真实进度 + 跳过Vue异步更新，立即生效 -----
     audio.pause();
+    // 1. 读取原生audio的真实进度（绝对准确，不会错）
+    const realCurrentTime = audio.currentTime || 0;
+    const realProgress = this.duration && this.duration > 0 ? (realCurrentTime / this.duration) * 100 : 0;
+    // 2. 同步赋值给页面变量，确保是数字且非负
+    this.currentTime = Math.max(0, realCurrentTime);
+    this.currentProgress = Math.max(0, realProgress);
+    // 3. ✅ 关键核心：强制Vue立即更新DOM，跳过异步队列，解决视觉归零
+    this.$forceUpdate();
     this.isPlaying = false;
-    this.pauseListeningTimer(); // ✅ 暂停必上传时长
+    this.pauseListeningTimer(); // 只传时长，不碰进度
   } else {
+    // 播放逻辑不变
     audio.play().then(() => {
       this.isPlaying = true;
       this.startListeningTimer();
     }).catch(() => {
       this.isPlaying = false;
-      alert('📢 播放失败，请检查音频资源是否有效～');
+      this.$message?.warning('📢 播放失败，请检查音频资源是否有效～');
     });
   }
 },
@@ -727,11 +743,13 @@ async startListeningTimer() {
   }
 },
 
-// ✅✅✅ 父组件核心上传方法 - 所有场景最终都会调用这个方法，100%有效
+// ✅✅✅ 终极修复版 - 暂停计时上传时长：只暂停音频+传时长，【绝对不重置】任何进度数据！！！
 async pauseListeningTimer() {
   const token = localStorage.getItem('token') || '';
-  // 必须满足3个条件：登录、有真实专辑ID、有音频资源
-  if (!token || !this.album.id || !this.audioSrc) return;
+  const audio = this.$refs.audioRef;
+  // 满足条件才执行上传，不满足直接静默返回
+  if (!token || !this.album.id || !this.audioSrc || !audio) return;
+
   try {
     await this.$axios.post(
       `/api/album/listening/pause/${this.album.id}`,
@@ -742,16 +760,9 @@ async pauseListeningTimer() {
   } catch (err) {
     console.log(`⚠️ [上传失败] 专辑ID=${this.album.id}：`, err.response?.data?.msg || err.message);
   } finally {
-    // ============ ↓↓↓ 核心新增：兜底逻辑 必须加 ↓↓↓ ============
-    // 无论上传成功/失败，都强制暂停音频+重置播放状态，杜绝残留
-    const audio = this.$refs.audioRef;
-    if(audio) {
-      audio.pause();
-      this.isPlaying = false;
-      this.currentTime = 0;
-      this.currentProgress = 0;
-    }
-    // ============ ↑↑↑ 核心新增：兜底逻辑 必须加 ↑↑↑ ============
+    // ✅ 只做2件事：暂停原生音频 + 修改播放状态，【无任何其他代码】
+    audio.pause();
+    this.isPlaying = false;
   }
 },
     handleTimeUpdate() {
@@ -863,22 +874,30 @@ console.log('✅ 切歌后新下标：current_album_id = ', newTrackIndex);
         this.albumMainColor = hex;
         this.albumMainColorDark = this.darkenColor(hex, 0.2);
         this.albumMainColorDarkDouble = this.darkenColor(hex, 0.35);
+        this.albumMainColorWhite = this.darkenColor(hex, -0.2);
+        this.albumMainColorWhiteDouble = this.darkenColor(hex, -0.35);
+
         this.activeMenuBg = `rgba(${r},${g},${b},0.2)`;
       };
       img.onerror = () => {
         this.albumMainColor = '#42b983';
         this.albumMainColorDark = '#2f9465';
         this.albumMainColorDarkDouble = '#257d51';
+        this.albumMainColorWhite = '#2f9465';
+        this.albumMainColorWhiteDouble = '#257d51';
       };
       img.src = imgUrl;
     },
 
-    darkenColor(hex, amount) {
-      const r = parseInt(hex.slice(1, 3), 16) * (1 - amount);
-      const g = parseInt(hex.slice(3, 5), 16) * (1 - amount);
-      const b = parseInt(hex.slice(5, 7), 16) * (1 - amount);
-      return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
-    },
+// ✅ 修正版：支持加深/提亮，自动限制RGB值在0-255之间，杜绝非法色值
+darkenColor(hex, amount) {
+  const r = Math.min(255, Math.max(0, parseInt(hex.slice(1, 3), 16) * (1 - amount)));
+  const g = Math.min(255, Math.max(0, parseInt(hex.slice(3, 5), 16) * (1 - amount)));
+  const b = Math.min(255, Math.max(0, parseInt(hex.slice(5, 7), 16) * (1 - amount)));
+  // 补零+转16进制，避免出现 #f 这种不完整色值
+  const toHex = (val) => Math.round(val).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+},
 
     saveAlbumIntro(introContent) {
       this.$axios({

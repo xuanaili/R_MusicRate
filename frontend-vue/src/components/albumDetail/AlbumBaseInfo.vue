@@ -120,6 +120,8 @@
 
 <script>
 import TagBubbleChart from '@/components/TagBubbleChart'
+// ✅ 改动1：导入全局config配置文件
+import config from '@/config/index.js'
 
 export default {
   name: 'AlbumBaseInfo',
@@ -150,7 +152,7 @@ export default {
   data() {
     return {
       tagSearchInput: '',
-      allTagOptions: ['Pop', 'Rock', 'Jazz', 'Classical', 'Hip-hop', 'Electronic', 'Folk', 'R&B', 'Country', 'Metal','Jazz Rap','Abstract Hip-Hop','UK Hip-Hop','Cool Jazz'],
+      // ✅ 改动2：彻底删除这一行 allTagOptions 数组，移到config里了
       filteredTagOptions: [],
       selectedMyTags: [],
       tagStatsData: [],
@@ -163,7 +165,7 @@ export default {
     };
   },
   computed: {
-    // ✅ 核心新增：封面主色 加深2级 (所有文字的颜色，和编辑按钮hover同源)
+    // 封面主色 加深2级 (所有文字的颜色，和编辑按钮hover同源)
     mainColorDarkDouble() {
       return this.darkenColor(this.mainColor, 0.3)
     }
@@ -173,12 +175,12 @@ export default {
       immediate: true,
       deep: true,
       handler(newVal, oldVal) {
-        // ✅ 修复：仅在专辑id变化时重新加载数据，避免保存简介触发重复渲染
         if (newVal.id !== oldVal?.id) {
           if (newVal.tags && Array.isArray(newVal.tags)) {
             this.selectedMyTags = [...newVal.tags].slice(0, 5);
           }
-          this.filteredTagOptions = [...this.allTagOptions];
+          // ✅ 改动3：读取全局config里的标签数组，删除this.
+          this.filteredTagOptions = [...config.albumTagOptions];
           this.filterTagOptions();
           if (this.albumPoolId) {
             this.getAllUsersTagStatistics(this.albumPoolId);
@@ -202,9 +204,10 @@ export default {
     },
     filterTagOptions() {
       const keyword = this.tagSearchInput.trim().toLowerCase();
+      // ✅ 改动4：读取全局config里的标签数组，删除this.
       this.filteredTagOptions = keyword
-          ? this.allTagOptions.filter(tag => tag.toLowerCase().includes(keyword) && !this.selectedMyTags.includes(tag))
-          : this.allTagOptions.filter(tag => !this.selectedMyTags.includes(tag));
+          ? config.albumTagOptions.filter(tag => tag.toLowerCase().includes(keyword) && !this.selectedMyTags.includes(tag))
+          : config.albumTagOptions.filter(tag => !this.selectedMyTags.includes(tag));
     },
     addMyTag(tag) {
       if (this.selectedMyTags.length < 5 && !this.selectedMyTags.includes(tag)) {
@@ -244,7 +247,6 @@ export default {
         if (res.data?.code === 200) {
           this.$message?.({type: 'success', message: '保存成功'});
           this.$set(this.album, 'album_intro', introContent);
-          // ✅ 修复：手动同步数据+关闭编辑，避免布局抖动
           this.albumIntro = introContent;
           this.isEditingIntro = false;
           return true
