@@ -2,9 +2,9 @@
 import os
 import pymysql
 # ================= Flask 基础配置 =================
-SECRET_KEY = 'music-rate-secret-key'
+SECRET_KEY = 'albumDetail-rate-secret-key'
 DEBUG = True
-HOST = '127.0.0.1'
+HOST = 'localhost'
 PORT = 5000
 
 # ================= MySQL 数据库配置 =================

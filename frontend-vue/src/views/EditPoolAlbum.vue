@@ -67,6 +67,20 @@
         >
       </div>
 
+
+      <!-- ✅✅✅ 新增：专辑类型下拉选择框 -->
+      <div class="form-item">
+        <label>专辑类型：</label>
+        <select v-model="album.duration_type" class="form-input album-type-select">
+          <option value="LP">LP - 正式专辑</option>
+          <option value="EP">EP - 迷你专辑</option>
+          <option value="SIN">SIN - 单曲专辑</option>
+          <option value="Mix">Mix - 混音专辑</option>
+          <option value="Com">Com - 合集/精选</option>
+        </select>
+      </div>
+
+
       <!-- 替换标签：专辑简介（支持长文本、分段、特殊符号） -->
       <div class="form-item">
         <label>专辑简介：</label>
@@ -139,6 +153,7 @@ export default {
         cover_img: "",
         singer: "",
         release_year: "",
+        duration_type: "LP", // 默认选中正式专辑
         album_intro: "", // 专辑简介
         songs: [{song_name: ""}] // 单曲列表
       },
@@ -264,6 +279,7 @@ export default {
                 cover_img: data.cover_img || "",
                 singer: data.singer || "",
                 release_year: data.release_year || "",
+                duration_type: data.duration_type || "LP", // 赋值专辑类型，兜底默认LP
                 album_intro: data.album_intro || "", // 专辑简介赋值
                 // 处理单曲列表：后端返回的tracks转成输入框格式
                 songs: data.tracks && Array.isArray(data.tracks)
@@ -317,6 +333,7 @@ export default {
         cover_img: this.album.cover_img.trim(),
         singer: this.album.singer.trim(),
         release_year: this.album.release_year ? Number(this.album.release_year) : '',
+        duration_type: this.album.duration_type, // 专辑类型提交给后端
         album_intro: this.album.album_intro.trim(), // 专辑简介（保留原始格式）
         tracks: validSongs // 单曲列表转数组
       };
@@ -473,6 +490,12 @@ export default {
   border: 1px solid #ddd !important;
 }
 
+/* ✅✅✅ 新增：专辑类型下拉框样式 适配现有风格 */
+.album-type-select {
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+}
 .btn-delete-song {
   width: 28px;
   height: 28px;

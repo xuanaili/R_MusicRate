@@ -185,10 +185,10 @@
 </template>
 
 <script>
-import AlbumBaseInfo from '@/components/music/AlbumBaseInfo'
-import AlbumTrackList from '@/components/music/AlbumTrackList'
-import AlbumReviewEditor from '@/components/music/AlbumReviewEditor'
-import AlbumCommentSection from '@/components/music/AlbumCommentSection'
+import AlbumBaseInfo from '@/components/albumDetail/AlbumBaseInfo'
+import AlbumTrackList from '@/components/albumDetail/AlbumTrackList'
+import AlbumReviewEditor from '@/components/albumDetail/AlbumReviewEditor'
+import AlbumCommentSection from '@/components/albumDetail/AlbumCommentSection'
 import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
 
 export default {
@@ -208,6 +208,7 @@ export default {
         album_name: '',
         singer: '',
         release_year: '',
+        duration_type:'LP',
         cover_img: '',
         tracks: [],
         tracks_time: [],
@@ -354,7 +355,7 @@ $route: {
     const albumId = this.$route.params.id || this.$route.query.id;
     if (!albumId) {
       alert('未找到专辑ID！');
-      this.$router.push('/music');
+      this.$router.push('/albumDetail');
       return;
     }
     await this.getAlbumDetail(Number(albumId));
@@ -1077,14 +1078,14 @@ console.log('✅ 切歌后新下标：current_album_id = ', newTrackIndex);
                 resolve();
               } else {
                 alert(res.data.msg);
-                this.$router.push('/music');
+                this.$router.push('/albumDetail');
                 reject(res.data.msg);
               }
             })
             .catch(() => {
               console.error('获取详情失败：');
               alert('获取专辑详情失败！');
-              this.$router.push('/music');
+              this.$router.push('/albumDetail');
               reject();
             })
             .finally(() => {
@@ -1244,7 +1245,7 @@ console.log('✅ 切歌后新下标：current_album_id = ', newTrackIndex);
     },
 
     goBack() {
-      this.$router.push('/music');
+      this.$router.push('/albumDetail');
     },
 
     getPublicComments() {

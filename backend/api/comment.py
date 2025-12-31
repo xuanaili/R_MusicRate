@@ -13,7 +13,7 @@ def register_comment_routes(app):
     """注册评论相关路由（私有评论+公共评论）"""
 
     # ==================== 原有逻辑：用户专属私有评论（兼容旧接口） ====================
-    # 1. 提交评论（带评分，兼容旧接口 /api/music/comment）
+    # 1. 提交评论（带评分，兼容旧接口 /api/albumDetail/comment）
     @app.route('/api/music/comment', methods=['POST'])
     @login_required
     def submit_comment():

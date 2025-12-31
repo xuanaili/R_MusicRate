@@ -26,6 +26,7 @@
               <h3>{{ albumData.album_name }}</h3>
               <p :style="{color: mainColorDarkDouble}">歌手：{{ albumData.singer }}</p>
               <p :style="{color: mainColorDarkDouble}">发行年份：{{ albumData.release_year }}</p>
+              <p :style="{color: mainColorDarkDouble}">时长类型：{{ albumData.duration_type|| 'LP' }}</p>
               <p :style="{color: mainColorDarkDouble}">创建用户：{{ albumData.create_user_name || albumData.create_user || '未知用户' }}</p>
               <p class="create-time" :style="{color: mainColorDarkDouble}">创建时间：{{ formatCreateTime(albumData.create_time) }}</p>
             </div>
@@ -267,7 +268,7 @@ export default {
           .then(res => {
             if (res.data.code === 200) {
               alert('复制成功！跳转到我的专辑列表');
-              this.$router.push('/music');
+              this.$router.push('/albumDetail');
             } else {
               alert('复制失败：' + res.data.msg);
             }

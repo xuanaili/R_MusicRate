@@ -52,19 +52,19 @@
         />
 
         <!-- ========== 核心新增：同步开关区域（已注释） ========== -->
-        <!-- <div v-if="music.source_pool_id" class="sync-switch-container">
+        <!-- <div v-if="albumDetail.source_pool_id" class="sync-switch-container">
           <label class="sync-switch">
             <input
               type="checkbox"
-              v-model="music.sync_pool_update"
-              @change="toggleSync(music.id, music.sync_pool_update)"
-              :disabled="music.is_customized"
+              v-model="albumDetail.sync_pool_update"
+              @change="toggleSync(albumDetail.id, albumDetail.sync_pool_update)"
+              :disabled="albumDetail.is_customized"
             >
             <span class="slider round"></span>
           </label>
           <span class="sync-text">
-            {{ music.sync_pool_update ? '同步开启' : '同步关闭' }}
-            <span v-if="music.is_customized" class="customized-tag">（已自定义，无法同步）</span>
+            {{ albumDetail.sync_pool_update ? '同步开启' : '同步关闭' }}
+            <span v-if="albumDetail.is_customized" class="customized-tag">（已自定义，无法同步）</span>
           </span>
         </div> -->
         <!-- ========== 同步开关结束 ========== -->
@@ -133,7 +133,7 @@
 </template>
 
 <script>
-import MusicItem from '../components/MusicItem.vue'
+import MusicItem from '@/components/item/AlbumItem.vue'
 
 export default {
   name: 'MusicList',

@@ -31,6 +31,19 @@
       <label>发行年份：</label>
       <input v-model="album.release_year" type="number" placeholder="如：2024">
     </div>
+    <!-- ✅✅✅ 新增：专辑类型选择框 (LP/EP/Mix/Com) 核心改动1 -->
+    <div class="form-item">
+      <label>专辑类型：</label>
+      <select v-model="album.duration_type" class="album-type-select">
+        <option value="LP">LP - 正式专辑</option>
+        <option value="EP">EP - 迷你专辑</option>
+        <option value="Mix">Mix - 混音专辑</option>
+        <option value="Com">Com - 合集/精选</option>
+        <option value="Sin">SIN - 单曲专辑</option>
+      </select>
+    </div>
+
+
 
     <!-- 新增：专辑简介（放在单曲列表上方） -->
     <div class="form-item">
@@ -93,6 +106,7 @@ export default {
         cover_img: "",
         singer: "",
         release_year: "",
+        duration_type:"LP",
         album_intro: "", // 专辑简介
         // 单曲列表：初始1个空输入框
         songs: [{ song_name: "" }]
@@ -218,6 +232,7 @@ export default {
         singer: this.album.singer.trim(),
         release_year: Number(this.album.release_year),
         album_intro: this.album.album_intro.trim(), // 专辑简介（保留原始格式）
+        duration_type: this.album.duration_type,
         tracks: validSongs // 仅传递有效单曲名数组
       };
 
@@ -235,7 +250,7 @@ export default {
         if (res.data.code === 200) {
           alert("专辑添加成功！");
           // 提交成功后跳回专辑列表
-          this.$router.push("/music");
+          this.$router.push("/albumDetail");
         } else {
           this.errorMsg = res.data.msg;
         }
@@ -283,6 +298,18 @@ export default {
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
+}
+
+/* ✅✅✅ 新增：专辑类型下拉框样式 */
+.album-type-select {
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #333;
+  background: #fff;
 }
 
 /* 专辑简介文本框样式 */

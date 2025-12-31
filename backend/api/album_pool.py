@@ -29,10 +29,81 @@ def register_album_pool_routes(app):
         # 切片并返回
         return value_str[:max_length]
 
+    # ========== ✅ 新增核心：封装标签统计复用函数（把原接口的逻辑抽出来） ==========
+    def get_album_tag_stats(album_pool_id, cursor):
+        """
+        复用标签统计逻辑，给搜索接口调用
+        :param album_pool_id: 专辑池id
+        :param cursor: 数据库游标（复用连接，提升性能）
+        :return: 统计后的标签数组
+        """
+        tag_count = {}
+        total_tags = 0
+
+        # 1. 查公共专辑池的基础标签
+        cursor.execute('SELECT tags FROM album_pool WHERE id = %s', (album_pool_id,))
+        pool_album = cursor.fetchone()
+        if pool_album and pool_album['tags']:
+            try:
+                pool_tags = json.loads(pool_album['tags'])
+                for tag in pool_tags:
+                    tag = tag.strip()
+                    if tag:
+                        tag_count[tag] = tag_count.get(tag, 0) + 1
+                        total_tags += 1
+            except:
+                pass
+
+        # 2. 遍历所有用户表统计标签
+        cursor.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "albums_%"')
+        user_tables = cursor.fetchall()
+        for table in user_tables:
+            table_name = table['TABLE_NAME']
+            try:
+                cursor.execute(f'''
+                    SELECT tags FROM `{table_name}` 
+                    WHERE source_pool_id = %s AND tags IS NOT NULL
+                ''', (album_pool_id,))
+                user_albums = cursor.fetchall()
+                for album in user_albums:
+                    if album['tags']:
+                        try:
+                            tags = json.loads(album['tags'])
+                            for tag in tags:
+                                tag = tag.strip()
+                                if tag:
+                                    tag_count[tag] = tag_count.get(tag, 0) + 1
+                                    total_tags += 1
+                        except:
+                            continue
+            except Exception as e:
+                print(f"统计用户表 {table_name} 失败：{str(e)}")
+                continue
+
+        # 3. 计算占比，过滤<10%的标签，生成颜色和大小
+        result = []
+        if total_tags > 0:
+            for tag, count in tag_count.items():
+                percent = (count / total_tags) * 100
+                if percent >= 10:
+                    size = int(percent * 2 + 40)
+                    color = f"#{random.randint(0, 0xFFFFFF):06x}"
+                    result.append({
+                        "tag": tag,
+                        "count": count,
+                        "percent": round(percent, 1),
+                        "size": size,
+                        "color": color
+                    })
+        return result
+
     # ========== 修复：获取专辑标签统计接口（气泡图用） - 修正数据来源 ==========
     @app.route('/api/album/<int:album_pool_id>/tag-statistics', methods=['GET', 'OPTIONS'])
     @login_required
     def get_tag_statistics(album_pool_id):
+        # 处理OPTIONS预检请求，必加！！！
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
         try:
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
@@ -107,12 +178,15 @@ def register_album_pool_routes(app):
         except Exception as e:
             print(f"❌ 标签统计失败：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"统计失败：{str(e)}"}), 500
+            # 异常返回 200状态码 + 500业务码，前端不报错，只提示文案
+            return jsonify({"code": 500, "msg": f"统计失败：{str(e)}", "data": {}}), 200
 
     # 1. 获取专辑搜索池详情（完整修复：新增tracks字段返回+JSON容错 + 新增album_intro）
-    @app.route('/api/album/pool/detail/<int:pool_id>', methods=['GET'])
+    @app.route('/api/album/pool/detail/<int:pool_id>', methods=['GET', 'OPTIONS'])
     @login_required
     def get_pool_album_detail(pool_id):
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
         try:
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
@@ -128,7 +202,8 @@ def register_album_pool_routes(app):
             cursor.close()
 
             if not album:
-                return jsonify({"code": 404, "msg": "未找到该公共专辑"}), 404
+                # 无数据返回200状态码 + 404业务码，友好提示
+                return jsonify({"code": 404, "msg": "未找到该公共专辑", "data": {}}), 200
 
             # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
             def safe_json_loads(s):
@@ -144,6 +219,8 @@ def register_album_pool_routes(app):
             album['main_type'] = safe_json_loads(album.get('main_type')) or []
             # 核心：处理tracks字段（兼容字典/数组/空值）
             album['tracks'] = safe_json_loads(album.get('tracks')) or []
+            # 处理时长类型 duration_type
+            album['duration_type'] = album.get('duration_type', 'LP') or 'LP'
             # 新增：处理专辑简介字段
             album['album_intro'] = album.get('album_intro', '') or ''  # 直接保留字符串，无需JSON解析
 
@@ -159,12 +236,14 @@ def register_album_pool_routes(app):
         except Exception as e:
             print(f"❌ 获取公共专辑详情失败：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"获取失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"获取失败：{str(e)}", "data": {}}), 200
 
     # 2. 专辑搜索池 - 搜索接口（完整修复：新增tracks字段返回 + 新增album_intro）
-    @app.route('/api/album/pool/search', methods=['GET'])
+    @app.route('/api/album/pool/search', methods=['GET', 'OPTIONS'])
     @login_required
     def search_album_pool():
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
         try:
             keyword = request.args.get('keyword', '').strip()
             page = int(request.args.get('page', DEFAULT_PAGE))
@@ -201,7 +280,6 @@ def register_album_pool_routes(app):
             params.extend([page_size, offset])
             cursor.execute(query, params)
             album_list = cursor.fetchall()
-            cursor.close()
 
             # 统一的JSON解析容错函数（优化：保留None，不强制转空数组）
             def safe_json_loads(s):
@@ -218,6 +296,9 @@ def register_album_pool_routes(app):
                 # 无用户名时显示"未知用户"
                 create_user_name = album.get('create_user_name') or "未知用户"
 
+                # ✅✅✅ 核心新增：调用工具函数，获取当前专辑的标签统计数据
+                album_tag_stats = get_album_tag_stats(album['id'], cursor)
+
                 result_list.append({
                     "id": album['id'],
                     "album_name": album['album_name'],
@@ -228,11 +309,13 @@ def register_album_pool_routes(app):
                     "tags": safe_json_loads(album.get('tags')) or [],
                     "tracks": safe_json_loads(album.get('tracks')) or [],  # 新增tracks字段
                     "album_intro": album.get('album_intro', '') or '',  # 新增专辑简介字段
+                    "duration_type": album.get('duration_type', 'LP') or 'LP',  # 新增：专辑类型
                     "my_score": album['my_score'],
                     "create_user": album['create_user'],  # 保留原user_id
                     "create_user_name": create_user_name,  # 新增：用户名
                     "create_time": album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album.get(
-                        'create_time') else ''
+                        'create_time') else '',
+                    "tag_statistics": album_tag_stats,  # ✅✅✅ 追加返回【标签统计数据】
                 })
 
             total_pages = (total + page_size - 1) // page_size
@@ -242,6 +325,8 @@ def register_album_pool_routes(app):
                 "page_size": page_size,
                 "total_pages": total_pages
             }
+
+            cursor.close()
 
             return jsonify({
                 "code": 200,
@@ -254,19 +339,20 @@ def register_album_pool_routes(app):
         except Exception as e:
             print(f"❌ 搜索专辑池出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"搜索专辑池失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"搜索专辑池失败：{str(e)}", "data": {}}), 200
 
     # 3. 删除公共专辑接口（✅最终完美版：级联删除【音频资源+封面+用户数据+专辑】，无残留+无报错）
     @app.route('/api/album/pool/delete/<int:pool_id>', methods=['DELETE', 'OPTIONS'])
     @login_required
     def delete_pool_album(pool_id):
-        try:
-            if request.method == 'OPTIONS':
-                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
 
+        try:
             current_user_id = getattr(g, 'current_user_id', None)
             if not current_user_id:
-                return jsonify({"code": 401, "msg": "未登录或登录已过期！"}), 401
+                # 未登录返回200+401，友好提示，不报错
+                return jsonify({"code": 401, "msg": "未登录或登录已过期！", "data": {}}), 200
 
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
@@ -276,7 +362,7 @@ def register_album_pool_routes(app):
             user = cursor.fetchone()
             if not user or user['is_admin'] != 1:
                 cursor.close()
-                return jsonify({"code": 403, "msg": "无管理员权限，禁止删除！"}), 403
+                return jsonify({"code": 403, "msg": "无管理员权限，禁止删除！", "data": {}}), 200
 
             # ========== 查询专辑完整信息：包含封面+音频相关字段 ==========
             cursor.execute('SELECT id, cover_img, mp3_url, mp3_name, mp3_duration FROM album_pool WHERE id = %s',
@@ -284,7 +370,7 @@ def register_album_pool_routes(app):
             album = cursor.fetchone()
             if not album:
                 cursor.close()
-                return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！"}), 404
+                return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！", "data": {}}), 200
 
             delete_audio_flag = False
             # ========== 步骤1：删除【专辑音频资源文件】+ 清空音频数据库字段 ==========
@@ -343,7 +429,8 @@ def register_album_pool_routes(app):
             audio_tip = "并删除音频资源文件" if delete_audio_flag else "音频文件不存在/删除失败"
             return jsonify({
                 "code": 200,
-                "msg": f"成功删除ID为{pool_id}的公共专辑！{audio_tip}，清理封面图片，同时删除了{delete_user_count}条用户关联的专辑数据"
+                "msg": f"成功删除ID为{pool_id}的公共专辑！{audio_tip}，清理封面图片，同时删除了{delete_user_count}条用户关联的专辑数据",
+                "data": {}
             })
         except Exception as e:
             print(f"❌ 删除公共专辑失败：{str(e)}")
@@ -352,12 +439,14 @@ def register_album_pool_routes(app):
                 db.rollback()
             if 'cursor' in locals():
                 cursor.close()
-            return jsonify({"code": 500, "msg": f"删除公共专辑失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"删除公共专辑失败：{str(e)}", "data": {}}), 200
 
     # ========== 新增核心接口：获取拥有当前公共专辑的所有用户 ==========
     @app.route('/api/album/pool/users/<int:pool_id>', methods=['GET', 'OPTIONS'])
     @login_required
     def get_album_pool_users(pool_id):
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
         try:
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
@@ -397,19 +486,19 @@ def register_album_pool_routes(app):
         except Exception as e:
             print(f"❌ 获取专辑用户列表出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"获取用户列表失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"获取用户列表失败：{str(e)}", "data": {}}), 200
 
-    # 4. 修改公共专辑接口（核心修改：只同步专辑名/歌手/发行时间，保留用户所有自定义内容）
+    # 4. 修改公共专辑接口（核心修改：只同步专辑名/歌手/发行时间，保留用户所有自定义内容 + 重复友好提示）
     @app.route('/api/album/pool/update/<int:pool_id>', methods=['PUT', 'OPTIONS'])
     @login_required
     def update_pool_album(pool_id):
-        try:
-            if request.method == 'OPTIONS':
-                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
 
+        try:
             current_user_id = getattr(g, 'current_user_id', None)
             if not current_user_id:
-                return jsonify({"code": 401, "msg": "未登录或登录已过期！"}), 401
+                return jsonify({"code": 401, "msg": "未登录或登录已过期！", "data": {}}), 200
 
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
@@ -417,24 +506,25 @@ def register_album_pool_routes(app):
             user = cursor.fetchone()
             if not user or user['is_admin'] != 1:
                 cursor.close()
-                return jsonify({"code": 403, "msg": "无管理员权限，禁止修改！"}), 403
+                return jsonify({"code": 403, "msg": "无管理员权限，禁止修改！", "data": {}}), 200
 
             data = request.get_json()
             if not data:
                 cursor.close()
-                return jsonify({"code": 400, "msg": "修改数据不能为空！"}), 400
+                return jsonify({"code": 400, "msg": "修改数据不能为空！", "data": {}}), 200
 
             # 查询原专辑信息
             cursor.execute('SELECT * FROM album_pool WHERE id = %s', (pool_id,))
             album = cursor.fetchone()
             if not album:
                 cursor.close()
-                return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！"}), 404
+                return jsonify({"code": 404, "msg": f"未找到ID为{pool_id}的公共专辑！", "data": {}}), 200
 
             # ========== 核心：修改时防重复校验（专辑名+歌手+发行时间） ==========
             new_album_name = data.get('album_name', album['album_name']).strip()
             new_singer = data.get('singer', album['singer']).strip()
             new_release_year = int(data.get('release_year', album['release_year']))
+            new_duration_type = data.get('duration_type', album.get('duration_type', 'LP')).strip()
 
             cursor.execute('''
                 SELECT id FROM album_pool 
@@ -443,16 +533,17 @@ def register_album_pool_routes(app):
             duplicate_album = cursor.fetchone()
             if duplicate_album:
                 cursor.close()
+                # ✅ 重点：返回200状态码 + 409业务码，前端正常解析文案，不报错！
                 return jsonify({
                     "code": 409,
                     "msg": f"公共专辑池中已存在【{new_album_name} - {new_singer} ({new_release_year})】，无法修改！",
                     "data": {"duplicate_pool_id": duplicate_album['id']}
-                }), 409
+                }), 200
 
             update_fields = []
             params = []
             allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score',
-                              'tracks', 'album_intro']
+                              'tracks', 'album_intro', 'duration_type']
             update_log = []
 
             def safe_json_loads(s):
@@ -486,6 +577,12 @@ def register_album_pool_routes(app):
                         update_log.append(f"{field}：{safe_slice(old_val)}... → {safe_slice(new_val)}...")
                         update_fields.append(f"`{field}` = %s")
                         params.append(new_val)
+                elif field == 'duration_type':
+                    old_val = album.get('duration_type', 'LP')
+                    if new_duration_type != old_val:
+                        update_log.append(f"{field}：{old_val} → {new_duration_type}")
+                        update_fields.append(f"`{field}` = %s")
+                        params.append(new_duration_type)
                 elif field in data and str(data[field]).strip() != str(album.get(field, '')).strip():
                     old_val = album.get(field, '')
                     new_val = data[field]
@@ -499,7 +596,7 @@ def register_album_pool_routes(app):
 
             if not update_fields:
                 cursor.close()
-                return jsonify({"code": 400, "msg": "没有需要更新的字段！"}), 400
+                return jsonify({"code": 400, "msg": "没有需要更新的字段！", "data": {}}), 200
 
             # 版本号+更新日志
             current_version = album.get('version', 1)
@@ -512,7 +609,7 @@ def register_album_pool_routes(app):
             update_sql = f"UPDATE `album_pool` SET {', '.join(update_fields)} WHERE `id` = %s"
             cursor.execute(update_sql, params)
 
-            # ========== ✅ 核心修改2：只同步【专辑名、歌手、发行时间】三个字段 ✅ ==========
+            # ========== ✅ 核心还原：只同步【专辑名、歌手、发行时间】这三个字段 ==========
             cursor.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "albums_%"')
             user_tables = cursor.fetchall()
             sync_count = 0
@@ -572,28 +669,71 @@ def register_album_pool_routes(app):
                 db.rollback()
             if 'cursor' in locals():
                 cursor.close()
-            return jsonify({"code": 500, "msg": f"修改公共专辑失败：{str(e)}"})
+            return jsonify({"code": 500, "msg": f"修改公共专辑失败：{str(e)}", "data": {}}), 200
 
-    # 5. 复制专辑接口（修复路由+拖拽BUG+新增同步字段 + tracks同步 + 新增album_intro复制）
-    @app.route('/api/album/pool/copy/<int:album_id>', methods=['POST'])
+    # 5. 复制专辑接口 ✅【终极修复核心】：重复时友好提示+无报错 + 所有BUG修复
+    @app.route('/api/album/pool/copy/<int:album_id>', methods=['POST', 'OPTIONS'])
     @login_required
     def copy_album(album_id):
+        # ✅ 必加：处理OPTIONS预检请求，解决跨域预检失败导致的后端报错提示
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
+
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+                # ✅ 未登录：返回200+401，友好提示，不触发服务异常
+                return jsonify({"code": 401, "msg": "用户未登录，请先登录！", "data": {}}), 200
 
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
+            # ===== 第一步：检查公共专辑池是否存在 =====
             cursor.execute('SELECT * FROM album_pool WHERE id = %s', (album_id,))
             pool_album = cursor.fetchone()
             if not pool_album:
                 cursor.close()
-                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑副本！"}), 404
+                # ✅ 无数据：返回200+404，友好提示
+                return jsonify({"code": 404, "msg": f"公共专辑池中未找到ID为{album_id}的专辑！", "data": {}}), 200
 
             table_name = get_album_table_name(current_user_id)
 
+            # ===== ✅✅✅ 核心：双重重复校验【公共库规则+私有库规则】，全部友好提示 =====
+            album_name = pool_album['album_name'].strip()
+            singer = pool_album['singer'].strip()
+            release_year = pool_album['release_year']
+
+            # 校验1：当前用户【私有库】是否已存在 → 专辑名+歌手+发行年份 重复
+            cursor.execute(f'''
+                SELECT id FROM `{table_name}` 
+                WHERE TRIM(album_name) = %s AND TRIM(singer) = %s AND release_year = %s
+            ''', (album_name, singer, release_year))
+            duplicate_private_album = cursor.fetchone()
+            if duplicate_private_album:
+                cursor.close()
+                # ✅ 最重要修复：返回【200 HTTP状态码】+ 【409 业务错误码】
+                # ✅ 前端能正常解析msg文案，弹窗显示「私有列表已存在」，不会出现「检查后端是否启动」
+                return jsonify({
+                    "code": 409,
+                    "msg": f"✅ 你的私有专辑列表中已存在【{album_name} - {singer} ({release_year})】，无需重复复制！",
+                    "data": {"duplicate_album_id": duplicate_private_album['id']}
+                }), 200
+
+            # 校验2：公共专辑池是否重复（兜底校验）
+            cursor.execute('''
+                SELECT id FROM album_pool 
+                WHERE TRIM(album_name) = %s AND TRIM(singer) = %s AND release_year = %s
+            ''', (album_name, singer, release_year))
+            duplicate_pool_album = cursor.fetchone()
+            if duplicate_pool_album and duplicate_pool_album['id'] != album_id:
+                cursor.close()
+                return jsonify({
+                    "code": 409,
+                    "msg": f"✅ 公共专辑搜索池中已存在相同专辑【{album_name} - {singer} ({release_year})】，请勿重复添加！",
+                    "data": {"duplicate_pool_id": duplicate_pool_album['id']}
+                }), 200
+
+            # ===== 数据处理，原有逻辑不变 =====
             def safe_json_loads(s):
                 if s is None or s == "":
                     return None
@@ -616,7 +756,7 @@ def register_album_pool_routes(app):
                 "track_duration": "",
                 "my_score": pool_album['my_score'],
                 "burn_class": "",
-                "duration_type": "",
+                "duration_type": pool_album.get('duration_type', 'LP') or 'LP',
                 "tags": pool_album['tags'],
                 "main_type": pool_album['main_type'],
                 "tracks": tracks_json,
@@ -690,29 +830,33 @@ def register_album_pool_routes(app):
 
             return jsonify({
                 "code": 200,
-                "msg": "复制专辑副本成功！已开启模板同步（包含专辑简介）",
+                "msg": "复制成功！该专辑已添加到你的私有专辑列表中",
                 "data": {
                     "copy_album_id": new_copy_id,
                     "source_pool_id": album_id,
                     "sync_pool_update": 1,
                     "album_intro": copy_album_data['album_intro'][:50] + "..." if len(
-                        copy_album_data['album_intro']) > 50 else copy_album_data['album_intro']
+                        copy_album_data['album_intro']) > 50 else copy_album_data['album_intro'],
+                    "duration_type": copy_album_data['duration_type']
                 }
             })
         except Exception as e:
             print(f"❌ 复制专辑出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"复制专辑失败：{str(e)}"}), 500
+            # ✅ 异常也返回200状态码，前端只提示文案，不报错
+            return jsonify({"code": 500, "msg": f"复制专辑失败：{str(e)}", "data": {}}), 200
 
     # 6. 获取专辑池ID接口（修正路由路径，和前端保持一致）
     @app.route('/api/album_pool/get_id', methods=['GET', 'OPTIONS'])
     @login_required
     def get_album_pool_id():
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
         try:
             album_name = request.args.get('album_name')
             singer = request.args.get('singer')
             if not album_name or not singer:
-                return jsonify({"code": 400, "msg": "专辑名和歌手不能为空！"}), 400
+                return jsonify({"code": 400, "msg": "专辑名和歌手不能为空！", "data": {}}), 200
 
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
@@ -726,7 +870,7 @@ def register_album_pool_routes(app):
             if album:
                 return jsonify({"code": 200, "msg": "查询成功！", "data": {"id": album['id']}})
             else:
-                return jsonify({"code": 404, "msg": "专辑池不存在！"}), 404
+                return jsonify({"code": 404, "msg": "专辑池不存在！", "data": {}}), 200
         except Exception as e:
             print(f"查询专辑池ID失败：{str(e)}")
-            return jsonify({"code": 500, "msg": f"查询失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"查询失败：{str(e)}", "data": {}}), 200

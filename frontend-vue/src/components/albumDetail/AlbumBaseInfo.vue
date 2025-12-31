@@ -21,8 +21,8 @@
             <span class="meta-value">{{ album.release_year || '未知' }}</span>
           </div>
           <div class="meta-item">
-            <span class="meta-label">曲目数量：</span>
-            <span class="meta-value">{{ album.track_count || 0 }}</span>
+            <span class="meta-label">时长类型：</span>
+            <span class="meta-value">{{ album.duration_type  || 'LP' }}</span>
           </div>
           <div class="meta-item">
             <span class="meta-label">我的评分：</span>
@@ -172,19 +172,22 @@ export default {
     album: {
       immediate: true,
       deep: true,
-      handler(newVal) {
-        if (newVal.tags && Array.isArray(newVal.tags)) {
-          this.selectedMyTags = [...newVal.tags].slice(0, 5);
-        }
-        this.filteredTagOptions = [...this.allTagOptions];
-        this.filterTagOptions();
-        if (this.albumPoolId) {
-          this.getAllUsersTagStatistics(this.albumPoolId);
-        } else {
-          this.tagStatsData = [];
-        }
-        if (newVal.id) {
-          this.getUserAlbumIntro(newVal.id);
+      handler(newVal, oldVal) {
+        // ✅ 修复：仅在专辑id变化时重新加载数据，避免保存简介触发重复渲染
+        if (newVal.id !== oldVal?.id) {
+          if (newVal.tags && Array.isArray(newVal.tags)) {
+            this.selectedMyTags = [...newVal.tags].slice(0, 5);
+          }
+          this.filteredTagOptions = [...this.allTagOptions];
+          this.filterTagOptions();
+          if (this.albumPoolId) {
+            this.getAllUsersTagStatistics(this.albumPoolId);
+          } else {
+            this.tagStatsData = [];
+          }
+          if (newVal.id) {
+            this.getUserAlbumIntro(newVal.id);
+          }
         }
       }
     }
@@ -241,6 +244,9 @@ export default {
         if (res.data?.code === 200) {
           this.$message?.({type: 'success', message: '保存成功'});
           this.$set(this.album, 'album_intro', introContent);
+          // ✅ 修复：手动同步数据+关闭编辑，避免布局抖动
+          this.albumIntro = introContent;
+          this.isEditingIntro = false;
           return true
         } else {
           this.$message?.({type: 'error', message: res.data?.msg || '保存失败'});
@@ -303,22 +309,22 @@ export default {
   position: relative;
   z-index: 1;
   background: transparent !important;
-  /* ✅ 兜底保险：再加一点底部间距，双重保障 */
   padding-bottom: 20px !important;
   margin-bottom: 0 !important;
 }
 
-/* 整体卡片背景全透明，无白色边框阴影 */
+/* 整体卡片背景全透明，无白色边框阴影 ✅核心修复：grid布局锁死行高，永不被撑开 */
 .new-base-info-card {
   display: grid;
   grid-template-columns: 1fr 2fr;
   grid-template-rows: 1fr 1fr;
+  grid-auto-rows: minmax(0, 1fr);
   gap: 20px;
   background: transparent !important;
   padding: 20px;
   border-radius: 8px;
   margin-bottom: 0 !important;
-  min-height: 650px; /* ✅ 微调高度，更紧凑，上移内容 */
+  min-height: 650px;
   margin-top: 0 !important;
   align-self: flex-start;
   width: calc(100vw - 270px - 50px);
@@ -328,7 +334,7 @@ export default {
   box-shadow: none !important;
 }
 
-/* 所有区块无白色边框，透明背景 */
+/* 所有区块无白色边框，透明背景 ✅核心修复：overflow:hidden 防止子元素溢出撑开 */
 .info-section {
   padding: 15px;
   background: transparent !important;
@@ -336,6 +342,7 @@ export default {
   border: none !important;
   width: 100%;
 	height: 100%;
+  overflow:hidden;
 }
 
 /* ✅ 提升优先级：标题下划线+文字颜色 强制生效 */
@@ -570,21 +577,23 @@ export default {
   background: rgba(255,255,255,0.2);
 }
 
-/* ✅✅✅ 核心兜底：简介区块 整体上移+间距缩小，编辑按钮置顶，彻底无遮挡 */
+/* ✅✅✅ 终极修复：简介区块 固定高度+永不撑开+内部滚动 核心代码 */
 .intro-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding-bottom: 0 !important;
-  margin-top: -20px; /* ✅ 上移20px，远离底部 */
+  margin-top: -20px;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
-
-/* 加载中文字 → 封面主色加深再加深 */
 .loading-intro {
   width: 100%;
   max-width: 90%;
   padding: 10px;
-  min-height: 110px; /* ✅ 缩小高度，减少占用空间 */
+  height: 200px;
+  max-height: 200px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -595,9 +604,8 @@ export default {
   -webkit-backdrop-filter: blur(3px);
   border-radius:4px;
 	border:none !important;
+  overflow: hidden;
 }
-
-/* ✅ 专辑简介展示文字 → 封面主色加深再加深 + 高度缩减 */
 .intro-display {
   width: 100%;
   max-width: 90%;
@@ -605,28 +613,27 @@ export default {
   border-radius: 4px;
   font-size: 14px;
   line-height: 1.5;
-  min-height: 110px;
-	color: v-bind(mainColorDarkDouble) !important;
+  height: 200px;
+  max-height: 200px;
+  color: v-bind(mainColorDarkDouble) !important;
   background: rgba(255,255,255,0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   white-space: pre-wrap;
   word-wrap: break-word;
 	border:none !important;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
-
-/* ✅ 核心兜底：简介输入框 层级拉满+前置，绝对不被遮挡 */
 .intro-textarea {
   width: 100%;
   max-width: 90%;
   padding: 10px;
   border-radius: 4px;
-  resize: vertical;
   font-size: 14px;
   line-height: 1.5;
-  rows: 6;
-  height: auto;
-  min-height: 110px;
+  height: 200px;
+  max-height: 200px;
   background: rgba(255,255,255,0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
@@ -634,8 +641,10 @@ export default {
 	border:none !important;
   position: relative;
   z-index: 999;
+  resize: none;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
-
 .intro-textarea::placeholder {
   color: #999;
 }
@@ -666,11 +675,31 @@ export default {
   display: flex;
   flex-direction: column;
   height: 300px;
-  margin-top: -40px; /* ✅ 上移40px，完美避开播放器 */
+  margin-top: -40px;
   width: 100%;
   background: transparent !important;
   border: none !important;
 	padding-top: 0;
   padding-bottom: 0 !important;
+  overflow: hidden;
+}
+
+/* ✅ 全局美化滚动条 - 简介/标签列表通用，贴合主题色 */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDark);
+  border-radius: 3px;
+  opacity: 0.8;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: v-bind(mainColorDarkDouble);
+  opacity: 1;
 }
 </style>

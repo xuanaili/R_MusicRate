@@ -2,7 +2,7 @@
 // 引入Vue（如果用CDN不用这行，若后续装npm需要）
 // import Vue from 'vue';
 // 引入音乐卡片组件
-import MusicItem from './components/MusicItem.vue';
+import MusicItem from './components/AlbumItem.vue';
 
 new Vue({
   el: '#app',

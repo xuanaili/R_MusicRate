@@ -26,7 +26,7 @@ def register_album_routes(app):
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
 
             page = int(request.args.get('page', DEFAULT_PAGE))
             page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
@@ -115,7 +115,7 @@ def register_album_routes(app):
         except Exception as e:
             print(f"❌ 获取专辑列表出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"获取专辑出错：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"获取专辑出错：{str(e)}"}), 200
 
     # ✅✅✅ 新增核心接口：根据source_pool_id查询当前用户的专属album_id ✅✅✅
     @app.route('/api/album/get-id-by-source', methods=['GET', 'OPTIONS'])
@@ -124,12 +124,12 @@ def register_album_routes(app):
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
 
             # 获取前端传入的source_pool_id
             source_pool_id = request.args.get('source_pool_id')
             if not source_pool_id or not source_pool_id.isdigit():
-                return jsonify({"code": 400, "msg": "source_pool_id不能为空且必须为数字！"}), 400
+                return jsonify({"code": 400, "msg": "source_pool_id不能为空且必须为数字！"}), 200
             source_pool_id = int(source_pool_id)
 
             # 查询当前用户自己的专辑表，精准匹配source_pool_id
@@ -165,23 +165,23 @@ def register_album_routes(app):
         except Exception as e:
             print(f"❌ 根据source_pool_id查询album_id出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"查询失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"查询失败：{str(e)}"}), 200
 
     # 专辑同步开关
-    @app.route('/api/album/sync/switch', methods=['POST'])
+    @app.route('/api/album/sync/switch', methods=['POST', 'OPTIONS'])
     @login_required
     def switch_album_sync():
         try:
             user_id = get_current_user_id()
             if not user_id:
-                return jsonify({"code": 401, "msg": "未登录！"}), 401
+                return jsonify({"code": 401, "msg": "未登录！"}), 200
 
             data = request.get_json()
             album_id = data.get('album_id')
             sync_status = data.get('sync_status', 1)
 
             if not album_id:
-                return jsonify({"code": 400, "msg": "专辑ID不能为空！"}), 400
+                return jsonify({"code": 400, "msg": "专辑ID不能为空！"}), 200
 
             db = get_db()
             cursor = db.cursor()
@@ -203,10 +203,10 @@ def register_album_routes(app):
             })
         except Exception as e:
             print(f"❌ 开关同步失败：{str(e)}")
-            return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 200
 
     # 标记自定义
-    @app.route('/api/album/mark/customized', methods=['POST'])
+    @app.route('/api/album/mark/customized', methods=['POST', 'OPTIONS'])
     @login_required
     def mark_album_customized():
         try:
@@ -215,7 +215,7 @@ def register_album_routes(app):
             album_id = data.get('album_id')
 
             if not album_id:
-                return jsonify({"code": 400, "msg": "专辑ID不能为空！"}), 400
+                return jsonify({"code": 400, "msg": "专辑ID不能为空！"}), 200
 
             db = get_db()
             cursor = db.cursor()
@@ -236,7 +236,7 @@ def register_album_routes(app):
                 "data": {"album_id": album_id}
             })
         except Exception as e:
-            return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"操作失败：{str(e)}"}), 200
 
     # 更新专辑标签
     @app.route('/api/album/update/tags/<int:album_id>', methods=['PUT', 'OPTIONS'])
@@ -245,7 +245,7 @@ def register_album_routes(app):
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
 
             data = request.get_json()
             tags = data.get('tags', [])
@@ -261,7 +261,7 @@ def register_album_routes(app):
             album = cursor.fetchone()
             if not album:
                 cursor.close()
-                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 200
 
             cursor.execute(f'''
                 UPDATE `{table_name}` 
@@ -294,7 +294,7 @@ def register_album_routes(app):
         except Exception as e:
             print(f"❌ 保存标签失败：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"保存标签失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"保存标签失败：{str(e)}"}), 200
 
     # 专辑详情接口（返回正确的tracks_time【秒数数组】）
     @app.route('/api/album/detail/<int:album_id>', methods=['GET', 'OPTIONS'])
@@ -303,7 +303,7 @@ def register_album_routes(app):
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
 
             table_name = get_album_table_name(current_user_id)
             db = get_db()
@@ -314,7 +314,7 @@ def register_album_routes(app):
             cursor.close()
 
             if not album:
-                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 200
 
             def safe_json_loads(s, is_dict=False):
                 if not s:
@@ -363,16 +363,20 @@ def register_album_routes(app):
         except Exception as e:
             print(f"❌ 获取专辑详情出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"获取专辑详情失败：{str(e)}"}), 200
 
-    # 添加专辑接口
+    # ✅✅✅ 【重点修复】添加专辑接口 - 核心修改：所有返回统一为 HTTP 200 ✅✅✅
     @app.route('/api/album/add', methods=['POST', 'OPTIONS'])
     @login_required
     def add_album():
+        # 处理OPTIONS预检请求，必加
+        if request.method == 'OPTIONS':
+            return jsonify({"code": 200, "msg": "success"}), 200
+
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
 
             data = request.get_json()
             table_name = get_album_table_name(current_user_id)
@@ -380,7 +384,7 @@ def register_album_routes(app):
             required_fields = ['album_name', 'singer', 'release_year']
             for field in required_fields:
                 if not data.get(field):
-                    return jsonify({"code": 400, "msg": f"{field}不能为空！"}), 400
+                    return jsonify({"code": 400, "msg": f"{field}不能为空！"}), 200
 
             album_name = data.get('album_name').strip()
             singer = data.get('singer').strip()
@@ -389,6 +393,7 @@ def register_album_routes(app):
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
+            # 校验1：公共池重复 → 返回 HTTP200 + code409
             cursor.execute('''
                 SELECT id FROM album_pool 
                 WHERE album_name = %s AND singer = %s AND release_year = %s
@@ -400,8 +405,9 @@ def register_album_routes(app):
                     "code": 409,
                     "msg": f"公共专辑池中已存在【{album_name} - {singer} ({release_year})】，无法重复创建！",
                     "data": {"pool_id": existing_pool_album['id']}
-                }), 409
+                }), 200  # ✅ 修改点1：HTTP状态码改为200
 
+            # 校验2：用户私有池重复 → 返回 HTTP200 + code409
             cursor.execute(f'''
                 SELECT id FROM `{table_name}` 
                 WHERE album_name = %s AND singer = %s AND release_year = %s
@@ -413,7 +419,7 @@ def register_album_routes(app):
                     "code": 409,
                     "msg": f"你的专辑中已存在【{album_name} - {singer} ({release_year})】，无法重复添加！",
                     "data": {"album_id": existing_user_album['id']}
-                }), 409
+                }), 200  # ✅ 修改点2：HTTP状态码改为200
 
             def get_default_tracks_value(tracks_data):
                 if not tracks_data:
@@ -539,16 +545,16 @@ def register_album_routes(app):
                 db.rollback()
             if 'cursor' in locals():
                 cursor.close()
-            return jsonify({"code": 500, "msg": f"添加专辑失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"添加专辑失败：{str(e)}"}), 200  # ✅ 修改点3：异常也返回HTTP200
 
     # 删除专辑
-    @app.route('/api/album/delete/<int:album_id>', methods=['DELETE'])
+    @app.route('/api/album/delete/<int:album_id>', methods=['DELETE', 'OPTIONS'])
     @login_required
     def delete_album(album_id):
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
             table_name = get_album_table_name(current_user_id)
             db = get_db()
             cursor = db.cursor()
@@ -564,7 +570,7 @@ def register_album_routes(app):
             cursor.close()
 
             if affected_rows == 0:
-                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 404
+                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 200
 
             return jsonify({
                 "code": 200,
@@ -573,7 +579,7 @@ def register_album_routes(app):
         except Exception as e:
             print(f"删除专辑出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"删除专辑失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"删除专辑失败：{str(e)}"}), 200
 
     # 保存专辑简介
     @app.route('/api/album/user/intro/save', methods=['POST', 'OPTIONS'])
@@ -582,16 +588,16 @@ def register_album_routes(app):
         try:
             user_id = get_current_user_id()
             if not user_id:
-                return jsonify({"code": 401, "msg": "请先登录"}), 401
+                return jsonify({"code": 401, "msg": "请先登录"}), 200
 
             data = request.get_json()
             album_id = data.get('album_id')
             intro_content = data.get('intro_content', '').strip()
 
             if not album_id:
-                return jsonify({"code": 400, "msg": "专辑ID不能为空"}), 400
+                return jsonify({"code": 400, "msg": "专辑ID不能为空"}), 200
             if not intro_content:
-                return jsonify({"code": 400, "msg": "简介内容不能为空"}), 400
+                return jsonify({"code": 400, "msg": "简介内容不能为空"}), 200
 
             save_success = save_user_album_intro(user_id, album_id, intro_content)
             if save_success:
@@ -601,12 +607,12 @@ def register_album_routes(app):
                     "data": {"album_id": album_id, "intro_content": intro_content}
                 })
             else:
-                return jsonify({"code": 500, "msg": "简介保存失败，请稍后重试"}), 500
+                return jsonify({"code": 500, "msg": "简介保存失败，请稍后重试"}), 200
 
         except Exception as e:
             print(f"❌ 保存用户专辑简介接口出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"保存简介失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"保存简介失败：{str(e)}"}), 200
 
     # 获取专辑简介
     @app.route('/api/album/user/intro/get/<int:album_id>', methods=['GET', 'OPTIONS'])
@@ -615,7 +621,7 @@ def register_album_routes(app):
         try:
             user_id = get_current_user_id()
             if not user_id:
-                return jsonify({"code": 401, "msg": "请先登录"}), 401
+                return jsonify({"code": 401, "msg": "请先登录"}), 200
 
             intro_content = get_user_album_intro(user_id, album_id)
             return jsonify({
@@ -627,7 +633,7 @@ def register_album_routes(app):
         except Exception as e:
             print(f"❌ 获取用户专辑简介接口出错：{str(e)}")
             print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"获取简介失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"获取简介失败：{str(e)}"}), 200
 
     # ✅ ✅ ✅ 核心修复接口：保存曲目列表 + 接收并存储【前端传的曲目开始秒数数组】✅ ✅ ✅
     @app.route('/api/album/update/tracks/<int:album_id>', methods=['PUT', 'OPTIONS'])
@@ -636,13 +642,13 @@ def register_album_routes(app):
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
 
             # 1. 获取前端传过来的所有参数：曲目名称数组、完整曲目信息、曲目开始秒数数组
             data = request.get_json()
             new_tracks = data.get('tracks', [])
             full_tracks = data.get('full_tracks', [])
-            trackSecArr = data.get('tracks_time', []) # ✅ 接收前端的 曲目开始秒数数组
+            trackSecArr = data.get('tracks_time', [])  # ✅ 接收前端的 曲目开始秒数数组
 
             # 2. 数据容错处理
             if isinstance(new_tracks, list):
@@ -665,7 +671,7 @@ def register_album_routes(app):
             album_info = cursor.fetchone()
             if not album_info:
                 cursor.close()
-                return jsonify({"code": 404, "msg": "专辑不存在或暂无编辑权限！"}), 404
+                return jsonify({"code": 404, "msg": "专辑不存在或暂无编辑权限！"}), 200
 
             # ✅ 核心SQL：同时更新 tracks + is_customized + tracks_time(前端传的秒数数组JSON) ✅
             cursor.execute(f'''
@@ -689,4 +695,4 @@ def register_album_routes(app):
         except Exception as e:
             print(f"❌ 编辑曲目保存失败：{str(e)}")
             traceback.print_exc()
-            return jsonify({"code": 500, "msg": f"保存曲目失败：{str(e)}"}), 500
+            return jsonify({"code": 500, "msg": f"保存曲目失败：{str(e)}"}), 200
