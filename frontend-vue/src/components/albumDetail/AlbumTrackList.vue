@@ -23,7 +23,7 @@
             </div>
           </div>
 
-          <!-- ✅ 编辑按钮和Tab联动，置顶固定 -->
+          <!-- ✅ 编辑按钮和Tab联动，置顶固定 + 新增【切换输入模式】按钮 -->
           <div class="tracks-header sticky-header">
             <div class="tracks-action-btn">
               <button
@@ -35,6 +35,17 @@
                   ? (isTrackEditMode ? '✅ 保存曲目' : '✏️ 编辑曲目')
                   : (isFavouriteEditMode ? '✅ 保存时间戳' : '✏️ 编辑时间戳')
                 }}
+              </button>
+
+              <!-- ✅ 切换单曲【时间戳/时长】输入模式按钮 - 仅在单曲编辑模式显示 -->
+              <button
+                v-if="activeTab === 'tracks' && isTrackEditMode"
+                class="mode-btn"
+                @click="toggleDurationMode"
+                :class="{active: isDurationMode}"
+                style="margin-left: 8px;"
+              >
+                {{ isDurationMode ? '⏰ 切换为时间戳输入' : '🕒 切换为时长输入' }}
               </button>
             </div>
           </div>
@@ -60,19 +71,49 @@
                     placeholder="请输入曲目名称"
                     class="track-name-input"
                   />
+
+                  <!-- ✅ 核心切换：时长输入模式 / 时间戳输入模式 互斥显示 -->
                   <input
+                    v-if="!isDurationMode"
                     type="text"
                     v-model="track.duration"
-                    placeholder="0:00:00"
+                    placeholder="0:00:00 时间戳"
                     class="track-duration-input"
                     maxlength="8"
                     @input="track.duration = filterDurationInput(track.duration)"
                     @blur="formatDurationInput('tracks', idx)"
                   />
+                  <input
+                    v-else
+                    type="text"
+                    v-model="track.playDuration"
+                    placeholder="0:00:00 单曲时长"
+                    class="track-duration-input"
+                    maxlength="8"
+                    @input="track.playDuration = filterDurationInput(track.playDuration)"
+                    @blur="handleDurationInputBlur(idx)"
+                  />
                 </div>
 
                 <div v-else class="track-show-content">
                   <div class="track-name" style="cursor: pointer;">{{ track.name || '未知曲目' }}</div>
+                  <!-- ✅ 进度条 - 只在单曲列表展示 + 增加 @click.stop 阻止冒泡 -->
+                  <div class="track-score-slider-wrap">
+                    <div
+                      class="track-score-slider"
+                      ref="scoreSlider"
+                      @mousedown="(e) => startTrackScore(e, idx)"
+                      @mouseup="stopTrackScore"
+                      @mouseleave="stopTrackScore"
+                      @click.stop="(e) => setTrackScoreByClick(e, idx)"
+                    >
+                      <div
+                        class="track-score-progress"
+                        :style="{ width: `${track.score || 0}%` }"
+                      ></div>
+                    </div>
+                    <span class="track-score-text">{{ track.score || 0 }}分</span>
+                  </div>
                   <div class="track-duration">{{ track.duration || '0:00:00' }}</div>
                 </div>
 
@@ -158,13 +199,9 @@
           </div>
         </div>
 
-        <!-- 下半部分：节奏小组件 占位区【自适应占满剩余高度，永不移位】 -->
+        <!-- 下半部分：节奏可视化组件 【✅ 引入抽离的独立音频可视化组件】 -->
         <div class="rhythm-container">
-          <h3>节奏可视化组件</h3>
-          <div class="rhythm-placeholder">
-            <p>🎵 节奏组件占位区域</p>
-            <p>后续可在此处接入音频波形/频谱/节奏跳动等功能</p>
-          </div>
+          <AudioWaveVisualizer :audio-element="audioElement" />
         </div>
       </div>
     </div>
@@ -172,8 +209,10 @@
 </template>
 
 <script>
+import AudioWaveVisualizer from '@/components/AudioWave.vue';
 export default {
   name: 'AlbumTrackList',
+  components: { AudioWaveVisualizer },
   props: {
     album: {
       type: Object,
@@ -202,36 +241,120 @@ export default {
       activeTab: 'tracks', // tracks=单曲列表 favourite=喜欢时间戳
       isTrackEditMode: false, // 普通曲目编辑状态
       isFavouriteEditMode: false, // 喜欢时间戳编辑状态
-      trackList: [], // 普通曲目数据 {name: '', duration: '', sec: 秒数}
+      trackList: [], // 普通曲目数据 {name: '', duration: '', sec: 秒数, score: 评分0-100, playDuration:'' 单曲时长}
       favouriteTrackList: [], // 收藏曲目数据 {name: '', duration: '', sec: 秒数}
       // 评分组件相关数据
-      score: 0,        // 最终评分 0-100
+      score: 0,        // 最终评分 0-100 【全局个人感觉评分】
       isRating: false, // 是否正在按压评分
-      ratingTimer: null// 评分定时器
+      ratingTimer: null,// 评分定时器
+      // ✅ 单首曲目评分相关 - 新增存储当前滑块DOM
+      isTrackScoring: false,
+      currentTrackIdx: -1,
+      currentSliderDom: null, // 存储当前操作的进度条DOM节点
+      // ✅ 时长/时间戳 切换模式状态
+      isDurationMode: false,
+      // 仅保留获取audio标签dom对象
+      audioElement: null
     };
   },
   watch: {
-    // 普通曲目数据监听
-    tracks: { handler() { this.initTrackList(); }, deep: true },
-    tracksTime: { handler() { this.initTrackList(); }, deep: true },
-    // 收藏曲目数据监听
-    favourite_tracks: { handler() { this.initFavouriteTrackList(); }, deep: true },
-    favourite_tracks_time: { handler() { this.initFavouriteTrackList(); }, deep: true }
+    tracks: {
+      handler() {
+        this.initTrackList(true);
+      }, deep: true
+    },
+    tracksTime: {
+      handler() {
+        this.initTrackList(true);
+      }, deep: true
+    },
+    favourite_tracks: {
+      handler() {
+        this.initFavouriteTrackList();
+      }, deep: true
+    },
+    favourite_tracks_time: {
+      handler() {
+        this.initFavouriteTrackList();
+      }, deep: true
+    },
+    album: {
+      handler() {
+        this.initTrackList(true);
+        this.initFavouriteTrackList();
+      }, deep: true
+    }
   },
   mounted() {
     this.initTrackList();
-    this.initFavouriteTrackList(); // 初始化收藏曲目
+    this.initFavouriteTrackList();
+    this.getAllScore();
+    this.$nextTick(() => {
+      this.audioElement = this.$refs.audioRef;
+    });
   },
   activated() {
-    this.initTrackList();
-    this.initFavouriteTrackList(); // 初始化收藏曲目
+    this.initTrackList(true);
+    this.initFavouriteTrackList();
+    this.getAllScore();
+    this.$nextTick(() => {
+      this.audioElement = this.$refs.audioRef;
+    });
+  },
+  deactivated() {
+    this.saveAllScore();
   },
   beforeDestroy() {
-    // 销毁定时器，防止内存泄漏
     clearInterval(this.ratingTimer);
+    this.isTrackScoring = false;
+    this.currentTrackIdx = -1;
+    this.currentSliderDom = null;
+    document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
+    this.saveAllScore();
   },
   methods: {
-    // 完整版：将 时分秒字符串(0:00:00 / 00:00) 转为 总秒数 - 支持任意小时数
+    async saveAllScore() {
+      try {
+        const albumId = this.album.id;
+        if (!albumId) return;
+        let scoreList = [this.score];
+        this.trackList.forEach(item => {
+          scoreList.push(item.score || 0);
+        });
+        await this.$axios.put(`/api/album/score/save/${albumId}`, {
+          score_list: scoreList
+        }, {
+          headers: {
+            'Authorization': localStorage.getItem('token') || '',
+            'Content-Type': 'application/json'
+          }
+        });
+      } catch (err) {
+        console.error('保存评分失败：', err);
+      }
+    },
+    async getAllScore() {
+      try {
+        const albumId = this.album.id;
+        if (!albumId) return;
+        const res = await this.$axios.get(`/api/album/score/get/${albumId}`, {
+          headers: {
+            'Authorization': localStorage.getItem('token') || ''
+          }
+        });
+        if (res.data.code === 200 && res.data.data.score_list) {
+          const scoreList = res.data.data.score_list;
+          if (Array.isArray(scoreList) && scoreList.length > 0) {
+            this.score = scoreList[0] || 0;
+            this.trackList.forEach((item, idx) => {
+              item.score = scoreList[idx + 1] || 0;
+            });
+          }
+        }
+      } catch (err) {
+        console.error('读取评分失败：', err);
+      }
+    },
     timeToSeconds(timeStr) {
       if (!timeStr || timeStr.length === 0) return 0;
       let timeArr = timeStr.split(':').map(item => Number(item)).filter(item => !isNaN(item));
@@ -249,7 +372,6 @@ export default {
       hours = Math.max(hours, 0);
       return hours * 3600 + minutes * 60 + seconds;
     },
-    // 秒数转 0:00:00 格式
     secondsToTime(seconds) {
       if (!seconds || isNaN(seconds) || seconds < 0) return '0:00:00';
       const totalSeconds = Math.floor(seconds);
@@ -258,7 +380,6 @@ export default {
       const sec = Math.floor(totalSeconds % 60);
       return `${hours}:${minutes.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
     },
-    // 过滤时长输入框的内容，只允许输入 数字 和 冒号，冒号最多2个
     filterDurationInput(val) {
       if (!val) return '';
       let filterVal = val.replace(/[^0-9:]/g, '');
@@ -268,8 +389,13 @@ export default {
       }
       return filterVal;
     },
-    // 初始化普通曲目列表
-    initTrackList() {
+    initTrackList(keepScore = false) {
+      const oldScoreMap = {};
+      if (keepScore && this.trackList.length > 0) {
+        this.trackList.forEach((item, idx) => {
+          oldScoreMap[idx] = item.score || 0;
+        });
+      }
       this.trackList = [];
       const trackNames = Array.isArray(this.tracks) && this.tracks.length > 0 ? this.tracks : [];
       const trackSecs = Array.isArray(this.tracksTime) && this.tracksTime.length > 0 ? this.tracksTime : [];
@@ -279,14 +405,15 @@ export default {
           this.trackList.push({
             name: name.trim() || '未知曲目',
             sec: dbSec,
-            duration: this.secondsToTime(dbSec)
+            duration: this.secondsToTime(dbSec),
+            playDuration: '0:00:00',
+            score: keepScore ? oldScoreMap[idx] || 0 : 0
           });
         });
       } else {
-        this.trackList = [{name: '未知曲目', sec: 0, duration: '0:00:00'}];
+        this.trackList = [{name: '未知曲目', sec: 0, duration: '0:00:00', playDuration: '0:00:00', score: 0}];
       }
     },
-    // 初始化收藏曲目/喜欢时间戳列表
     initFavouriteTrackList() {
       this.favouriteTrackList = [];
       const trackNames = Array.isArray(this.favourite_tracks) && this.favourite_tracks.length > 0 ? this.favourite_tracks : [];
@@ -304,30 +431,60 @@ export default {
         this.favouriteTrackList = [{name: '未知曲目', sec: 0, duration: '0:00:00'}];
       }
     },
-    // 格式化时长输入框数据
     formatDurationInput(type, idx) {
-      if(type === 'tracks'){
+      if (type === 'tracks') {
         const track = this.trackList[idx];
         if (!track) return;
         track.sec = this.timeToSeconds(track.duration);
         track.duration = this.secondsToTime(track.sec);
-      }else{
+      } else {
         const track = this.favouriteTrackList[idx];
         if (!track) return;
         track.sec = this.timeToSeconds(track.duration);
         track.duration = this.secondsToTime(track.sec);
       }
     },
-    // 切换编辑状态
+    toggleDurationMode() {
+      this.isDurationMode = !this.isDurationMode;
+      if (this.isDurationMode) {
+        this.trackList.forEach(item => {
+          item.playDuration = item.playDuration || '0:00:00';
+        })
+      }
+    },
+    handleDurationInputBlur(idx) {
+      const track = this.trackList[idx];
+      if (!track) return;
+      track.playDuration = this.filterDurationInput(track.playDuration);
+      const durationSec = this.timeToSeconds(track.playDuration);
+      track.playDuration = this.secondsToTime(durationSec);
+      this.calcTrackTimestamp();
+    },
+    calcTrackTimestamp() {
+      let totalSec = 0;
+      this.trackList.forEach((track, idx) => {
+        if (idx === 0) {
+          totalSec = 0;
+        }
+        track.duration = this.secondsToTime(totalSec);
+        track.sec = totalSec;
+        const playSec = this.timeToSeconds(track.playDuration);
+        totalSec += playSec;
+      });
+    },
     async toggleEditStatus(type) {
-      if(type === 'tracks'){
+      if (type === 'tracks') {
         if (this.isTrackEditMode) {
+          if (this.isDurationMode) {
+            this.calcTrackTimestamp();
+          }
           await this.saveTrackList('tracks');
           this.isTrackEditMode = false;
+          this.isDurationMode = false;
         } else {
           this.isTrackEditMode = true;
         }
-      }else{
+      } else {
         if (this.isFavouriteEditMode) {
           await this.saveTrackList('favourite');
           this.isFavouriteEditMode = false;
@@ -336,15 +493,16 @@ export default {
         }
       }
     },
-    // 添加新曲目/新时间戳
     addNewTrack(type) {
-      if(type === 'tracks'){
-        this.trackList.push({name: '', duration: '0:00:00', sec: 0});
-      }else{
+      if (type === 'tracks') {
+        this.trackList.push({name: '', duration: '0:00:00', sec: 0, playDuration: '0:00:00', score: 0});
+        if (this.isDurationMode) {
+          this.calcTrackTimestamp();
+        }
+      } else {
         this.favouriteTrackList.push({name: '', duration: '0:00:00', sec: 0});
       }
     },
-    // 删除曲目/时间戳
     deleteTrack(type, idx) {
       let targetList = type === 'tracks' ? this.trackList : this.favouriteTrackList;
       if (targetList.length <= 1) {
@@ -352,28 +510,27 @@ export default {
         return;
       }
       targetList.splice(idx, 1);
+      if (type === 'tracks' && this.isDurationMode) {
+        this.calcTrackTimestamp();
+      }
     },
-    // 核心修改：统一保存方法，区分调用【普通曲目接口】和【收藏曲目接口】
     async saveTrackList(type) {
       try {
         let submitList, submitSecArr, apiUrl, emitKey1, emitKey2;
-        // 区分保存类型
-        if(type === 'tracks'){
-          // 普通曲目 - 调用原接口
+        if (type === 'tracks') {
           submitList = this.trackList.map(item => item.name.trim() || '未知曲目');
           submitSecArr = this.trackList.map(item => item.sec || 0);
           apiUrl = `/api/album/update/tracks/${this.album.id}`;
           emitKey1 = 'tracks';
           emitKey2 = 'tracks_time';
-        }else{
-          // 喜欢时间戳 - 调用你修改好的收藏接口
+        } else {
           submitList = this.favouriteTrackList.map(item => item.name.trim() || '未知曲目');
           submitSecArr = this.favouriteTrackList.map(item => item.sec || 0);
           apiUrl = `/api/album/update/favourite_tracks/${this.album.id}`;
           emitKey1 = 'favourite_tracks';
           emitKey2 = 'favourite_tracks_time';
         }
-        const fullTrackList = submitList.map(item => ({ name: item }));
+        const fullTrackList = submitList.map(item => ({name: item}));
 
         const res = await this.$axios.put(apiUrl, {
           tracks: submitList,
@@ -400,19 +557,16 @@ export default {
         alert(err.response?.data?.msg || '❌ 保存失败，请重试！');
       }
     },
-    // 点击普通曲目跳转播放
     handleTrackClick(idx) {
       if (this.isTrackEditMode) return;
       const targetSec = this.trackList[idx].sec || 0;
       this.$emit('track-jump', targetSec);
     },
-    // 点击喜欢时间戳跳转播放
     handleFavouriteTrackClick(idx) {
       if (this.isFavouriteEditMode) return;
       const targetSec = this.favouriteTrackList[idx].sec || 0;
       this.$emit('track-jump', targetSec);
     },
-    // 评分组件核心方法
     startRating() {
       this.isRating = true;
       this.ratingTimer = setInterval(() => {
@@ -431,13 +585,43 @@ export default {
       this.score = 0;
       this.isRating = false;
       clearInterval(this.ratingTimer);
+    },
+    startTrackScore(e, idx) {
+      this.isTrackScoring = true;
+      this.currentTrackIdx = idx;
+      this.currentSliderDom = e.currentTarget;
+      this.calcTrackScore(e);
+      document.addEventListener('mousemove', this.handleTrackScoreMouseMove);
+      e.stopPropagation();
+    },
+    stopTrackScore() {
+      this.isTrackScoring = false;
+      this.currentTrackIdx = -1;
+      this.currentSliderDom = null;
+      document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
+    },
+    handleTrackScoreMouseMove(e) {
+      if (this.isTrackScoring && this.currentTrackIdx !== -1 && this.currentSliderDom) {
+        this.calcTrackScore(e);
+      }
+    },
+    calcTrackScore(e) {
+      const slider = this.currentSliderDom;
+      const rect = slider.getBoundingClientRect();
+      let percent = ((e.clientX - rect.left) / rect.width) * 100;
+      percent = Math.max(0, Math.min(100, Math.round(percent)));
+      this.trackList[this.currentTrackIdx].score = percent;
+    },
+    setTrackScoreByClick(e, idx) {
+      this.currentTrackIdx = idx;
+      this.currentSliderDom = e.currentTarget;
+      this.calcTrackScore(e);
     }
   }
 };
 </script>
 
 <style scoped>
-/* ✅ 核心：全局完全自适应布局 无任何写死尺寸 - 父容器占满页面 */
 .tab-content {
   position: relative;
   width: 100%;
@@ -447,28 +631,29 @@ export default {
   display: flex;
   flex-direction: column;
 }
-/* 左右分栏：弹性占比 左6 右4 自适应页面宽度，永远占满高度 */
+
 .main-layout {
   display: flex;
   width: 100%;
   height: 100%;
   gap: 20px;
 }
+
 .left-panel {
-  flex: 6; /* 左侧弹性占6份 自适应 */
+  flex: 6;
   display: flex;
   flex-direction: column;
   height: 100%;
 }
+
 .right-panel {
-  flex: 4; /* 右侧弹性占4份 自适应 */
+  flex: 4;
   display: flex;
   flex-direction: column;
   gap: 20px;
   height: 100%;
 }
 
-/* ✅ 重中之重：Tab+编辑按钮 整体置顶固定，永不滚动 核心样式 */
 .sticky-top-box {
   position: sticky;
   top: 0;
@@ -477,13 +662,15 @@ export default {
   padding-bottom: 10px;
   margin-bottom: 15px;
 }
+
 .track-tab-nav {
   display: flex;
   gap: 10px;
   padding-bottom: 8px;
-	border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
   margin-bottom: 8px;
 }
+
 .tab-item {
   padding: 6px 16px;
   border-radius: 6px;
@@ -492,41 +679,44 @@ export default {
   color: #6b7280;
   transition: all 0.2s;
 }
+
 .tab-item.active {
   background: #2ea0d6;
   color: #fff;
 }
+
 .tab-item:hover {
   color: #2ea0d6;
 }
-/* 置顶的编辑按钮样式 */
+
 .sticky-header {
   justify-content: flex-end;
   align-items: center;
   margin-bottom: 0;
   padding-bottom: 0;
   border-bottom: none;
+  display: flex;
 }
 
-/* ✅ 核心：列表内容区 自适应占满剩余高度+滚动，顶部内容完全不动 */
 .tab-content-scroll {
   flex: 1;
   overflow-y: auto;
   padding-right: 5px;
 }
-/* 美化滚动条 - 不影响布局 */
+
 .tab-content-scroll::-webkit-scrollbar {
   width: 6px;
 }
+
 .tab-content-scroll::-webkit-scrollbar-thumb {
   background: #d1d5db;
   border-radius: 3px;
 }
+
 .tab-content-scroll::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
 
-/* ✅ 评分组件 - 自适应布局 左文右图 【修复核心：评分圆完整显示+样式正常】 */
 .rate-container {
   width: 100%;
   background: rgba(255, 255, 255, 0.8);
@@ -535,12 +725,14 @@ export default {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   flex-shrink: 0;
 }
+
 .rate-content-wrap {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
 }
+
 .rate-text-area {
   flex: 1;
   display: flex;
@@ -549,17 +741,20 @@ export default {
   gap: 15px;
   padding-right: 20px;
 }
+
 .rate-text-area h3 {
   margin: 0;
   font-size: 16px;
   color: #111827;
 }
+
 .rate-score {
   font-size: 24px;
   font-weight: bold;
   color: #2ea0d6;
   line-height: 1;
 }
+
 .reset-rate-btn {
   background: #dc2626;
   color: #fff;
@@ -570,11 +765,12 @@ export default {
   font-size: 14px;
   transition: all 0.2s;
 }
+
 .reset-rate-btn:hover {
   background: #b91c1c;
   transform: scale(1.02);
 }
-/* ✅ 修复关键：评分圆的样式 固定尺寸+正常显示，点击评分功能正常 */
+
 .rate-circle-area {
   width: 180px;
   height: 180px;
@@ -582,22 +778,25 @@ export default {
   align-items: center;
   justify-content: center;
 }
+
 .outer-circle {
   width: 180px;
   height: 180px;
   border: 3px solid #2ea0d6;
   border-radius: 50%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  alignItems: center;
+  justifyContent: center;
   cursor: pointer;
   background: #f9fafb;
   transition: all 0.2s;
 }
+
 .outer-circle:hover {
   border-color: #1f759d;
   background: #fff;
 }
+
 .inner-circle {
   background: #2ea0d6;
   border-radius: 50%;
@@ -605,34 +804,28 @@ export default {
   opacity: 0.85;
 }
 
-/* ✅ 节奏组件 自适应占满右侧剩余高度 永不移位 */
 .rhythm-container {
   width: 100%;
   background: rgba(255, 255, 255, 0.8);
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  flex: 1; /* 核心：占满右侧剩余所有高度 */
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
-.rhythm-placeholder {
-  text-align: center;
-  color: #6b7280;
-  font-size: 15px;
-	line-height: 2;
-}
 
-/* ✅ 原有所有业务样式完整保留 */
 .tracks-container {
   padding: 0;
   width: 100%;
 }
+
 .tracks-header {
   display: flex;
 }
+
 .tracks-list {
   width: 100%;
   background: rgba(255, 255, 255, 0.8);
@@ -641,6 +834,7 @@ export default {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   margin-bottom: 20px;
 }
+
 .track-item {
   display: flex;
   align-items: center;
@@ -648,12 +842,15 @@ export default {
   border-bottom: 1px solid #f3f4f6;
   transition: background-color 0.2s;
 }
+
 .track-item:last-child {
   border-bottom: none;
 }
+
 .track-item:hover {
   background-color: #f9fafb;
 }
+
 .track-index {
   width: 30px;
   font-size: 14px;
@@ -661,29 +858,37 @@ export default {
   text-align: center;
   margin-right: 10px;
 }
+
 .track-show-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex: 1;
+  gap: 15px;
 }
+
 .track-name {
   font-size: 15px;
   color: #111827;
   font-weight: 500;
+  min-width: 180px;
 }
+
 .track-duration {
   font-size: 14px;
   color: #6b7280;
-  margin-left: 20px;
+  white-space: nowrap;
+  margin-left: 10px;
 }
+
 .track-edit-content {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  alignItems: center;
   flex: 1;
   gap: 20px;
 }
+
 .track-name-input {
   flex: 1;
   padding: 6px 10px;
@@ -693,10 +898,12 @@ export default {
   color: #111827;
   outline: none;
 }
+
 .track-name-input:focus {
   border-color: #2ea0d6;
   box-shadow: 0 0 0 2px rgba(46, 160, 214, 0.2);
 }
+
 .track-duration-input {
   width: 110px;
   padding: 6px 10px;
@@ -707,13 +914,16 @@ export default {
   text-align: center;
   outline: none;
 }
+
 .track-duration-input:focus {
   border-color: #2ea0d6;
   box-shadow: 0 0 0 2px rgba(46, 160, 214, 0.2);
 }
+
 .track-del-btn {
   margin-left: 10px;
 }
+
 .track-del-btn button {
   background: transparent;
   border: none;
@@ -728,12 +938,15 @@ export default {
   border-radius: 50%;
   transition: background 0.2s;
 }
+
 .track-del-btn button:hover {
   background: #fef2f2;
 }
+
 .add-track-btn-box {
   text-align: right;
 }
+
 .add-track-btn {
   background: #2ea0d6;
   color: #fff;
@@ -744,10 +957,12 @@ export default {
   font-size: 14px;
   transition: all 0.2s;
 }
+
 .add-track-btn:hover {
   background: #1f759d;
   transform: scale(1.02);
 }
+
 .edit-btn {
   background: #2ea0d6;
   color: #fff;
@@ -758,11 +973,70 @@ export default {
   font-size: 14px;
   transition: all 0.2s;
 }
+
 .edit-btn.active {
   background: #15803d;
 }
+
 .edit-btn:hover {
   opacity: 0.9;
   transform: scale(1.02);
+}
+
+.mode-btn {
+  background: #9ca3af;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.mode-btn.active {
+  background: #f97316;
+}
+
+.mode-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.track-score-slider-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 5px;
+}
+
+.track-score-slider {
+  width: 100%;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.track-score-slider:hover {
+  background: #d1d5db;
+}
+
+.track-score-progress {
+  height: 100%;
+  background: #2ea0d6;
+  border-radius: 4px;
+  transition: width 0.05s linear;
+}
+
+.track-score-text {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+  width: 40px;
+  text-align: center;
 }
 </style>

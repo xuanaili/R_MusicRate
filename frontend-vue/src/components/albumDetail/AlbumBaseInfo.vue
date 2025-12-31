@@ -26,7 +26,7 @@
           </div>
           <div class="meta-item">
             <span class="meta-label">我的评分：</span>
-            <span class="meta-value">{{ album.my_score || 0.0 }}</span>
+            <span class="meta-value">{{ albumTotalScore  }}</span>
           </div>
         </div>
 
@@ -146,7 +146,13 @@ export default {
       type: String,
       required: true,
       default: '#2f9465'
-    }
+    },
+      // ✅ 新增这一段
+  albumTotalScore: {
+    type: Number,
+    required: false,
+    default: 0.0
+  }
   },
   data() {
     return {

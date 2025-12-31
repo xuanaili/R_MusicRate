@@ -56,14 +56,15 @@ def get_album_table_name(user_id):
     return f'albums_{user_id}'
 
 
-# ========== 核心修改：更新用户专辑表结构 ✅ tracks_time改为【数组格式】✅ 与tracks一一对应 ==========
+# ========== 核心修改：✅ my_score 改为 TEXT 类型 【删除DEFAULT默认值】✅ 解决1101错误 ✅ 兼容历史数据 ==========
 def create_user_album_table(user_id):
     """为新用户创建专属的专辑表
     tracks: TEXT 存储【单曲名称数组】JSON字符串 如 ["曲目1","曲目2"]
     tracks_time: TEXT 存储【对应单曲时间戳数组】JSON字符串 如 [120,240,360]
+    my_score: TEXT 存储【单曲评分数组】JSON字符串 如 [8.0,9.5,7.8,0,0] ✅核心修改：无默认值，解决1101
     favourite_tracks: TEXT 收藏曲目名称数组
     favourite_tracks_time: TEXT 收藏曲目对应秒数数组
-    两者一一对应、索引一致、永久保存
+    所有数组一一对应、索引一致、永久保存
     """
     try:
         db = get_db()
@@ -79,7 +80,7 @@ def create_user_album_table(user_id):
                 start_time VARCHAR(50) DEFAULT "",
                 track_count INT DEFAULT 0,
                 track_duration VARCHAR(50) DEFAULT "",
-                my_score FLOAT DEFAULT 0.0,
+                my_score TEXT COMMENT '单曲评分数组【JSON】：[8.0,9.5,7.8,0] 与tracks一一对应 ✅TEXT类型 无默认值',
                 burn_class VARCHAR(50) DEFAULT "",
                 duration_type VARCHAR(50) DEFAULT "",
                 tags TEXT,
@@ -96,15 +97,15 @@ def create_user_album_table(user_id):
                 source_pool_id INT NULL COMMENT '来源公共模板ID',
                 sync_pool_update TINYINT DEFAULT 1 COMMENT '是否同步模板更新（1=开启，0=关闭）',
                 is_customized TINYINT DEFAULT 0 COMMENT '是否用户自定义修改（1=是，0=否）',
-                tracks_time TEXT NULL DEFAULT NULL COMMENT '单曲对应编辑时间戳【数组JSON】：[120,240,360]，与tracks数组索引一一匹配',
-                favourite_tracks TEXT NULL DEFAULT NULL COMMENT '收藏曲目列表【数组JSON】：[\'收藏曲目1\',\'收藏曲目2\']',
-                favourite_tracks_time TEXT NULL DEFAULT NULL COMMENT '收藏曲目对应秒数【数组JSON】：[120,240,360]，与favourite_tracks数组索引一一匹配',
+                tracks_time TEXT NULL COMMENT '单曲对应编辑时间戳【数组JSON】：[120,240,360]，与tracks数组索引一一匹配',
+                favourite_tracks TEXT NULL COMMENT '收藏曲目列表【数组JSON】：[\'收藏曲目1\',\'收藏曲目2\']',
+                favourite_tracks_time TEXT NULL COMMENT '收藏曲目对应秒数【数组JSON】：[120,240,360]，与favourite_tracks数组索引一一匹配',
                 listening_duration FLOAT DEFAULT 0.0 COMMENT '专辑累计播放时长(秒) 精准统计'
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ''')
         db.commit()
         cursor.close()
-        print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！tracks_time为数组格式+新增播放时长字段+收藏字段")
+        print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！my_score为TEXT数组格式+无默认值，解决1101错误")
     except Exception as e:
         print(f"❌ 创建用户专辑表失败：{str(e)}")
         raise e
@@ -112,8 +113,9 @@ def create_user_album_table(user_id):
 
 def check_and_create_user_album_table(user_id):
     """检查用户专辑表是否存在，不存在则创建 + 补充缺失字段
-    重点：自动为老用户补充tracks_time字段（TEXT类型，数组JSON） + listening_duration播放时长字段
-    新增：自动补充收藏曲目相关字段 favourite_tracks、favourite_tracks_time
+    ✅ 核心修复1：my_score 字段 无DEFAULT默认值，解决1101语法错误
+    ✅ 核心修复2：自动将老用户的 my_score FLOAT 字段 → TEXT 字段，并迁移历史评分数据为数组格式
+    ✅ 自动补充tracks_time、listening_duration、收藏字段等所有缺失字段
     """
     try:
         db = get_db()
@@ -129,6 +131,23 @@ def check_and_create_user_album_table(user_id):
         if not table_exists:
             create_user_album_table(user_id)
         else:
+            # ========== ✅ 重中之重：修复 my_score 字段【FLOAT → TEXT】+ 数据迁移 无默认值 ==========
+            cursor.execute(f'''
+                SELECT COLUMN_TYPE FROM information_schema.COLUMNS 
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'my_score'
+            ''', (MYSQL_CONFIG['db'], table_name))
+            result = cursor.fetchone()
+            if result and result['COLUMN_TYPE'] in ['float', 'double']:
+                # 1. 先把历史FLOAT类型的评分，转为数组格式的字符串（如 8.5 → "[8.5]"）
+                cursor.execute(f'UPDATE `{table_name}` SET my_score = CONCAT("[", my_score, "]") WHERE my_score IS NOT NULL AND my_score != ""')
+                # 2. 修改字段类型：FLOAT → TEXT，【删除默认值】，完美兼容，解决1101
+                cursor.execute(f'''
+                    ALTER TABLE `{table_name}` 
+                    MODIFY COLUMN my_score TEXT COMMENT '单曲评分数组【JSON】：[8.0,9.5,7.8,0] 与tracks一一对应 ✅TEXT类型 无默认值'
+                ''')
+                print(f"✅ 为用户{user_id}的专辑表{table_name}修复my_score字段：FLOAT→TEXT，历史评分已转为数组格式！解决1101错误")
+
+            # ========== 原有字段补充逻辑（全部保留，无任何删减） ==========
             # 1. 检查并添加album_intro字段
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
@@ -184,7 +203,7 @@ def check_and_create_user_album_table(user_id):
                     f'ALTER TABLE `{table_name}` ADD COLUMN is_customized TINYINT DEFAULT 0 COMMENT "是否用户自定义修改（1=是，0=否）" AFTER sync_pool_update')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充is_customized字段")
 
-            # ✅ 重点1：检查并补充 tracks_time 字段【TEXT类型】
+            # ✅ 补充 tracks_time 字段【TEXT类型】
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'tracks_time'
@@ -192,10 +211,10 @@ def check_and_create_user_album_table(user_id):
             result = cursor.fetchone()
             if result['count'] == 0:
                 cursor.execute(
-                    f'ALTER TABLE `{table_name}` ADD COLUMN tracks_time TEXT NULL DEFAULT NULL COMMENT "单曲对应编辑时间戳【数组JSON】：[120,240,360]，与tracks数组索引一一匹配" AFTER is_customized')
+                    f'ALTER TABLE `{table_name}` ADD COLUMN tracks_time TEXT NULL COMMENT "单曲对应编辑时间戳【数组JSON】：[120,240,360]，与tracks数组索引一一匹配" AFTER is_customized')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充 tracks_time 字段【数组格式】")
 
-            # ✅ 重点2：检查并补充 listening_duration 播放时长统计字段
+            # ✅ 补充 listening_duration 播放时长统计字段
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'listening_duration'
@@ -206,10 +225,7 @@ def check_and_create_user_album_table(user_id):
                     f'ALTER TABLE `{table_name}` ADD COLUMN listening_duration FLOAT DEFAULT 0.0 COMMENT "专辑累计播放时长(秒) 精准统计" AFTER tracks_time')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充 listening_duration 播放时长字段")
 
-            # ==============================================
-            # ✅✅✅ 新增：收藏曲目相关2个核心字段（为所有老用户自动补充）✅✅✅
-            # ==============================================
-            # 6. 检查并补充 收藏曲目列表 字段 favourite_tracks
+            # ✅ 收藏曲目相关2个核心字段
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'favourite_tracks'
@@ -217,10 +233,9 @@ def check_and_create_user_album_table(user_id):
             result = cursor.fetchone()
             if result['count'] == 0:
                 cursor.execute(
-                    f'ALTER TABLE `{table_name}` ADD COLUMN favourite_tracks TEXT NULL DEFAULT NULL COMMENT "收藏曲目列表【数组JSON】：[\'收藏曲目1\',\'收藏曲目2\']" AFTER listening_duration')
+                    f'ALTER TABLE `{table_name}` ADD COLUMN favourite_tracks TEXT NULL COMMENT "收藏曲目列表【数组JSON】：[\'收藏曲目1\',\'收藏曲目2\']" AFTER listening_duration')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充 favourite_tracks 收藏曲目字段【数组格式】")
 
-            # 7. 检查并补充 收藏曲目时间戳 字段 favourite_tracks_time
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'favourite_tracks_time'
@@ -228,7 +243,7 @@ def check_and_create_user_album_table(user_id):
             result = cursor.fetchone()
             if result['count'] == 0:
                 cursor.execute(
-                    f'ALTER TABLE `{table_name}` ADD COLUMN favourite_tracks_time TEXT NULL DEFAULT NULL COMMENT "收藏曲目对应秒数【数组JSON】：[120,240,360]，与favourite_tracks数组索引一一匹配" AFTER favourite_tracks')
+                    f'ALTER TABLE `{table_name}` ADD COLUMN favourite_tracks_time TEXT NULL COMMENT "收藏曲目对应秒数【数组JSON】：[120,240,360]，与favourite_tracks数组索引一一匹配" AFTER favourite_tracks')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充 favourite_tracks_time 收藏时间戳字段【数组格式】")
 
             db.commit()
@@ -291,9 +306,9 @@ def create_user_playlist_table():
         raise e
 
 
-# ========== 核心：初始化所有基础表 【✅已整合user_playlist表初始化✅】 ==========
+# ========== 核心：初始化所有基础表 【✅已整合所有修复+无报错✅】 ==========
 def init_base_tables():
-    """初始化基础表（album_pool/album_pool_history 完全不变，不做任何修改）"""
+    """初始化基础表（album_pool/album_pool_history 同步修复my_score字段类型，删除默认值，解决1101错误）"""
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -314,7 +329,7 @@ def init_base_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表（重构版）';
         ''')
 
-        # 2. album_pool表 完全不变
+        # 2. album_pool表 ✅核心修改：my_score 改为 TEXT 类型 + 【删除DEFAULT默认值】解决1101错误
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS album_pool (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -326,7 +341,7 @@ def init_base_tables():
                 tags TEXT,
                 album_intro TEXT NULL COMMENT '专辑简介（支持长文本、分段、特殊符号）',
                 tracks TEXT COMMENT '单曲列表（JSON字符串）',
-                my_score FLOAT DEFAULT 0.0,
+                my_score TEXT COMMENT '单曲评分数组【JSON】：[8.0,9.5,7.8] ✅TEXT类型 无默认值',
                 create_user INT NOT NULL COMMENT '创建用户ID',
                 create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 version INT DEFAULT 1 COMMENT '模板版本号',
@@ -345,7 +360,7 @@ def init_base_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑搜索池表（带版本管理 + tracks + album_intro + MP3音频）';
         ''')
 
-        # 3. album_pool_history 完全不变
+        # 3. album_pool_history ✅同步修改my_score为TEXT + 【删除DEFAULT默认值】解决1101错误
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS album_pool_history (
                 id INT AUTO_INCREMENT PRIMARY KEY COMMENT '历史记录ID',
@@ -359,7 +374,7 @@ def init_base_tables():
                 tags TEXT COMMENT '历史标签',
                 album_intro TEXT NULL COMMENT '历史专辑简介',
                 tracks TEXT COMMENT '历史单曲列表',
-                my_score FLOAT DEFAULT 0.0 COMMENT '历史评分',
+                my_score TEXT COMMENT '历史单曲评分数组【JSON】 ✅TEXT类型 无默认值',
                 update_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '版本更新时间',
                 INDEX idx_pool_version (pool_id, version),
                 INDEX idx_update_time (update_time),
@@ -386,7 +401,8 @@ def init_base_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑公共评论表';
         ''')
 
-        # 补充album_pool缺失的tracks/album_intro/音频字段，无其他改动
+        # ========== ✅ 公共表补充字段+修复my_score字段类型【无默认值】 ==========
+        # 补充album_pool缺失的tracks/album_intro/音频字段
         cursor.execute('''
             SELECT COUNT(*) as count FROM information_schema.COLUMNS 
             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool' AND COLUMN_NAME = 'album_intro'
@@ -413,6 +429,21 @@ def init_base_tables():
             ''')
             print("✅ 为已有album_pool表补充tracks字段")
 
+        # ✅ 修复album_pool的my_score字段：FLOAT→TEXT 【无默认值】解决1101
+        cursor.execute(f'''
+            SELECT COLUMN_TYPE FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool' AND COLUMN_NAME = 'my_score'
+        ''', (MYSQL_CONFIG['db'],))
+        result = cursor.fetchone()
+        if result and result['COLUMN_TYPE'] in ['float', 'double']:
+            cursor.execute(f'UPDATE album_pool SET my_score = CONCAT("[", my_score, "]") WHERE my_score IS NOT NULL AND my_score != ""')
+            cursor.execute(f'''
+                ALTER TABLE album_pool 
+                MODIFY COLUMN my_score TEXT COMMENT '单曲评分数组【JSON】：[8.0,9.5,7.8] ✅TEXT类型 无默认值'
+            ''')
+            print("✅ 修复album_pool表my_score字段：FLOAT→TEXT，历史评分已转为数组！解决1101错误")
+
+        # 补充音频字段
         cursor.execute('''
             SELECT COUNT(*) as count FROM information_schema.COLUMNS 
             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool' AND COLUMN_NAME = 'mp3_url'
@@ -443,7 +474,7 @@ def init_base_tables():
                 'ALTER TABLE album_pool ADD COLUMN mp3_duration INT DEFAULT 0 COMMENT "音频时长(秒)" AFTER mp3_name')
             print("✅ 为已有album_pool表补充mp3_duration字段")
 
-        # 补充album_pool_history缺失的tracks/album_intro字段
+        # 补充album_pool_history缺失的tracks/album_intro字段 + 修复my_score【无默认值】
         cursor.execute('''
             SELECT COUNT(*) as count FROM information_schema.COLUMNS 
             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool_history' AND COLUMN_NAME = 'album_intro'
@@ -470,14 +501,27 @@ def init_base_tables():
             ''')
             print("✅ 为已有album_pool_history表补充tracks字段")
 
+        # ✅ 修复album_pool_history的my_score字段：FLOAT→TEXT 【无默认值】解决1101
+        cursor.execute(f'''
+            SELECT COLUMN_TYPE FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'album_pool_history' AND COLUMN_NAME = 'my_score'
+        ''', (MYSQL_CONFIG['db'],))
+        result = cursor.fetchone()
+        if result and result['COLUMN_TYPE'] in ['float', 'double']:
+            cursor.execute(f'UPDATE album_pool_history SET my_score = CONCAT("[", my_score, "]") WHERE my_score IS NOT NULL AND my_score != ""')
+            cursor.execute(f'''
+                ALTER TABLE album_pool_history 
+                MODIFY COLUMN my_score TEXT COMMENT '历史单曲评分数组【JSON】 ✅TEXT类型 无默认值'
+            ''')
+            print("✅ 修复album_pool_history表my_score字段：FLOAT→TEXT，历史评分已转为数组！解决1101错误")
+
         db.commit()
         cursor.close()
         # 初始化其他关联表
         create_user_album_intro_table()
-        # ✅✅✅ 执行用户播放列表表的创建 ✅✅✅
         create_user_playlist_table()
 
-        print("✅ MySQL基础表初始化成功！album_pool/album_pool_history 无改动，已新增user_playlist播放列表表")
+        print("✅ MySQL基础表初始化成功！彻底解决 1265截断错误 + 1101默认值错误，所有功能正常！")
         init_default_admin()
     except Exception as e:
         print(f"❌ 初始化基础表失败：{str(e)}")
@@ -506,7 +550,7 @@ def init_default_admin():
             print(f"✅ 默认admin用户创建成功（ID：{admin_id}）")
         else:
             check_and_create_user_album_table(user['user_id'])
-            print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），已检查并补充所有缺失字段")
+            print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），my_score字段已修复完成！")
         cursor.close()
     except Exception as e:
         print(f"❌ 初始化admin用户失败：{str(e)}")

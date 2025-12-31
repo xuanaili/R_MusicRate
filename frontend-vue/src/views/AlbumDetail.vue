@@ -23,6 +23,7 @@
         :albumPoolId="albumPoolId || 0"
         :main-color="albumMainColor"
         :main-color-dark="albumMainColorDark"
+        :albumTotalScore="albumTotalScore"
         @save-tags="saveMyTags"
         @save-intro="saveAlbumIntro"
       />
@@ -195,6 +196,8 @@ import AlbumTrackList from '@/components/albumDetail/AlbumTrackList'
 import AlbumReviewEditor from '@/components/albumDetail/AlbumReviewEditor'
 import AlbumCommentSection from '@/components/albumDetail/AlbumCommentSection'
 import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
+// ✅ 核心新增：引入评分计算工具函数
+import { calculateAlbumTotalScore } from '@/utils/scoreCalc.js'
 
 export default {
   name: 'AlbumDetail',
@@ -219,7 +222,7 @@ export default {
         tracks_time: [],
         full_tracks: [],
         review: {},
-        my_score: 0.0,
+        my_score: [], // ✅ 修正：评分字段默认是数组，不是0.0
         track_count: 0,
         source_pool_id: 0,
         sync_pool_update: 1,
@@ -282,6 +285,24 @@ export default {
     },
     currentPlaylist() {
       return this.playlistTabs[this.activeTabIndex]?.tracks || []
+    },
+    // ✅ ✅ ✅ 核心新增：计算属性 - 自动计算专辑综合评分，响应式更新
+    albumTotalScore() {
+      let scoreList = []
+      // 兼容两种情况：1.my_score是数组 2.my_score是JSON字符串（后端返回的格式）
+      if (this.album.my_score) {
+        if (typeof this.album.my_score === 'string') {
+          try {
+            scoreList = JSON.parse(this.album.my_score)
+          } catch (err) {
+            scoreList = []
+          }
+        } else if (Array.isArray(this.album.my_score)) {
+          scoreList = this.album.my_score
+        }
+      }
+      // 调用工具函数计算最终评分
+      return calculateAlbumTotalScore(scoreList)
     }
   },
   watch: {
@@ -1241,7 +1262,7 @@ export default {
         tracks_time: [],
         full_tracks: [],
         review: {},
-        my_score: 0.0,
+        my_score: [], // ✅ 修正：评分字段默认是数组
         track_count: 0,
         source_pool_id: 0,
         sync_pool_update: 1,
@@ -1485,7 +1506,7 @@ export default {
   font-size: 14px;
   transition: all 0.2s;
   border-radius: 4px;
-  padding-left: 8px;
+	padding-left: 8px;
 }
 
 .menu-item:hover {
@@ -1648,7 +1669,7 @@ h4 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 20px;
+	width: 20px;
 }
 
 .volume-icon {
@@ -1717,7 +1738,7 @@ h4 {
   padding: 3px 0;
   min-width: 80px;
   z-index: 999;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0,0,0,0.05);
 }
 
 .menu-btn.playlist-btn {
@@ -1773,7 +1794,7 @@ h4 {
   background: white;
   z-index: 999;
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
-  padding: 20px;
+	padding: 20px;
   box-sizing: border-box;
   overflow-y: auto;
 }
