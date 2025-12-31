@@ -333,13 +333,15 @@ def register_album_routes(app):
                 "mandopop_code": album["mandopop_code"],
                 "album_intro": final_intro,
                 "tracks": safe_json_loads(album["tracks"]),
+                "favourite_tracks": safe_json_loads(album["favourite_tracks"]),
                 "review": safe_json_loads(album["review"], is_dict=True),
                 "score": album["score"],
                 "comments": safe_json_loads(album["comments"]),
                 "source_pool_id": album.get("source_pool_id"),
                 "sync_pool_update": album.get("sync_pool_update", 1),
                 "is_customized": album.get("is_customized", 0),
-                "tracks_time": safe_json_loads(album.get("tracks_time"))
+                "tracks_time": safe_json_loads(album.get("tracks_time")),
+                "favourite_tracks_time": safe_json_loads(album.get("favourite_tracks_time"))
             }
             return jsonify({"code": 200, "msg": "获取专辑详情成功！", "data": album_dict})
         except Exception as e:
@@ -624,3 +626,59 @@ def register_album_routes(app):
             print(f"❌ 编辑曲目保存失败：{str(e)}")
             traceback.print_exc()
             return jsonify({"code": 500, "msg": f"保存曲目失败：{str(e)}"}), 200
+
+    @app.route('/api/album/update/favourite_tracks/<int:album_id>', methods=['PUT', 'OPTIONS'])
+    @login_required
+    def update_album_favourite_tracks(album_id):
+        try:
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
+            data = request.get_json()
+            # 变量名同步修改，语义对应收藏曲目
+            new_favourite_tracks = data.get('tracks', [])
+            full_tracks = data.get('full_tracks', [])
+            favourite_trackSecArr = data.get('tracks_time', [])
+
+            # 收藏曲目数组清洗：去空、去首尾空格
+            if isinstance(new_favourite_tracks, list):
+                new_favourite_tracks = [track.strip() for track in new_favourite_tracks if track.strip()]
+
+            # 收藏曲目时长校验：长度不一致/非数组则填充默认值0
+            if not isinstance(favourite_trackSecArr, list) or len(favourite_trackSecArr) != len(new_favourite_tracks):
+                favourite_trackSecArr = [0 for _ in new_favourite_tracks]
+
+            # 核心修改1：数据库列对应替换 tracks → favourite_tracks
+            favourite_tracks_json = json.dumps(new_favourite_tracks, ensure_ascii=False)
+            # 核心修改2：数据库列对应替换 tracks_time → favourite_tracks_time
+            favourite_tracks_time_json = json.dumps(favourite_trackSecArr, ensure_ascii=False)
+
+            table_name = get_album_table_name(current_user_id)
+            db = get_db()
+            cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+            cursor.execute(f'SELECT id FROM `{table_name}` WHERE id = %s', (album_id,))
+            album_info = cursor.fetchone()
+            if not album_info:
+                cursor.close()
+                return jsonify({"code": 404, "msg": "专辑不存在或暂无编辑权限！"}), 200
+
+            # 核心修改3：SQL语句的字段全部替换为收藏曲目对应字段
+            cursor.execute(f'''
+                UPDATE `{table_name}` 
+                SET favourite_tracks = %s, is_customized = 1, favourite_tracks_time = %s
+                WHERE id = %s
+            ''', (favourite_tracks_json, favourite_tracks_time_json, album_id))
+            db.commit()
+            cursor.close()
+            # 提示文案同步修改为收藏曲目相关，语义匹配
+            return jsonify({
+                "code": 200,
+                "msg": "收藏曲目列表保存成功！收藏曲目秒数已同步保存",
+                "data": {"tracks": new_favourite_tracks, "tracks_time": favourite_trackSecArr}
+            })
+        except Exception as e:
+            print(f"❌ 收藏曲目保存失败：{str(e)}")
+            traceback.print_exc()
+            return jsonify({"code": 500, "msg": f"保存收藏曲目失败：{str(e)}"}), 200
+
+

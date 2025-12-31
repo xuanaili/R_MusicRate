@@ -60,7 +60,9 @@ def get_album_table_name(user_id):
 def create_user_album_table(user_id):
     """为新用户创建专属的专辑表
     tracks: TEXT 存储【单曲名称数组】JSON字符串 如 ["曲目1","曲目2"]
-    tracks_time: TEXT 存储【对应单曲时间戳数组】JSON字符串 如 [1735488888123,1735488899456]
+    tracks_time: TEXT 存储【对应单曲时间戳数组】JSON字符串 如 [120,240,360]
+    favourite_tracks: TEXT 收藏曲目名称数组
+    favourite_tracks_time: TEXT 收藏曲目对应秒数数组
     两者一一对应、索引一致、永久保存
     """
     try:
@@ -86,7 +88,7 @@ def create_user_album_table(user_id):
                 video_shared VARCHAR(50) DEFAULT "",
                 mandopop_code VARCHAR(50) DEFAULT "",
                 album_intro TEXT NULL COMMENT '专辑简介（支持长文本、分段、特殊符号）',
-                tracks TEXT COMMENT '单曲列表【数组JSON】：["曲目1","曲目2","曲目3"]',
+                tracks TEXT COMMENT '单曲列表【数组JSON】：[\'曲目1\',\'曲目2\',\'曲目3\']',
                 review TEXT,
                 score FLOAT DEFAULT 0.0,
                 comments TEXT,
@@ -94,15 +96,15 @@ def create_user_album_table(user_id):
                 source_pool_id INT NULL COMMENT '来源公共模板ID',
                 sync_pool_update TINYINT DEFAULT 1 COMMENT '是否同步模板更新（1=开启，0=关闭）',
                 is_customized TINYINT DEFAULT 0 COMMENT '是否用户自定义修改（1=是，0=否）',
-                -- ✅ 核心修改：字段类型TEXT + 注释更新 存储【时间戳数组JSON】 和tracks一一对应 ✅
-                tracks_time TEXT NULL DEFAULT NULL COMMENT '单曲对应编辑时间戳【数组JSON】：[时间戳1,时间戳2]，与tracks数组索引一一匹配',
-                -- ✅ ✅ ✅ 新增：播放时长统计字段 ✅ ✅ ✅
+                tracks_time TEXT NULL DEFAULT NULL COMMENT '单曲对应编辑时间戳【数组JSON】：[120,240,360]，与tracks数组索引一一匹配',
+                favourite_tracks TEXT NULL DEFAULT NULL COMMENT '收藏曲目列表【数组JSON】：[\'收藏曲目1\',\'收藏曲目2\']',
+                favourite_tracks_time TEXT NULL DEFAULT NULL COMMENT '收藏曲目对应秒数【数组JSON】：[120,240,360]，与favourite_tracks数组索引一一匹配',
                 listening_duration FLOAT DEFAULT 0.0 COMMENT '专辑累计播放时长(秒) 精准统计'
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ''')
         db.commit()
         cursor.close()
-        print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！tracks_time为数组格式+新增播放时长字段")
+        print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！tracks_time为数组格式+新增播放时长字段+收藏字段")
     except Exception as e:
         print(f"❌ 创建用户专辑表失败：{str(e)}")
         raise e
@@ -111,6 +113,7 @@ def create_user_album_table(user_id):
 def check_and_create_user_album_table(user_id):
     """检查用户专辑表是否存在，不存在则创建 + 补充缺失字段
     重点：自动为老用户补充tracks_time字段（TEXT类型，数组JSON） + listening_duration播放时长字段
+    新增：自动补充收藏曲目相关字段 favourite_tracks、favourite_tracks_time
     """
     try:
         db = get_db()
@@ -145,7 +148,7 @@ def check_and_create_user_album_table(user_id):
             result = cursor.fetchone()
             if result['count'] == 0:
                 cursor.execute(
-                    f'ALTER TABLE `{table_name}` ADD COLUMN tracks TEXT COMMENT "单曲列表【数组JSON】：[\"曲目1\",\"曲目2\"]" AFTER album_intro')
+                    f'ALTER TABLE `{table_name}` ADD COLUMN tracks TEXT COMMENT "单曲列表【数组JSON】：[\'曲目1\',\'曲目2\']" AFTER album_intro')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充tracks字段")
 
             # 3. 检查并添加source_pool_id字段
@@ -181,7 +184,7 @@ def check_and_create_user_album_table(user_id):
                     f'ALTER TABLE `{table_name}` ADD COLUMN is_customized TINYINT DEFAULT 0 COMMENT "是否用户自定义修改（1=是，0=否）" AFTER sync_pool_update')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充is_customized字段")
 
-            # ✅ ✅ ✅ 重点1：检查并补充 tracks_time 字段【TEXT类型】✅ ✅ ✅
+            # ✅ 重点1：检查并补充 tracks_time 字段【TEXT类型】
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'tracks_time'
@@ -189,10 +192,10 @@ def check_and_create_user_album_table(user_id):
             result = cursor.fetchone()
             if result['count'] == 0:
                 cursor.execute(
-                    f'ALTER TABLE `{table_name}` ADD COLUMN tracks_time TEXT NULL DEFAULT NULL COMMENT "单曲对应编辑时间戳【数组JSON】：[时间戳1,时间戳2]，与tracks数组索引一一匹配" AFTER is_customized')
+                    f'ALTER TABLE `{table_name}` ADD COLUMN tracks_time TEXT NULL DEFAULT NULL COMMENT "单曲对应编辑时间戳【数组JSON】：[120,240,360]，与tracks数组索引一一匹配" AFTER is_customized')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充 tracks_time 字段【数组格式】")
 
-            # ✅ ✅ ✅ 重点2：检查并补充 listening_duration 播放时长统计字段 ✅ ✅ ✅
+            # ✅ 重点2：检查并补充 listening_duration 播放时长统计字段
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'listening_duration'
@@ -202,6 +205,31 @@ def check_and_create_user_album_table(user_id):
                 cursor.execute(
                     f'ALTER TABLE `{table_name}` ADD COLUMN listening_duration FLOAT DEFAULT 0.0 COMMENT "专辑累计播放时长(秒) 精准统计" AFTER tracks_time')
                 print(f"✅ 为用户{user_id}的专辑表{table_name}补充 listening_duration 播放时长字段")
+
+            # ==============================================
+            # ✅✅✅ 新增：收藏曲目相关2个核心字段（为所有老用户自动补充）✅✅✅
+            # ==============================================
+            # 6. 检查并补充 收藏曲目列表 字段 favourite_tracks
+            cursor.execute(f'''
+                SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'favourite_tracks'
+            ''', (MYSQL_CONFIG['db'], table_name))
+            result = cursor.fetchone()
+            if result['count'] == 0:
+                cursor.execute(
+                    f'ALTER TABLE `{table_name}` ADD COLUMN favourite_tracks TEXT NULL DEFAULT NULL COMMENT "收藏曲目列表【数组JSON】：[\'收藏曲目1\',\'收藏曲目2\']" AFTER listening_duration')
+                print(f"✅ 为用户{user_id}的专辑表{table_name}补充 favourite_tracks 收藏曲目字段【数组格式】")
+
+            # 7. 检查并补充 收藏曲目时间戳 字段 favourite_tracks_time
+            cursor.execute(f'''
+                SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'favourite_tracks_time'
+            ''', (MYSQL_CONFIG['db'], table_name))
+            result = cursor.fetchone()
+            if result['count'] == 0:
+                cursor.execute(
+                    f'ALTER TABLE `{table_name}` ADD COLUMN favourite_tracks_time TEXT NULL DEFAULT NULL COMMENT "收藏曲目对应秒数【数组JSON】：[120,240,360]，与favourite_tracks数组索引一一匹配" AFTER favourite_tracks')
+                print(f"✅ 为用户{user_id}的专辑表{table_name}补充 favourite_tracks_time 收藏时间戳字段【数组格式】")
 
             db.commit()
         cursor.close()

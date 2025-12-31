@@ -32,6 +32,8 @@
         :album="album"
         :tracks="album.tracks || ['未知曲目']"
         :tracks-time="album.tracks_time || []"
+        :favourite_tracks="album.favourite_tracks"
+        :favourite_tracks_time="album.favourite_tracks_time"
         @update-album-data="updateAlbumData"
         @track-jump="handleTrackJump"
       />
