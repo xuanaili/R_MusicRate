@@ -361,6 +361,8 @@ $route: {
       this.$router.push('/albumDetail');
       return;
     }
+
+    await this.getUserPlaylistData();
     await this.getAlbumDetail(Number(albumId));
     await this.getAlbumPoolRealId();
     const savedBlockedIds = localStorage.getItem(`blocked_comments_${this.albumPoolId}`);
@@ -373,7 +375,6 @@ $route: {
     this.currentAlbumId = -1; // ✅ 初始化默认值：无播放，下标为-1
 this.currentTrackIndex = -1;
     await this.getUserHasAudioAlbums();
-    await this.getUserPlaylistData();
     this.autoPlayCurrentAlbumAudio();
   },
   methods: {
@@ -790,6 +791,9 @@ async handleEnded() {
   const audio = this.$refs.audioRef;
   if (!audio || !this.audioSrc || this.currentPlaylist.length === 0) return;
 
+
+
+  console.log(this)
   // 单曲循环：本地直接重播，不走接口，效率最高
   if (this.playMode === 'single') {
     audio.currentTime = 0;
@@ -806,8 +810,8 @@ async handleEnded() {
       '/api/playlist/switch-next-album',
       {
         playlist: this.playlistTabs,
-        current_playlist_id: this.activeTabIndex,
-        current_album_id: this.currentTrackIndex,
+        current_playlist_id: this.currentPlaylistId,
+        current_album_id: this.currentAlbumId,
         play_mode: this.playMode
       },
       { headers: { Authorization: localStorage.getItem('token') || '' } }
@@ -1091,7 +1095,6 @@ darkenColor(hex, amount) {
                 this.album = res.data.data;
                 if (this.album.source_pool_id) {
                   this.albumPoolId = this.album.source_pool_id;
-                  this.currentAlbumId = this.album.source_pool_id;
                 }
                 this.saveUserPlaylistData();
                 resolve();

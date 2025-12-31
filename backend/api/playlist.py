@@ -65,7 +65,7 @@ def register_playlist_routes(app):
                 "data": []
             })
 
-    # ========== ✅ 获取用户个人播放列表完整数据 (原代码保留，无BUG) ==========
+    # ========== ✅ 修复后完整版：获取用户个人播放列表完整数据 (解决所有初始化BUG) ==========
     @app.route('/api/playlist/get-user-playlist-data', methods=['GET'])
     @login_required
     def get_user_playlist_data():
@@ -74,7 +74,7 @@ def register_playlist_routes(app):
             if not current_user_id:
                 return jsonify({"code": 401, "msg": "用户未登录，请先登录"}), 401
             current_user_id = int(current_user_id)
-
+            print(current_user_id)
             db = get_db()
             cursor = db.cursor(pymysql.cursors.DictCursor)
 
@@ -84,7 +84,10 @@ def register_playlist_routes(app):
                 WHERE user_id = %s
             '''
             cursor.execute(select_sql, (current_user_id,))
+            print(cursor)
             user_playlist_info = cursor.fetchone()
+
+            print(user_playlist_info)
 
             default_playlist = [{"name": "默认歌单", "tracks": []}]
             default_playlist_str = json.dumps(default_playlist, ensure_ascii=False)
@@ -94,11 +97,12 @@ def register_playlist_routes(app):
                     INSERT INTO user_playlist (user_id, playlist, current_album_id, current_playlist_id, play_mode)
                     VALUES (%s, %s, %s, %s, %s)
                 '''
-                cursor.execute(insert_sql, (current_user_id, default_playlist_str, 0, 0, 'order'))
+                # ✅ BUG2修复：current_album_id 默认值改为 -1 (无播放/无选中)
+                cursor.execute(insert_sql, (current_user_id, default_playlist_str, -1, 0, 'order'))
                 db.commit()
                 user_playlist_info = {
                     'playlist': default_playlist_str,
-                    'current_album_id': 0,
+                    'current_album_id': -1,
                     'current_playlist_id': 0,
                     'play_mode': 'order'
                 }
@@ -113,11 +117,15 @@ def register_playlist_routes(app):
                 playlist_data = default_playlist
 
             result_data = {
+                # ✅ BUG1修复【核心】：返回 解析后的数组 playlist_data 而不是原始字符串
                 "playlist": playlist_data,
                 "current_album_id": user_playlist_info['current_album_id'],
-                "current_playlist_id": user_playlist_info['current_playlist_id'],
+                # ✅ BUG3修复：对current_playlist_id做兜底，防止None报错
+                "current_playlist_id": user_playlist_info.get('current_playlist_id', 0),
                 "play_mode": user_playlist_info.get('play_mode', 'order')
             }
+
+
 
             cursor.close()
             return jsonify({
@@ -204,6 +212,10 @@ def register_playlist_routes(app):
             play_mode = data.get('play_mode', 'order')               # 播放模式：order/random/loop
             playlist = data.get('playlist', [{"name": "默认歌单", "tracks": []}]) # 当前完整歌单数据
 
+
+            print(current_playlist_id)
+            print(current_album_id)
+            print(play_mode)
             # 2. 校验当前歌单是否存在、当前歌单内是否有专辑
             if current_playlist_id >= len(playlist):
                 return jsonify({"code": 400, "msg": "当前歌单ID无效", "data": {}})
