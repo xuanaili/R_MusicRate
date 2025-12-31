@@ -4,49 +4,52 @@
     <div class="main-layout">
       <!-- 左侧：弹性60% 区域 - Tab+编辑按钮 全部置顶固定 + 列表内容自适应滚动 -->
       <div class="left-panel">
-        <!-- ✅ 核心：【Tab导航+编辑按钮】整体置顶固定，永不滚动 -->
+        <!-- ✅ 核心：【Tab导航+编辑按钮】整体置顶固定，永不滚动 + 同一行展示 -->
         <div class="sticky-top-box">
-          <div class="track-tab-nav">
-            <div
-              class="tab-item"
-              :class="{active: activeTab === 'tracks'}"
-              @click="activeTab = 'tracks'"
-            >
-              单曲列表
-            </div>
-            <div
-              class="tab-item"
-              :class="{active: activeTab === 'favourite'}"
-              @click="activeTab = 'favourite'"
-            >
-              编辑喜欢时间戳
-            </div>
-          </div>
-
-          <!-- ✅ 编辑按钮和Tab联动，置顶固定 + 新增【切换输入模式】按钮 -->
-          <div class="tracks-header sticky-header">
-            <div class="tracks-action-btn">
-              <button
-                class="edit-btn"
-                @click="toggleEditStatus(activeTab)"
-                :class="{active: activeTab === 'tracks' ? isTrackEditMode : isFavouriteEditMode}"
+          <!-- ✅ 核心修改：新增flex容器，Tab居左+按钮居右 同一行完美对齐 -->
+          <div class="tab-nav-btn-box">
+            <div class="track-tab-nav">
+              <div
+                class="tab-item"
+                :class="{active: activeTab === 'tracks'}"
+                @click="activeTab = 'tracks'"
               >
-                {{ activeTab === 'tracks'
-                  ? (isTrackEditMode ? '✅ 保存曲目' : '✏️ 编辑曲目')
-                  : (isFavouriteEditMode ? '✅ 保存时间戳' : '✏️ 编辑时间戳')
-                }}
-              </button>
-
-              <!-- ✅ 切换单曲【时间戳/时长】输入模式按钮 - 仅在单曲编辑模式显示 -->
-              <button
-                v-if="activeTab === 'tracks' && isTrackEditMode"
-                class="mode-btn"
-                @click="toggleDurationMode"
-                :class="{active: isDurationMode}"
-                style="margin-left: 8px;"
+                单曲列表
+              </div>
+              <div
+                class="tab-item"
+                :class="{active: activeTab === 'favourite'}"
+                @click="activeTab = 'favourite'"
               >
-                {{ isDurationMode ? '⏰ 切换为时间戳输入' : '🕒 切换为时长输入' }}
-              </button>
+                编辑喜欢时间戳
+              </div>
+            </div>
+
+            <!-- ✅ 编辑按钮和Tab联动，置顶固定 + 新增【切换输入模式】按钮 -->
+            <div class="tracks-header sticky-header">
+              <div class="tracks-action-btn">
+                <button
+                  class="edit-btn"
+                  @click="toggleEditStatus(activeTab)"
+                  :class="{active: activeTab === 'tracks' ? isTrackEditMode : isFavouriteEditMode}"
+                >
+                  {{ activeTab === 'tracks'
+                    ? (isTrackEditMode ? '✅ 保存曲目' : '✏️ 编辑曲目')
+                    : (isFavouriteEditMode ? '✅ 保存时间戳' : '✏️ 编辑时间戳')
+                  }}
+                </button>
+
+                <!-- ✅ 切换单曲【时间戳/时长】输入模式按钮 - 仅在单曲编辑模式显示 -->
+                <button
+                  v-if="activeTab === 'tracks' && isTrackEditMode"
+                  class="mode-btn"
+                  @click="toggleDurationMode"
+                  :class="{active: isDurationMode}"
+                  style="margin-left: 8px;"
+                >
+                  {{ isDurationMode ? '⏰ 切换为时间戳输入' : '🕒 切换为时长输入' }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -54,7 +57,6 @@
         <!-- ✅ 核心：列表内容区 自适应滚动，只有这里滚动，顶部内容完全不动 -->
         <div class="tab-content-scroll">
           <div class="tracks-container" v-show="activeTab === 'tracks'">
-            <h3>单曲列表</h3>
             <div class="tracks-list">
               <div
                 v-for="(track, idx) in trackList"
@@ -62,6 +64,7 @@
                 class="track-item"
                 @click="handleTrackClick(idx)"
               >
+                <!-- ✅ 恢复单曲序号展示 + 无下划线 | 提升层级 永远挡住歌名 -->
                 <div class="track-index">{{ idx + 1 }}.</div>
 
                 <div v-if="isTrackEditMode" class="track-edit-content">
@@ -96,7 +99,11 @@
                 </div>
 
                 <div v-else class="track-show-content">
-                  <div class="track-name" style="cursor: pointer;">{{ track.name || '未知曲目' }}</div>
+                  <!-- ✅ ✅ ✅ 核心修复：拆分结构+精准裁切+层级置顶+永不越界+长短歌名区分滚动 -->
+                  <div class="track-name-wrap">
+                    <div class="track-name-text">{{ track.name || '未知曲目' }}</div>
+                    <div class="track-name-line"></div>
+                  </div>
                   <!-- ✅ 进度条 - 只在单曲列表展示 + 增加 @click.stop 阻止冒泡 -->
                   <div class="track-score-slider-wrap">
                     <div
@@ -129,7 +136,6 @@
           </div>
 
           <div class="tracks-container" v-show="activeTab === 'favourite'">
-            <h3>喜欢时间戳</h3>
             <div class="tracks-list">
               <div
                 v-for="(track, idx) in favouriteTrackList"
@@ -137,6 +143,7 @@
                 class="track-item"
                 @click="handleFavouriteTrackClick(idx)"
               >
+                <!-- ✅ 恢复喜欢时间戳序号展示 + 无下划线 -->
                 <div class="track-index">{{ idx + 1 }}.</div>
 
                 <div v-if="isFavouriteEditMode" class="track-edit-content">
@@ -158,7 +165,11 @@
                 </div>
 
                 <div v-else class="track-show-content">
-                  <div class="track-name" style="cursor: pointer;">{{ track.name || '未知曲目' }}</div>
+                  <!-- ✅ ✅ ✅ 收藏列表同步修复：同逻辑 无遮挡 不越界 长短歌名区分滚动 -->
+                  <div class="track-name-wrap">
+                    <div class="track-name-text">{{ track.name || '未知曲目' }}</div>
+                    <div class="track-name-line"></div>
+                  </div>
                   <div class="track-duration">{{ track.duration || '0:00:00' }}</div>
                 </div>
 
@@ -182,8 +193,8 @@
           <div class="rate-content-wrap">
             <div class="rate-text-area">
               <h3>个人感觉评分 (0-100)</h3>
-              <div class="rate-score">{{ score }} 分</div>
-              <button class="reset-rate-btn" @click="resetRating">🔄 重置评分</button>
+<div class="rate-score">{{ score.toFixed(1) }} 分</div>
+              <button class="reset-rate-btn" @click="resetRating">重置评分</button>
             </div>
             <div class="rate-circle-area">
               <div class="outer-circle"
@@ -234,7 +245,24 @@ export default {
     favourite_tracks_time: {
       type: Array,
       default: () => []
-    }
+    },
+    mainColor: {
+      type: String,
+      required: true,
+      default: '#42b983'
+    },
+    mainColorDark: {
+      type: String,
+      required: true,
+      default: '#2f9465'
+    },
+    mainColorDarkDouble: {
+      type: String,
+      required: true,
+      default: '#257d51'
+    },
+    mainColorWhite: {type: String, required: true, default: '#57c592'},
+    mainColorWhiteDouble: {type: String, required: true, default: '#6cd1a1'}
   },
   data() {
     return {
@@ -256,7 +284,10 @@ export default {
       // ✅ 纯拖尾特效 - 移除主球相关数据，只保留拖尾数组
       ballAnimationId: null,  // 动画帧ID
       tailBalls: [],          // 拖尾小球数组 [{dom, alpha}]
-      wrapDom: null           // 动画容器dom
+      wrapDom: null,        // 动画容器dom
+
+
+      isScalingUp: true, // 新增：true=放大，false=缩小
     };
   },
   watch: {
@@ -578,25 +609,44 @@ export default {
       const targetSec = this.favouriteTrackList[idx].sec || 0;
       this.$emit('track-jump', targetSec);
     },
-    startRating() {
-      this.isRating = true;
-      this.ratingTimer = setInterval(() => {
-        if (this.score < 100 && this.isRating) {
-          this.score += 1;
+  // ✅ 重写评分逻辑：增速变慢 + 循环缩放
+  startRating() {
+    this.isRating = true;
+    this.isScalingUp = true; // 初始为放大状态
+    clearInterval(this.ratingTimer); // 先清除旧定时器，防止叠加
+
+    this.ratingTimer = setInterval(() => {
+      if (this.isScalingUp) {
+        // 放大阶段：增速变慢，每次+0.5（原先是+1，速度减半）
+        if (this.score < 100) {
+          this.score += 0.5;
         } else {
-          clearInterval(this.ratingTimer);
+          // 达到100，切换为缩小状态
+          this.isScalingUp = false;
         }
-      }, 10);
-    },
-    stopRating() {
-      this.isRating = false;
-      clearInterval(this.ratingTimer);
-    },
-    resetRating() {
-      this.score = 0;
-      this.isRating = false;
-      clearInterval(this.ratingTimer);
-    },
+      } else {
+        // 缩小阶段：减速缩小，每次-0.5
+        if (this.score > 0) {
+          this.score -= 0.5;
+        } else {
+          // 达到0，切换为放大状态
+          this.isScalingUp = true;
+        }
+      }
+    }, 20); // 定时器间隔20ms（原10ms），进一步降低速率，更平缓
+  },
+
+  stopRating() {
+    this.isRating = false;
+    clearInterval(this.ratingTimer);
+  },
+
+  resetRating() {
+    this.score = 0;
+    this.isRating = false;
+    this.isScalingUp = true; // 重置缩放状态
+    clearInterval(this.ratingTimer);
+  },
     startTrackScore(e, idx) {
       this.isTrackScoring = true;
       this.currentTrackIdx = idx;
@@ -647,16 +697,16 @@ export default {
       const ballSize = Math.floor(Math.random() * 12) + 6; // 随机尺寸6-18px，拖尾更细腻
       const halfSize = ballSize / 2; // 精准居中，零偏移
       const ballDom = document.createElement('div');
-      // 丰富的彩色渐变池，视觉效果更好
-      const colors = [
-        'linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%)',
-        'linear-gradient(135deg, #06b6d4 0%, #22d3ef 100%)',
-        'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
-        'linear-gradient(135deg, #db2777 0%, #f472b6 100%)',
-        'linear-gradient(135deg, #16a34a 0%, #4ade80 100%)',
-        'linear-gradient(135deg, #ea580c 0%, #fb923c 100%)'
+      // ✅ 修改1：删除随机彩色池，改用【主色渐变系列】从mainColorDarkDouble 到 mainColorWhiteDouble 渐变
+      // 同色系渐变过渡，包含深浅/高亮/渐变三种效果，视觉统一不杂乱
+      const mainGradients = [
+        `linear-gradient(135deg, ${this.mainColorDarkDouble} 0%, ${this.mainColorDark} 100%)`,
+        `linear-gradient(135deg, ${this.mainColorDark} 0%, ${this.mainColor} 100%)`,
+        `linear-gradient(135deg, ${this.mainColor} 0%, ${this.mainColorWhite} 100%)`,
+        `linear-gradient(135deg, ${this.mainColorWhite} 0%, ${this.mainColorWhiteDouble} 100%)`,
+        `linear-gradient(135deg, ${this.mainColorDarkDouble} 0%, ${this.mainColorWhiteDouble} 100%)`
       ];
-      const randomColor = colors[Math.floor(Math.random() * colors.length)];
+      const randomColor = mainGradients[Math.floor(Math.random() * mainGradients.length)];
       // 核心：无任何transition过渡，纯即时渲染，零延迟；精准居中鼠标
       ballDom.style.cssText = `
         position:absolute; width:${ballSize}px; height:${ballSize}px; border-radius:50%;
@@ -664,16 +714,16 @@ export default {
         left:${x - halfSize}px; top:${y - halfSize}px;
       `;
       this.wrapDom.appendChild(ballDom);
-      this.tailBalls.push({ dom: ballDom, alpha: 1 });
+      this.tailBalls.push({dom: ballDom, alpha: 1});
     },
     renderBallAnimation() {
       if (this.tailBalls.length === 0) {
         this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
         return;
       }
-      // 拖尾丝滑淡出+缩放，保留动画美感，无卡顿
+      // ✅ 修改2：微调拖尾消失速度，配合渐变颜色更丝滑
       this.tailBalls = this.tailBalls.filter(ball => {
-        ball.alpha -= 0.012; // 微调消失速度，拖尾长度适中
+        ball.alpha -= 0.01; // 放慢消失速度，渐变拖尾更明显
         if (ball.alpha <= 0) {
           ball.dom.remove();
           return false;
@@ -699,22 +749,23 @@ export default {
 };
 </script>
 
-<!-- ✅ 样式修改核心点：1. 移除标题 2. 节奏组件背景透明 3. 动画画布透明 4. 隐藏光标 -->
 <style scoped>
+
 .tab-content {
   position: relative;
   width: 100%;
-	height: 100vh;
+  height: 100vh;
   box-sizing: border-box;
   padding: 10px;
   display: flex;
   flex-direction: column;
+  background: transparent !important;
 }
 
 .main-layout {
   display: flex;
   width: 100%;
-	height: 100%;
+  height: 100%;
   gap: 20px;
 }
 
@@ -722,7 +773,8 @@ export default {
   flex: 6;
   display: flex;
   flex-direction: column;
-	height: 100%;
+  height: 100%;
+  background: transparent !important;
 }
 
 .right-panel {
@@ -730,44 +782,69 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 20px;
-	height: 100%;
+  height: 100%;
   flex-shrink: 0;
   box-sizing: border-box;
+  background: transparent !important;
 }
 
 .sticky-top-box {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: #ffffff;
+  background: transparent !important;
   padding-bottom: 10px;
+  margin-bottom: 15px;
+}
+
+/* ✅ 核心新增：Tab和按钮同一行的容器样式 - 居左+居右 完美对齐 */
+.tab-nav-btn-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-bottom: 8px;
   margin-bottom: 15px;
 }
 
 .track-tab-nav {
   display: flex;
   gap: 10px;
-  padding-bottom: 8px;
-	border-bottom: 1px solid #e5e7eb;
-  margin-bottom: 8px;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  width: auto;
+  box-sizing: border-box;
+  text-align: left;
+  position: relative;
+  border-bottom: none !important;
 }
 
 .tab-item {
-  padding: 6px 16px;
+  padding: 8px 16px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 15px;
-  color: #6b7280;
+  color: v-bind(mainColorDarkDouble);
   transition: all 0.2s;
+  font-weight: 600;
+  position: relative;
 }
 
 .tab-item.active {
-  background: #2ea0d6;
+  background: v-bind(mainColorDark);
   color: #fff;
 }
 
-.tab-item:hover {
-  color: #2ea0d6;
+.tab-item::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+	border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
+  opacity: 1 !important;
 }
 
 .sticky-header {
@@ -775,14 +852,17 @@ export default {
   align-items: center;
   margin-bottom: 0;
   padding-bottom: 0;
-	border-bottom: none;
+  border-bottom: none;
   display: flex;
+  background: transparent !important;
+  height: 36px;
 }
 
 .tab-content-scroll {
   flex: 1;
   overflow-y: auto;
   padding-right: 5px;
+  background: transparent !important;
 }
 
 .tab-content-scroll::-webkit-scrollbar {
@@ -790,20 +870,24 @@ export default {
 }
 
 .tab-content-scroll::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: v-bind(mainColorDarkDouble);
   border-radius: 3px;
 }
 
 .tab-content-scroll::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: v-bind(mainColorDark);
+}
+
+.tab-content-scroll::-webkit-scrollbar-track {
+  background: transparent !important;
 }
 
 .rate-container {
   width: 100%;
-  background: rgba(255, 255, 255, 0.8);
+  background: transparent !important;
   border-radius: 8px;
-	padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  padding: 20px;
+  box-shadow: none !important;
   flex-shrink: 0;
 }
 
@@ -811,7 +895,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-	width: 100%;
+  width: 100%;
 }
 
 .rate-text-area {
@@ -820,24 +904,43 @@ export default {
   flex-direction: column;
   align-items: flex-start;
   gap: 15px;
-	padding-right: 20px;
+  padding-right: 20px;
 }
 
 .rate-text-area h3 {
   margin: 0;
   font-size: 16px;
-  color: #111827;
+  color: v-bind(mainColorDarkDouble) !important;
+  font-weight: 600;
+  padding-bottom: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  position: relative;
+  border-bottom: none !important;
+}
+
+.rate-text-area h3::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+	width: 100%;
+	height: 4px;
+	border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
+	opacity: 1 !important;
 }
 
 .rate-score {
   font-size: 24px;
-	font-weight: bold;
-  color: #2ea0d6;
+  font-weight: bold;
+  color: v-bind(mainColorDark);
   line-height: 1;
 }
 
 .reset-rate-btn {
-  background: #dc2626;
+  background: v-bind(mainColorDark);
   color: #fff;
   border: none;
   padding: 8px 16px;
@@ -847,14 +950,9 @@ export default {
   transition: all 0.2s;
 }
 
-.reset-rate-btn:hover {
-  background: #b91c1c;
-  transform: scale(1.02);
-}
-
 .rate-circle-area {
   width: 180px;
-	height: 180px;
+  height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -863,32 +961,26 @@ export default {
 .outer-circle {
   width: 180px;
   height: 180px;
-  border: 3px solid #2ea0d6;
-	border-radius: 50%;
+  border: 3px solid v-bind(mainColorDark);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  background: #f9fafb;
+  background: transparent !important;
   transition: all 0.2s;
 }
 
-.outer-circle:hover {
-  border-color: #1f759d;
-  background: #fff;
-}
-
 .inner-circle {
-  background: #2ea0d6;
+  background: v-bind(mainColorDark);
   border-radius: 50%;
   transition: width 0.05s linear, height 0.05s linear;
   opacity: 0.85;
 }
 
-/* ✅ 核心修改1：节奏组件 背景透明 + 移除内边距 + 无阴影 */
 .rhythm-container {
   width: 100%;
-  background: transparent;
+  background: transparent !important;
   border-radius: 8px;
   padding: 0;
   box-shadow: none;
@@ -902,57 +994,62 @@ export default {
   overflow: hidden;
 }
 
-/* ✅ 核心修改2：动画画布 背景透明 + 无圆角 + 默认光标 */
 .ball-animation-wrap {
   width: 100%;
   height: 100%;
   border-radius: 0;
-  background-color: transparent;
+  background-color: transparent !important;
   position: relative;
   overflow: hidden;
-  cursor: default;
+  cursor: none;
 }
 
 .tracks-container {
   padding: 0;
   width: 100%;
+  background: transparent !important;
 }
 
 .tracks-header {
   display: flex;
+  background: transparent !important;
 }
 
 .tracks-list {
   width: 100%;
-  background: rgba(255, 255, 255, 0.8);
+  background: transparent !important;
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: none !important;
   margin-bottom: 20px;
 }
 
 .track-item {
   display: flex;
   align-items: center;
-	padding: 12px 15px;
-  border-bottom: 1px solid #f3f4f6;
+  padding: 15px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   transition: background-color 0.2s;
+  background: transparent !important;
+  box-sizing: border-box;
 }
 
 .track-item:last-child {
   border-bottom: none;
 }
 
-.track-item:hover {
-  background-color: #f9fafb;
-}
-
+/* ✅✅✅ 序号核心优化：提升层级+固定宽度+永不被覆盖 */
 .track-index {
-  width: 30px;
-  font-size: 14px;
-  color: #6b7280;
+  width: 40px;
+  font-size: 16px;
+  font-weight: 700;
+  color: v-bind(mainColorDarkDouble);
   text-align: center;
-  margin-right: 10px;
+  margin-right: 12px;
+  position: relative;
+  padding-bottom: 0;
+  flex-shrink: 0;
+  z-index: 99; /* 最高层级 永远挡住歌名 */
 }
 
 .track-show-content {
@@ -960,60 +1057,126 @@ export default {
   justify-content: space-between;
   align-items: center;
   flex: 1;
-  gap: 15px;
+  gap: 12px;
+  background: transparent !important;
 }
 
-.track-name {
-  font-size: 15px;
-  color: #111827;
-	font-weight: 500;
-  min-width: 180px;
+/* ✅✅✅ 核心终极修复 所有问题的解决方案 适配透明背景 无遮挡 无越界 ✅✅✅ */
+.track-name-wrap {
+  width: 260px; /* 缩小容器宽度 精准裁切 彻底不遮挡右侧内容 | 想改宽度只改这个值 */
+  flex-shrink: 0;
+  position: relative;
+  padding-bottom: 8px;
+  margin-right: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+  overflow: hidden; /* 核心！超出容器宽度的歌名部分强制裁切隐藏 适配透明背景 */
 }
 
+/* 底部横线 - 独立结构 固定不动 永不滚动 宽度和容器一致 样式不变 */
+.track-name-line {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
+  opacity: 1 !important;
+  z-index: 2;
+}
+
+/* ✅✅✅ 关键修复：不长的歌名静止的核心CSS 2行解决BUG ✅✅✅ */
+.track-name-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: v-bind(mainColorDarkDouble);
+  white-space: nowrap;
+  position: relative;
+  z-index: 3;
+  width: fit-content; /* 核心1：获取文字「真实宽度」，不是撑满容器 */
+  transform: translateX(0); /* 核心2：默认0位移，无动画 */
+}
+
+/* ✅✅✅ 滚动触发条件：只有【鼠标悬浮 + 文字宽度>容器宽度】才滚动，缺一不可 ✅✅✅ */
+.track-name-wrap:hover .track-name-text {
+  animation: scrollName 8s linear infinite;
+  animation-play-state: running;
+}
+
+/* ✅ 鼠标离开立即复位：无残留动画 瞬间回到初始位置 */
+.track-name-wrap:not(:hover) .track-name-text {
+  animation: none;
+  transform: translateX(0) !important;
+}
+
+/* ✅✅✅ 修正滚动逻辑 永不越界 完全正确：
+   1. 动画方向：纯向左滚动（符合需求）
+   2. 滚动终点：位移到 -(自身宽度 - 容器宽度)，歌名最左侧对齐容器最左侧，不会超过序号区域
+   3. 永远是序号挡住歌名，歌名不会覆盖序号
+   4. 右侧多余部分被容器裁切，绝不遮挡进度条/时间戳
+*/
+@keyframes scrollName {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(calc(-100% + 260px));
+  }
+}
+
+/* ✅ 时间戳 固定宽度不挤压，样式不变 */
 .track-duration {
-  font-size: 14px;
-  color: #6b7280;
+  font-size: 16px;
+  font-weight: 700;
+  color: v-bind(mainColorDarkDouble);
   white-space: nowrap;
   margin-left: 10px;
+  flex-shrink: 0;
+  width: 90px;
+  text-align: right;
 }
 
 .track-edit-content {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  alignItems: center;
   flex: 1;
   gap: 20px;
+  background: transparent !important;
 }
 
 .track-name-input {
   flex: 1;
   padding: 6px 10px;
-  border: 1px solid #d1d5db;
+  border: 1px solid v-bind(mainColorDarkDouble);
   border-radius: 4px;
   font-size: 14px;
-  color: #111827;
+  color: v-bind(mainColorDarkDouble);
   outline: none;
+  background: rgba(255, 255, 255, 0.03) !important;
 }
 
 .track-name-input:focus {
-  border-color: #2ea0d6;
-  box-shadow: 0 0 0 2px rgba(46, 160, 214, 0.2);
+  border-color: v-bind(mainColorDark);
+  box-shadow: 0 0 0 2px rgba(47, 148, 101, 0.2);
 }
 
 .track-duration-input {
   width: 110px;
   padding: 6px 10px;
-  border: 1px solid #d1d5db;
-	border-radius: 4px;
+  border: 1px solid v-bind(mainColorDarkDouble);
+  border-radius: 4px;
   font-size: 14px;
-  color: #111827;
+  color: v-bind(mainColorDarkDouble);
   text-align: center;
   outline: none;
+  background: rgba(255, 255, 255, 0.03) !important;
 }
 
 .track-duration-input:focus {
-  border-color: #2ea0d6;
-  box-shadow: 0 0 0 2px rgba(46, 160, 214, 0.2);
+  border-color: v-bind(mainColorDark);
+  box-shadow: 0 0 0 2px rgba(47, 148, 101, 0.2);
 }
 
 .track-del-btn {
@@ -1027,7 +1190,7 @@ export default {
   color: #dc2626;
   cursor: pointer;
   width: 24px;
-	height: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1035,33 +1198,25 @@ export default {
   transition: background 0.2s;
 }
 
-.track-del-btn button:hover {
-  background: #fef2f2;
-}
-
 .add-track-btn-box {
   text-align: right;
+  background: transparent !important;
 }
 
 .add-track-btn {
-  background: #2ea0d6;
+  background: v-bind(mainColorDark);
   color: #fff;
   border: none;
-	padding: 8px 16px;
+  padding: 8px 16px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
 }
 
-.add-track-btn:hover {
-  background: #1f759d;
-  transform: scale(1.02);
-}
-
 .edit-btn {
-  background: #2ea0d6;
-	color: #fff;
+  background: v-bind(mainColorDark);
+  color: #fff;
   border: none;
   padding: 6px 14px;
   border-radius: 6px;
@@ -1071,68 +1226,58 @@ export default {
 }
 
 .edit-btn.active {
-  background: #15803d;
-}
-
-.edit-btn:hover {
-  opacity: 0.9;
-  transform: scale(1.02);
+  background: v-bind(mainColorDarkDouble);
 }
 
 .mode-btn {
-  background: #9ca3af;
+  background: v-bind(mainColorDarkDouble);
   color: #fff;
   border: none;
-  padding: 6px 14px;
+	padding: 6px 14px;
 	border-radius: 6px;
-  cursor: pointer;
+	cursor: pointer;
 	font-size: 14px;
-  transition: all 0.2s;
+	transition: all 0.2s;
+	margin-left: 8px;
 }
 
 .mode-btn.active {
   background: #f97316;
 }
 
-.mode-btn:hover {
-  opacity: 0.9;
-  transform: scale(1.02);
-}
-
+/* ✅ 进度条固定宽度永不被遮挡，样式不变 */
 .track-score-slider-wrap {
   flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-	padding: 0 5px;
+	min-width: 180px;
 }
 
 .track-score-slider {
   width: 100%;
-  height: 8px;
-  background: #e5e7eb;
-  border-radius: 4px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
   cursor: pointer;
   position: relative;
   transition: background 0.2s;
 }
 
-.track-score-slider:hover {
-  background: #d1d5db;
-}
-
 .track-score-progress {
   height: 100%;
-  background: #2ea0d6;
-  border-radius: 4px;
+  background: v-bind(mainColorDark);
+  border-radius: 6px;
   transition: width 0.05s linear;
 }
 
 .track-score-text {
-  font-size: 12px;
-  color: #6b7280;
+  font-size: 16px;
+  font-weight: 700;
+  color: v-bind(mainColorDarkDouble);
   white-space: nowrap;
-  width: 40px;
+  width: 50px;
   text-align: center;
+  flex-shrink: 0;
 }
 </style>

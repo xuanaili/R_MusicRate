@@ -37,6 +37,13 @@
         :favourite_tracks_time="album.favourite_tracks_time"
         @update-album-data="updateAlbumData"
         @track-jump="handleTrackJump"
+
+        :main-color="albumMainColor"
+        :main-color-dark="albumMainColorDark"
+          :main-color-dark-double="albumMainColorDarkDouble"
+          :main-color-white="albumMainColorWhite"
+          :main-color-white-double="albumMainColorWhiteDouble"
+
       />
 
       <AlbumReviewEditor
@@ -1561,7 +1568,7 @@ h4 {
   bottom: 0;
   left: 0;
   width: 100%;
-  height: 110px;
+  height: 10px;
   background: transparent;
   backdrop-filter: none;
   border-top: none;

@@ -379,6 +379,32 @@ export default {
   opacity: 1 !important;
 }
 
+/* ============ 核心新增 + 修改 开始 ============ */
+.meta-album-name {
+  font-size: 24px;
+	color: v-bind(mainColorDarkDouble) !important;
+  margin-bottom: 20px;
+  font-weight: 600;
+  /* 新增：和其他标题一致的基础样式 */
+  padding-bottom: 8px;
+  box-sizing: border-box;
+  text-align: left;
+  position: relative;
+}
+/* 新增：专辑名的底部横线伪类，和section-title的横线样式完全一致 */
+.meta-album-name::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
+  opacity: 1 !important;
+}
+/* ============ 核心新增 + 修改 结束 ============ */
+
 .cover-section {
   display: flex;
   justify-content: center;
@@ -388,7 +414,7 @@ export default {
 .big-cover-img {
   width: 300px;
   height: 300px;
-  border-radius: 8px;
+	border-radius: 8px;
   object-fit: cover;
 	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border: none !important;
@@ -412,7 +438,7 @@ export default {
   grid-template-columns: 1.5fr 1fr 1fr;
   gap: 15px;
   align-items: flex-start;
-  padding: 20px;
+	padding: 20px;
   background: transparent !important;
 	border: none !important;
 }
@@ -421,13 +447,6 @@ export default {
   display: flex;
   flex-direction: column;
 	padding: 0;
-}
-
-.meta-album-name {
-  font-size: 24px;
-	color: v-bind(mainColorDarkDouble) !important;
-  margin-bottom: 20px;
-  font-weight: 600;
 }
 
 .meta-item {
@@ -610,7 +629,7 @@ export default {
   max-width: 90%;
   padding: 10px;
   border-radius: 4px;
-  font-size: 14px;
+	font-size: 14px;
   line-height: 1.5;
   height: 200px;
   max-height: 200px;
