@@ -640,6 +640,9 @@ export default {
 	border:none !important;
   overflow-y: auto;
   overflow-x: hidden;
+  direction: rtl; /* 核心：反向排版，让滚动条到左侧 */
+  text-align: left; /* 强制文字还是左对齐，不影响阅读 */
+  padding-left: 10px; /* 给左侧滚动条预留位置，防止遮挡文字 */
 }
 
 .intro-textarea {

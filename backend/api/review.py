@@ -1,4 +1,6 @@
 # MusicRate\backend\api\review.py 听后感相关接口 - 添加、删除、编辑、清空
+from datetime import datetime
+
 from flask import request, jsonify
 import json
 import uuid
@@ -211,3 +213,85 @@ def register_review_routes(app):
             print(f"❌ 编辑听后感出错：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"编辑听后感失败：{str(e)}"}), 500
+
+        # ============ ✅ 新增核心接口：日历听后感统计数据查询 ============
+
+        # ============ ✅ 核心接口：日历听后感统计数据查询【最优版，适配初始化review】 ============
+
+    @app.route('/api/album/review/calendar', methods=['GET'])
+    @login_required
+    def get_calendar_review_data():
+        try:
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+
+            table_name = get_album_table_name(current_user_id)
+            db = get_db()
+            cursor = db.cursor()
+
+            # ✅ 精准查询：review不为空 + 是有效的JSON（数据库已初始化，一定满足）
+            cursor.execute(f'''
+                   SELECT album_name, singer, tags, review FROM `{table_name}` 
+                   WHERE review IS NOT NULL AND review != ''
+               ''')
+            album_list = cursor.fetchall()
+            cursor.close()
+
+            calendar_data = []
+
+            # 秒数转 分:秒 格式化方法
+            def format_duration(seconds):
+                if not seconds or seconds < 0:
+                    return "00:00"
+                m = int(seconds // 60)
+                s = int(seconds % 60)
+                return f"{m:02d}:{s:02d}"
+
+            for album in album_list:
+                album_name = album.get('album_name', '未知专辑')
+                singer = album.get('singer', '未知歌手')
+                tags = album.get('tags', '')
+                review_str = album.get('review', '')
+
+                try:
+                    review = json.loads(review_str)
+                    feelings = review.get('feelings', [])
+                    # 只处理有听后感的记录
+                    if len(feelings) == 0:
+                        continue
+
+                    # 遍历每一条听后感，组装日历需要的结构
+                    for feeling in feelings:
+                        create_time = feeling.get('create_time', '')
+                        if not create_time:
+                            continue
+                        # 解析时间：2026-01-01 16:32:27 → 年/月/日
+                        dt = datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S")
+                        calendar_data.append({
+                            "year": dt.year,
+                            "month": dt.month,
+                            "day": dt.day,
+                            "albumName": album_name,
+                            "singer": singer,
+                            "tags": tags,
+                            "score": round(feeling.get('my_score', 0.0), 1),  # 评分保留1位小数
+                            "content": feeling.get('content', ''),
+                            "listening_duration": format_duration(feeling.get('listening_duration', 0)),  # 格式化时长
+                            "feeling_id": feeling.get('id', '')
+                        })
+                except Exception as e:
+                    print(f"解析专辑[{album_name}]的review数据出错: {str(e)}")
+                    continue
+
+
+            print(calendar_data)
+            return jsonify({
+                "code": 200,
+                "msg": "数据获取成功！",
+                "data": calendar_data
+            })
+        except Exception as e:
+            print(f"❌ 获取日历听后感数据出错：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"数据获取失败：{str(e)}"}), 500
