@@ -2,16 +2,17 @@
   <div class="tab-content-container">
     <!-- 左侧 40% 区域 - 日历统计小组件【固定高度+滚动+悬停弹窗】 -->
     <div class="calendar-statistics">
-      <h3 :style="{ color: mainColor }">我的听后感统计</h3>
-      <!-- 日历头部：左右箭头 + 当前月份 -->
+      <!-- 日历头部：年月居左 + 左右箭头全部居右 + 三角箭头替换 -->
       <div class="calendar-header">
-        <button class="arrow-btn" @click="prevMonth" :style="{ color: mainColor }">
-          ←
-        </button>
         <span class="calendar-month">{{ currentYear }}年 {{ currentMonth < 10 ? '0' + currentMonth : currentMonth }}月</span>
-        <button class="arrow-btn" @click="nextMonth" :style="{ color: mainColor }">
-          →
-        </button>
+        <div class="arrow-group">
+          <button class="arrow-btn" @click="prevMonth" :style="{ color: mainColor }">
+            ◀
+          </button>
+          <button class="arrow-btn" @click="nextMonth" :style="{ color: mainColor }">
+            ▶
+          </button>
+        </div>
       </div>
       <!-- 星期头部 - 7列固定，和下方日期严格对齐 -->
       <div class="calendar-week">
@@ -23,15 +24,19 @@
         <div class="week-item">五</div>
         <div class="week-item">六</div>
       </div>
-      <!-- 日历主体 - ✅每行固定7个日期 + 和星期精准对齐 -->
+      <!-- 日历主体 - ✅今日+选中日期 均为圆形高亮 + 数量角标改为圆角矩形 -->
       <div class="calendar-days">
         <div class="day-item empty" v-for="empty in emptyStartDays" :key="'empty'+empty"></div>
         <div
           class="day-item"
           v-for="day in currentMonthDays"
           :key="day.day"
-          :class="{ hasRecord: hasRecordOnDay(day.day), active: selectedDay === day.day }"
-          :style="hasRecordOnDay(day.day) ? { backgroundColor: lightenColor(mainColor, 0.7), borderColor: mainColor } : {}"
+          :class="{
+            hasRecord: hasRecordOnDay(day.day),
+            active: selectedDay === day.day,
+            today: isToday(day.day)
+          }"
+          :style="hasRecordOnDay(day.day) ? { backgroundColor: lightenColor(mainColor, 0.7) } : {}"
           @click="handleDayClick(day.day)"
         >
           <span class="day-num">{{ day.day }}</span>
@@ -41,11 +46,12 @@
         </div>
       </div>
 
-      <!-- 点击高亮日期展示：当日听后感详情列表 ✅悬停只显示纯听后感内容 -->
+      <!-- 点击高亮日期展示：当日听后感详情列表 -->
       <div class="day-detail-list" v-if="selectedDay && hasRecordOnDay(selectedDay)">
-        <h4 :style="{ color: mainColor, margin: '15px 0 10px 0', fontSize: '14px' }">
+        <h4 :style="{ color: mainColorDark, margin: '15px 0 10px 0', fontSize: '14px', fontWeight: 'bold' }">
           {{ currentYear }}-{{ currentMonth <10 ? '0'+currentMonth : currentMonth }}-{{ selectedDay <10 ? '0'+selectedDay : selectedDay }} 听后感详情
         </h4>
+        <!-- ✅ 核心修改：听后感详情滚动容器 新增专属样式 进度条居左+匹配可选标签样式 -->
         <div class="detail-scroll-box">
           <div
             class="detail-item"
@@ -54,9 +60,12 @@
             @mouseenter="showTooltip($event, item.content)"
             @mouseleave="hideTooltip()"
           >
-            <div class="album-name">{{ item.albumName }} <span style="font-size:11px;color:#999;">{{item.singer}}</span></div>
+            <div class="album-name">{{ item.albumName }} <span>{{item.singer}}</span></div>
             <div class="album-score">评分：<span>{{ item.score }}</span></div>
-            <div style="font-size:11px;color:#999;margin-top:2px;">时长：{{ formatSecondsToHourMin(item.listening_duration) }}</div>
+            <!-- ✅ 新增时长容器，用于承载横线样式 -->
+            <div class="detail-duration-wrapper">
+              <div class="duration-text">时长：{{ formatMinSecToHourMin(item.listening_duration)}}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -69,13 +78,13 @@
         <div class="stat-item" v-if="loading">加载统计数据中...</div>
       </div>
 
-      <!-- 听后感悬浮预览弹窗 - ✅只展示纯听后感内容 -->
+      <!-- 听后感悬浮预览弹窗 -->
       <div
         v-if="tooltipVisible"
         class="tooltip-box"
         :style="{
-          left: `${tooltipX + 10}px`,
-          top: `${tooltipY + 10}px`,
+          left: `${tooltipX}px`,
+          top: `${tooltipY}px`,
           maxWidth: '380px'
         }"
       >
@@ -83,51 +92,46 @@
       </div>
     </div>
 
-    <!-- 右侧 60% 区域 - 听后感编辑内容 ✅听取时长统一转 xxhxxmin 格式 -->
+    <!-- 右侧 60% 区域 - ✅ 蒙版和评论输入框一致 + 纯净无按钮遮挡 -->
     <div class="review-content">
-      <h2>{{ album.album_name || '未知专辑' }}——听后感</h2>
-      <div class="audio-link">[{{ album.album_name || '未知' }}.mp3]</div>
 
+      <!-- ✅ 历史听后感列表 + 新增听后感按钮在该模块右下角 -->
+      <div class="feelings-list" v-if="sortedFeelingsList.length">
+        <!-- ✅ 核心修改：右侧滚动容器样式和左侧完全统一 -->
+        <div class="feelings-scroll-box">
+          <div
+            class="feeling-item"
+            v-for="(feeling, idx) in sortedFeelingsList"
+            :key="feeling.id || idx"
+          >
+            <div class="feeling-top">
+              <span class="create-time">{{ feeling.create_time }}</span>
+              <span class="feeling-score">评分：{{ feeling.my_score || 0 }}</span>
+            </div>
+            <div class="feeling-content">{{ feeling.content }}</div>
+            <div class="duration-wrapper">
+              <div class="listening-duration">听取时长：{{ formatSecondsToHourMin(feeling.listening_duration) }}</div>
+            </div>
+            <button class="delete-single-btn" @click="handleDeleteSingle(feeling.id)">删除</button>
+          </div>
+        </div>
+        <button
+          @click="handleAddReview"
+          class="save-btn"
+          :disabled="!newFeelingContent.trim()"
+        >新增听后感</button>
+      </div>
+      <p class="no-feeling" v-else>暂无听后感记录，快来添加吧~</p>
+
+      <!-- ✅ 听后感输入框 去掉所有边界颜色 纯净透明 -->
       <div class="review-edit-area">
         <textarea
           v-model="newFeelingContent"
-          placeholder="输入你的听后感..."
+          placeholder="输入听后感..."
           class="review-textarea"
           rows="3"
         ></textarea>
-        <div class="review-actions">
-          <button
-            @click="handleAddReview"
-            class="save-btn"
-            :disabled="!newFeelingContent.trim()"
-            :style="{backgroundColor: newFeelingContent.trim() ? mainColorDark : '#999'}"
-          >新增听后感</button>
-          <button
-            @click="handleDeleteAll"
-            class="delete-btn"
-            v-if="(album.review || {}).feelings?.length"
-            :style="{backgroundColor: mainColorDark}"
-          >清空所有听后感</button>
-        </div>
       </div>
-
-      <div class="feelings-list" v-if="(album.review || {}).feelings?.length">
-        <h3 :style="{color: mainColor}">历史听后感</h3>
-        <div
-          class="feeling-item"
-          v-for="(feeling, idx) in (album.review || {}).feelings"
-          :key="feeling.id || idx"
-        >
-          <div class="feeling-top">
-            <span class="create-time">{{ feeling.create_time }}</span>
-            <span class="feeling-score">评分：{{ feeling.my_score || 0 }}</span>
-          </div>
-          <div class="feeling-content">{{ feeling.content }}</div>
-          <div class="listening-duration">听取时长：{{ formatSecondsToHourMin(feeling.listening_duration) }}</div>
-          <button class="delete-single-btn" @click="handleDeleteSingle(feeling.id)" :style="{backgroundColor: mainColorDark}">删除</button>
-        </div>
-      </div>
-      <p class="no-feeling" v-else>暂无听后感记录，快来添加吧~</p>
     </div>
   </div>
 </template>
@@ -147,6 +151,7 @@ export default {
       newFeelingContent: '',
       mainColor: '#42b983',
       mainColorDark: '#2f9465',
+      mainColorDarkDouble: '#257d51', // ✅ 双层深色 用于滚动条配色
       // 日历核心变量
       currentYear: new Date().getFullYear(),
       currentMonth: new Date().getMonth() + 1,
@@ -162,8 +167,18 @@ export default {
       loading: false,
       totalReviewCount: 0,
       avgScore: '0.0',
-      lastWriteDate: '暂无记录'
+      lastWriteDate: '暂无记录',
+      // 今日日期
+      todayDate: new Date().getDate()
     };
+  },
+  computed: {
+    sortedFeelingsList() {
+      const feelings = (this.album.review || {}).feelings || [];
+      return [...feelings].sort((a, b) => {
+        return new Date(b.create_time) - new Date(a.create_time);
+      });
+    }
   },
   watch: {
     album: {
@@ -173,6 +188,7 @@ export default {
         else {
           this.mainColor = '#42b983';
           this.mainColorDark = '#2f9465';
+          this.mainColorDarkDouble = '#257d51';
         }
       }
     },
@@ -184,7 +200,6 @@ export default {
     this.fetchCalendarReviewData();
   },
   methods: {
-    // 提取封面主色【原有方法】
     extractMainColor(imgUrl) {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
@@ -201,10 +216,12 @@ export default {
         const hex = `#${((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1)}`;
         this.mainColor = hex;
         this.mainColorDark = this.darkenColor(hex, 0.3);
+        this.mainColorDarkDouble = this.darkenColor(hex, 0.5); // ✅ 同步双层深色
       };
       img.onerror = () => {
         this.mainColor = '#42b983';
         this.mainColorDark = '#2f9465';
+        this.mainColorDarkDouble = '#257d51';
       };
       img.src = imgUrl;
     },
@@ -220,20 +237,15 @@ export default {
       const b = Math.min(255, parseInt(hex.slice(5,7),16)*(1+amount));
       return `#${Math.round(r).toString(16).padStart(2,'0')}${Math.round(g).toString(16).padStart(2,'0')}${Math.round(b).toString(16).padStart(2,'0')}`;
     },
-
-    // ===== ✅ 核心新增：通用时长格式化方法 秒数 → xxhxxmin 格式 =====
     formatSecondsToHourMin(seconds) {
-      // 兼容 空/0/负数/字符串格式的秒数
       if (!seconds || isNaN(seconds) || Number(seconds) <= 0) {
         return '0h0min';
       }
       const totalSeconds = Number(seconds);
-      const hours = Math.floor(totalSeconds / 3600); // 1小时=3600秒
-      const minutes = Math.floor((totalSeconds % 3600) / 60); // 剩余的秒数转分钟
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
       return `${hours}h${minutes}min`;
     },
-
-    // 日历接口请求方法
     async fetchCalendarReviewData() {
       this.loading = true;
       try {
@@ -252,8 +264,6 @@ export default {
         this.loading = false;
       }
     },
-
-    // 计算当月统计数据
     calcCurrentMonthStat() {
       const currentMonthRecords = this.reviewRecordData.filter(item =>
         item.year === this.currentYear && item.month === this.currentMonth
@@ -273,8 +283,6 @@ export default {
         this.lastWriteDate = '暂无记录';
       }
     },
-
-    // 日历核心功能方法
     initCalendar() {
       this.selectedDay = null;
       const daysInMonth = new Date(this.currentYear, this.currentMonth, 0).getDate();
@@ -311,22 +319,42 @@ export default {
       return this.reviewRecordData.filter(item => item.year === this.currentYear && item.month === this.currentMonth && item.day === day).length;
     },
     getDayDetailList() {
-      return this.reviewRecordData.filter(item => item.year === this.currentYear && item.month === this.currentMonth && item.day === this.selectedDay);
+      const dayRecords = this.reviewRecordData.filter(
+        item =>
+          item.year === this.currentYear &&
+          item.month === this.currentMonth &&
+          item.day === this.selectedDay
+      );
+      const correctFeelings = this.album.review?.feelings || [];
+      const matchList = dayRecords.map(record => {
+        const matchItem = correctFeelings.find(f => f.id === record.id);
+        return matchItem
+          ? { ...matchItem, listening_duration: matchItem.listening_duration }
+          : record;
+      });
+      return matchList.sort((a, b) => {
+        const toSec = str => {
+          if (!str || !/^\d{1,3}:\d{2}$/.test(str)) return 0;
+          const [m, s] = str.split(':').map(Number);
+          return m * 60 + s;
+        };
+        return toSec(b.listening_duration) - toSec(a.listening_duration);
+      });
     },
-
-    // ===== ✅ 核心修改：悬浮弹窗只传纯听后感内容 =====
+    isToday(day) {
+      const now = new Date()
+      return now.getFullYear() === this.currentYear && now.getMonth()+1 === this.currentMonth && now.getDate() === day
+    },
     showTooltip(e, text) {
       this.tooltipVisible = true;
       this.tooltipText = text || '暂无听后感内容';
-      this.tooltipX = e.pageX;
-      this.tooltipY = e.pageY;
+  this.tooltipX = e.clientX - 200;   // 右移 12px，不挡鼠标
+  this.tooltipY = e.clientY+50 ;   // 下移 12px
     },
     hideTooltip() {
       this.tooltipVisible = false;
       this.tooltipText = '';
     },
-
-    // 业务方法
     async handleAddReview() {
       await this.$emit('add-review', this.newFeelingContent);
       this.newFeelingContent = '';
@@ -336,9 +364,13 @@ export default {
       await this.$emit('delete-single', feelingId);
       this.fetchCalendarReviewData();
     },
-    async handleDeleteAll() {
-      await this.$emit('delete-all');
-      this.fetchCalendarReviewData();
+    formatMinSecToHourMin(minSecStr = '') {
+      if (!minSecStr || !/^\d{1,3}:\d{2}$/.test(minSecStr)) return '0h0min';
+      const [min, sec] = minSecStr.split(':').map(Number);
+      const totalSec = min * 60 + sec;
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      return `${h}h${m}min`;
     }
   }
 };
@@ -352,13 +384,13 @@ export default {
   width: 100%;
   box-sizing: border-box;
 }
-/* 左侧容器 完整flex垂直布局，height/max-height固定，内部元素高度自适应分配 */
+/* 左侧容器 ✅ 透明纯净 无任何边框/分割线 */
 .calendar-statistics {
   width: 40%;
-  background: #f9f9f9;
+  background: transparent;
 	padding: 15px;
 	border-radius: 8px;
-	border: 1px solid #eee;
+  border: none;
 	box-sizing: border-box;
 	height: 700px;
 	max-height: 700px;
@@ -367,23 +399,27 @@ export default {
 	flex-direction: column;
 	overflow: hidden;
 }
-.calendar-statistics h3 {
-  margin: 0 0 15px 0;
-  font-size: 16px;
-	font-weight: 500;
-  flex-shrink: 0;
-}
-/* 日历头部 箭头+月份 */
+/* ✅ 年月标题和Tab页单曲列表格式完全一致 */
 .calendar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  text-align: center;
-	font-size: 15px;
-	color: #333;
-	margin-bottom: 10px;
-	font-weight: 500;
+	text-align: center;
+	font-size: 16px;
+	color: v-bind(mainColorDark);
+	margin-bottom: 12px;
+	font-weight: 600;
   flex-shrink: 0;
+}
+.calendar-month {
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+}
+.arrow-group{
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .arrow-btn {
   background: transparent;
@@ -391,48 +427,54 @@ export default {
 	font-size: 16px;
 	cursor: pointer;
 	padding: 0 8px;
+  line-height: 1;
 }
 .arrow-btn:hover {
   opacity: 0.7;
 }
-/* ✅ 星期栏 宽度100%+无间距+7列均分，和下方日期严格同尺寸对齐 */
+/* ✅ 星期栏 日/一/二 → 颜色=mainColorDark + 加粗 */
 .calendar-week {
   display: flex;
-  width: 100%;
+	width: 100%;
   margin-bottom: 8px;
   flex-shrink: 0;
 }
 .week-item {
   width: calc(100% / 7);
-  text-align: center;
-	font-size: 12px;
-	color: #666;
+	text-align: center;
+	font-size: 13px;
+	color: v-bind(mainColorDark) !important;
+  font-weight: bold !important;
 }
-/* ✅ 日历主体 核心关键 - 每行只显7个日期，永不折行 */
+/* 日历主体 行列间距一致 */
 .calendar-days {
   display: flex;
   flex-wrap: wrap;
-  width: 100%;
+	width: 100%;
   margin-bottom: 10px;
   flex-shrink: 0;
-  padding: 2px;
+  gap: 2px;
+	padding: 0;
 }
-/* ✅ 日期格子 精准宽度+内间距替代外间距，每行必显7个，和星期一一对应 */
+/* ✅ 去掉每个日期的白色边界 + 日期数字 颜色=mainColorDark + 加粗 */
 .day-item {
-  width: calc(100% / 7);
-  height: 40px;
+  width: calc((100% - 12px) / 7);
+  aspect-ratio: 1 / 1;
+  min-height: 36px;
 	border-radius: 6px;
-	border:1px solid #eee;
+  border: none !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 13px;
   position: relative;
   cursor: pointer;
   transition: all 0.2s;
   box-sizing: border-box;
-  padding: 0 2px;
-  margin: 2px 0;
+	padding: 0 2px;
+	margin: 0;
+  color: v-bind(mainColorDark) !important;
+  font-weight: bold !important;
 }
 .day-item.empty {
   background: transparent;
@@ -440,35 +482,45 @@ export default {
 	cursor: default;
 }
 .day-item.hasRecord {
-  font-weight: 500;
+  font-weight: bold;
+}
+.day-item.today {
+  border-radius: 50% !important;
+  background-color: v-bind(mainColorDark) !important;
+  color: #fff !important;
+  transform: none !important;
+  box-shadow: 0 0 6px rgba(66, 185, 131, 0.3);
 }
 .day-item.active {
-  transform: scale(1.08);
-	box-shadow: 0 0 8px rgba(66, 185, 131, 0.4);
+  border-radius: 50% !important;
   background-color: v-bind(mainColor) !important;
-  color: #fff;
-  border-color: v-bind(mainColor) !important;
+  color: #fff !important;
+  transform: none !important;
+  box-shadow: 0 0 6px rgba(66, 185, 131, 0.3);
 }
-.day-item:hover:not(.empty) {
+.day-item:hover:not(.empty):not(.active):not(.today) {
   transform: scale(1.05);
+  background-color: rgba(47,148,101,0.05);
 }
+/* 听后感数量角标 圆角小矩形 */
 .record-badge {
   position: absolute;
   top: 2px;
   right: 2px;
-  width: 14px;
-	height: 14px;
-	border-radius: 50%;
+	padding: 0 4px;
+	height: 12px;
+	border-radius: 4px;
 	color: #fff;
-	font-size: 8px;
+	font-size: 7px;
 	display: flex;
-	align-items: center;
-	justify-content: center;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
-/* 听后感详情区 - 滚动正常无遮挡 */
+/* 听后感详情区 - 透明无样式 */
 .day-detail-list {
-  width: 100%;
+	width: 100%;
   margin-top: 5px;
   box-sizing: border-box;
   flex: 1;
@@ -478,42 +530,54 @@ export default {
 }
 .day-detail-list h4 {
   margin: 0 0 8px 0;
-  padding: 0;
+	padding: 0;
 	line-height: 1.2;
   flex-shrink: 0;
 }
+
+/* ✅✅✅ 核心修改1：左侧听后感详情滚动条 - 无三角+样式统一 ✅✅✅ */
 .detail-scroll-box {
-  width: 100%;
-  flex: 1;
+	width: 100%;
+  color: v-bind(mainColorDarkDouble) !important;
+  background: transparent !important;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+	border:none !important;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: #ccc #f5f5f5;
-  scroll-behavior: smooth;
+  direction: rtl; /* 核心：反向排版，让滚动条到左侧 */
+  text-align: left; /* 强制文字还是左对齐，不影响阅读 */
+  padding-left: 10px; /* 给左侧滚动条预留位置，防止遮挡文字 */
 }
-.detail-scroll-box:hover {
-  scrollbar-color: v-bind(mainColor) #f5f5f5;
+/* 强制内容左对齐 */
+.detail-scroll-box > div {
+  direction: ltr;
 }
-.detail-scroll-box::-webkit-scrollbar {
-  width: 6px;
-}
+/* 滚动条轨道 - 透明无样式 */
 .detail-scroll-box::-webkit-scrollbar-track {
-  background: #f5f5f5;
-	border-radius: 3px;
+  background: transparent !important;
+	border-radius: 2px;
 }
+/* 滚动条宽度 - 4px 统一 */
+.detail-scroll-box::-webkit-scrollbar {
+  width: 4px !important;
+}
+/* 滚动条滑块 - 颜色+圆角统一 */
 .detail-scroll-box::-webkit-scrollbar-thumb {
-  background: #ccc;
-	border-radius: 3px;
+  background: v-bind(mainColorDarkDouble) !important;
+	border-radius: 2px !important;
 }
-.detail-scroll-box::-webkit-scrollbar-thumb:hover {
-  background: v-bind(mainColor);
+/* 隐藏webkit滚动条三角按钮 */
+.detail-scroll-box::-webkit-scrollbar-button {
+  display: none !important;
 }
 
+/* ✅ 去掉详情列表每个元素的白色边界 透明纯净 */
 .detail-item {
-  background: #fff;
+  background: transparent;
 	padding: 10px;
 	border-radius: 6px;
-	border:1px solid #eee;
+  border: none !important;
 	margin-bottom: 8px;
 	cursor: pointer;
 	transition: all 0.2s;
@@ -522,182 +586,329 @@ export default {
   margin-bottom: 0;
 }
 .detail-item:hover {
-  border-color: v-bind(mainColor);
-  background: #fcfcfc;
+  background: rgba(47,148,101,0.05);
 }
+/* ✅ 核心修改：专辑名 加粗放大 */
 .album-name {
-  font-size: 13px;
-  color: #333;
-  font-weight: 500;
+  font-size: 16px;
+  color: v-bind(mainColorDark) !important;
+	font-weight: 600;
   margin-bottom: 4px;
+  line-height: 1.6;
+}
+.album-name span {
+  font-size: 14px;
+	color: v-bind(mainColorDark) !important;
+  font-weight: 400;
 }
 .album-score {
-  font-size: 12px;
-	color: #666;
+  font-size: 14px;
+	color: v-bind(mainColorDark) !important;
+  font-weight: 400;
+  line-height: 1.6;
 }
 .album-score span {
-  color: #e6a23c;
-	font-weight: 500;
+  color: v-bind(mainColorDark) !important;
+	font-weight: 400;
+}
+.duration-text {
+  font-size: 14px;
+	color: v-bind(mainColorDark) !important;
+  font-weight: 400;
+  line-height: 1.6;
+}
+/* ✅ 核心修改：左侧时长横线容器，和右侧duration-wrapper样式完全一致 */
+.detail-duration-wrapper {
+  position: relative;
+	width: 100%;
+	padding: 8px;
+  box-sizing: border-box;
+  margin-top: 8px;
+}
+.detail-duration-wrapper::before {
+  content: '';
+  position: absolute;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 4px;
+	border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
+  opacity: 1 !important;
 }
 
-/* 悬浮弹窗 - 纯听后感内容展示 */
+/* ✅✅✅ 悬浮弹窗样式：透明+蒙版+和评分同色文字 ✅✅✅ */
 .tooltip-box {
   position: fixed;
   z-index: 99999;
-  background: #fff;
+  /* 透明底色+蒙版，和输入框样式完全一致 */
+  background: rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 	padding: 12px 15px;
 	border-radius: 8px;
 	box-shadow: 0 2px 15px rgba(0,0,0,0.18);
-	border: 1px solid #eee;
+  border: none !important;
 	pointer-events: none;
 	word-break: break-all;
 	line-height: 1.6;
 	max-height: 400px;
 	max-width: 380px;
 	overflow-y: auto;
-  transform: translate(-5px, -5px);
+  /* 移除手动偏移，完全跟随鼠标坐标 */
+  transform: none !important;
 }
 .tooltip-content {
   font-size: 13px;
-  color: #333;
+  /* 弹窗内文字颜色 和评分字体颜色完全一致 */
+  color: v-bind(mainColorDark) !important;
+  font-weight: 400;
+  line-height: 1.6;
+}
+/* 悬浮弹窗滚动条也隐藏三角 */
+.tooltip-box::-webkit-scrollbar-button {
+  display: none !important;
+}
+.tooltip-box::-webkit-scrollbar {
+  width: 4px !important;
+}
+.tooltip-box::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.tooltip-box::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDarkDouble) !important;
+  border-radius: 2px;
 }
 
-/* 统计概览样式 */
+/* ✅ 统计概览 本月总条数/平均评分/最近编写 全部 颜色=mainColorDark + 加粗 */
 .stat-overview {
   margin-top: 15px;
 	padding-top: 12px;
-	border-top: 1px solid #eee;
+  border: none;
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  background: transparent;
 }
 .stat-item {
   font-size: 13px;
-  color: #666;
-	margin-bottom: 8px;
+  color: v-bind(mainColorDark) !important;
+  font-weight: bold !important;
+	margin-bottom: 10px;
 }
 .stat-item span {
-  color: #333;
-	font-weight: 500;
+  color: v-bind(mainColorDark) !important;
+	font-weight: bold !important;
 	margin-left: 5px;
 }
 
-/* 右侧听后感编辑区 60% */
+/* 右侧 60% 区域 */
 .review-content {
-  width: 60%;
+	width: 60%;
   box-sizing: border-box;
-}
-.audio-link {
-  color: #007acc;
-  margin: 10px 0;
-	font-size: 14px;
-}
-.review-edit-area {
-  margin: 20px 0;
-}
-.review-textarea {
-  width: 100%;
-	padding: 10px;
-	border: 1px solid #ddd;
-	border-radius: 8px;
-	font-size: 14px;
-	resize: vertical;
-	margin-bottom: 10px;
-}
-.review-actions {
-  margin-bottom: 15px;
-}
-.save-btn {
-	padding: 8px 20px;
-	color: #fff;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
-	margin-right: 10px;
-	transition: all 0.2s;
-}
-.save-btn:disabled {
-	cursor: not-allowed;
-	opacity: 0.7;
-}
-.save-btn:hover:not(:disabled) {
-	background-color: #257d51 !important;
-	opacity: 0.95;
-}
-.delete-btn {
-	padding: 8px 20px;
-	color: #fff;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
-	transition: all 0.2s;
-}
-.delete-btn:hover {
-	background-color: #257d51 !important;
-	opacity: 0.95;
+  height: 700px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 .feelings-list {
-  margin: 20px 0;
-}
-.feeling-item {
-	background: #f9f9f9;
-	padding: 15px;
-	border-radius: 8px;
-	margin-bottom: 10px;
-	border: 1px solid #eee;
+  flex: 1;
+  margin-bottom: 20px;
+  overflow: hidden;
   position: relative;
-  min-height: 100px;
+}
+
+/* ✅✅✅ 核心修改2：右侧听后感列表滚动条 - 和左侧完全统一+无三角 ✅✅✅ */
+.feelings-scroll-box {
+  height: calc(100% - 50px);
+  color: v-bind(mainColorDarkDouble) !important;
+  background: transparent !important;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+	border:none !important;
+  overflow-y: auto;
+  overflow-x: hidden;
+  text-align: left; /* 强制文字还是左对齐，不影响阅读 */
+  padding-left: 10px; /* 给左侧滚动条预留位置，防止遮挡文字 */
+}
+/* 滚动条轨道 - 透明 */
+.feelings-scroll-box::-webkit-scrollbar-track {
+  background: transparent !important;
+	border-radius: 2px;
+}
+/* 滚动条宽度 - 4px */
+.feelings-scroll-box::-webkit-scrollbar {
+  width: 4px !important;
+}
+/* 滚动条滑块 - 双层深色+圆角 */
+.feelings-scroll-box::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDarkDouble) !important;
+	border-radius: 2px !important;
+}
+/* 隐藏webkit滚动条三角按钮 */
+.feelings-scroll-box::-webkit-scrollbar-button {
+  display: none !important;
+}
+
+.feeling-item {
+	border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+  position: relative;
   box-sizing: border-box;
+  background: transparent !important;
+  border: none !important;
 }
 .feeling-top {
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
-  gap: 10px;
-	margin-bottom: 12px;
+  gap: 8px;
+	padding: 6px 8px;
+	border-radius: 4px;
+  flex-wrap: nowrap;
+	background: transparent !important;
 }
 .create-time {
-	font-size: 12px;
-	color: #999;
+	font-size: 15px;
+  color: v-bind(mainColorDark) !important;
+	font-weight: 600;
+	line-height: 1;
+	background: transparent;
+	padding: 0;
+	margin: 0;
+  position: relative;
 }
 .feeling-score {
-	font-size: 12px;
-	color: #666;
-	font-weight: 500;
+	font-size: 15px;
+  color: v-bind(mainColorDark) !important;
+	font-weight: 600;
+	line-height: 1;
+	background: transparent;
+	padding: 0;
+	margin: 0;
+  position: relative;
 }
 .feeling-content {
-	color: #333;
-	line-height: 1.6;
-	font-size: 14px;
-  margin-bottom: 20px;
+  line-height: 1.6;
+  margin-bottom: 0;
+  font-size: 14px;
+  font-weight: 400;
+	padding: 8px;
+	border-radius: 4px;
+	color: v-bind(mainColorDark) !important;
+  background: transparent !important;
+}
+.duration-wrapper {
+  position: relative;
+	width: 100%;
+	padding: 8px;
+  box-sizing: border-box;
+  margin-top: 8px;
 }
 .listening-duration {
-  position: absolute;
-	left: 15px;
-	bottom: 15px;
-	font-size: 12px;
-	color: #999;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: v-bind(mainColorDark) !important;
+  background: transparent !important;
+  position: static;
+	margin: 0;
+	padding: 0;
 }
+.duration-wrapper::before {
+  content: '';
+  position: absolute;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 4px;
+	border-radius: 2px;
+  background-color: v-bind(mainColorDark) !important;
+  opacity: 1 !important;
+}
+/* ✅ 删除按钮样式 - 统一样式到css，方便复用 */
 .delete-single-btn {
 	padding: 4px 8px;
-	color: white;
 	border: none;
 	border-radius: 4px;
-	cursor: pointer;
+  cursor: pointer;
 	font-size: 12px;
-	transition: all 0.2s;
+  transition: all 0.2s;
   position: absolute;
 	right: 15px;
 	bottom: 15px;
+  color: #ffffff;
+  background-color: v-bind(mainColorDark) !important;
 }
 .delete-single-btn:hover {
-	background-color: #257d51 !important;
-	opacity: 0.95;
+  opacity: 0.95;
+  filter: brightness(0.9);
+}
+/* ✅✅✅ 核心修改：新增听后感按钮 和删除按钮背景色+hover效果 完全一致 */
+.save-btn {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+	padding: 8px 20px;
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	transition: all 0.2s;
+  font-size: 12px;
+  background-color: v-bind(mainColorDark) !important;
+}
+.save-btn:disabled {
+  background: #999 !important;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.save-btn:hover:not(:disabled) {
+  opacity: 0.95;
+  filter: brightness(0.9);
 }
 .no-feeling {
-	color: #999;
-	text-align: left;
-	margin: 20px 0;
-	font-size: 14px;
+  font-size: 15px;
+	font-weight: 600;
+  margin: 5px 0;
+	text-align: center;
+	padding: 30px 0;
+	background: transparent !important;
+  color: v-bind(mainColorDark) !important;
+}
+
+/* ✅ 核心修改：输入框彻底去掉所有边界颜色，纯净透明无任何边框 */
+.review-edit-area {
+	width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 0;
+  background: rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+}
+.review-textarea {
+	width: 100%;
+	padding: 6px 10px;
+	border: none !important;
+	outline: none !important;
+	border-radius: 4px;
+  resize: vertical;
+  font-size: 14px;
+	font-weight: 400;
+	line-height: 1.6;
+  background: transparent !important;
+	color: v-bind(mainColorDark) !important;
+  font-family: inherit;
+}
+.review-textarea::placeholder {
+  color: v-bind(mainColorDark) !important;
+  opacity: 0.8;
+	font-weight: 400;
 }
 </style>
