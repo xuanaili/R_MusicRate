@@ -40,14 +40,20 @@ def register_review_routes(app):
             if "feelings" not in review:
                 review["feelings"] = []
 
+
+
+
+
+
             # 生成单条听后感记录
             new_feeling = {
                 "id": str(uuid.uuid4()),
                 "content": content,
-                "create_time": data.get('create_time', '')
+                "create_time": data.get('create_time', ''),
+                "listening_duration":data.get('listening_duration'),
+                "my_score": data.get('my_score'),
             }
             review["feelings"].append(new_feeling)
-
             # 保存更新
             new_review = json.dumps(review)
             cursor.execute(f'''

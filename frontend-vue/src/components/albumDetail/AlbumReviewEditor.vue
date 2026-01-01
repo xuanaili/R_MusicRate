@@ -37,24 +37,23 @@
         v-for="(feeling, idx) in (album.review || {}).feelings"
         :key="feeling.id || idx"
       >
-        <div class="feeling-content">{{ feeling.content }}</div>
-        <div class="feeling-meta">
+        <!-- 左上角：创建时间 + 评分 -->
+        <div class="feeling-top">
           <span class="create-time">{{ feeling.create_time }}</span>
-          <!-- 删除按钮 - 加深色 -->
-          <button class="delete-single-btn" @click="handleDeleteSingle(feeling.id)" :style="{backgroundColor: mainColorDark}">删除</button>
+          <span class="feeling-score">评分：{{ feeling.my_score || 0 }}</span>
         </div>
+
+        <!-- 中间：听后感内容 -->
+        <div class="feeling-content">{{ feeling.content }}</div>
+
+        <!-- 左下角：听取时长 -->
+        <div class="listening-duration">听取时长：{{ feeling.listening_duration || '0:00' }}</div>
+
+        <!-- 右下角：删除按钮 -->
+        <button class="delete-single-btn" @click="handleDeleteSingle(feeling.id)" :style="{backgroundColor: mainColorDark}">删除</button>
       </div>
     </div>
     <p class="no-feeling" v-else>暂无听后感记录，快来添加吧~</p>
-
-    <!-- 单曲评分部分 -->
-    <div class="score-section">
-      <h4>单曲评分</h4>
-      <div v-for="(track, idx) in (album.tracks || [])" :key="idx" class="track-score-item">
-        <p>{{ track.score || 0 }}->>>{{ idx+1 }}. {{ track.track_name || '未知曲目' }}  {{ track.duration || '0:00' }}</p>
-      </div>
-      <p class="final-score" :style="{color: mainColor}">最终评分：{{ album.my_score || 0.0 }}</p>
-    </div>
   </div>
 </template>
 
@@ -144,12 +143,12 @@ export default {
 
 .review-textarea {
   width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
+	padding: 10px;
+	border: 1px solid #ddd;
 	border-radius: 8px;
-  font-size: 14px;
-  resize: vertical;
-  margin-bottom: 10px;
+	font-size: 14px;
+	resize: vertical;
+	margin-bottom: 10px;
 }
 
 .review-actions {
@@ -157,94 +156,108 @@ export default {
 }
 
 .save-btn {
-  padding: 8px 20px;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-right: 10px;
-  transition: all 0.2s;
+	padding: 8px 20px;
+	color: #fff;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	margin-right: 10px;
+	transition: all 0.2s;
 }
 .save-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
+	cursor: not-allowed;
+	opacity: 0.7;
 }
 .save-btn:hover:not(:disabled) {
-  background-color: #257d51 !important;
-  opacity: 0.95;
+	background-color: #257d51 !important;
+	opacity: 0.95;
 }
 
 .delete-btn {
-  padding: 8px 20px;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
+	padding: 8px 20px;
+	color: #fff;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: all 0.2s;
 }
 .delete-btn:hover {
-  background-color: #257d51 !important;
-  opacity: 0.95;
+	background-color: #257d51 !important;
+	opacity: 0.95;
 }
 
 .feelings-list {
   margin: 20px 0;
 }
 
+/* 核心修改：听后感item 布局改为相对定位，实现各元素固定方位 */
 .feeling-item {
-  background: #f9f9f9;
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 10px;
-  border: 1px solid #eee;
+	background: #f9f9f9;
+	padding: 15px;
+	border-radius: 8px;
+	margin-bottom: 10px;
+	border: 1px solid #eee;
+  /* 关键：开启相对定位，内部元素绝对定位基于此 */
+  position: relative;
+  min-height: 100px;
+  box-sizing: border-box;
+}
+
+/* 左上角：创建时间 + 评分 */
+.feeling-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.create-time {
+	font-size: 12px;
+	color: #999;
+}
+.feeling-score {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
 }
 
 .feeling-content {
-  color: #333;
-  line-height: 1.6;
-  margin-bottom: 10px;
+	color: #333;
+	line-height: 1.6;
+	font-size: 14px;
+  margin-bottom: 20px;
 }
 
-.feeling-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: #999;
+/* 左下角：听取时长 */
+.listening-duration {
+  position: absolute;
+  left: 15px;
+  bottom: 15px;
+	font-size: 12px;
+	color: #999;
 }
 
+/* 右下角：删除按钮 - 核心绝对定位 */
 .delete-single-btn {
-  padding: 4px 8px;
-  color: white;
-  border: none;
+	padding: 4px 8px;
+	color: white;
+	border: none;
 	border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s;
+	cursor: pointer;
+	font-size: 12px;
+	transition: all 0.2s;
+  position: absolute;
+  right: 15px;
+  bottom: 15px;
 }
 .delete-single-btn:hover {
-  background-color: #257d51 !important;
-  opacity: 0.95;
+	background-color: #257d51 !important;
+	opacity: 0.95;
 }
 
 .no-feeling {
-  color: #999;
-  text-align: center;
-  margin: 20px 0;
-  font-size: 14px;
-}
-
-.score-section {
-  margin: 20px 0;
-  font-size: 14px;
-}
-
-.track-score-item {
-  margin-bottom: 4px;
-}
-
-.final-score {
-  margin-top: 10px;
-  font-weight: 600;
+	color: #999;
+	text-align: center;
+	margin: 20px 0;
+	font-size: 14px;
 }
 </style>

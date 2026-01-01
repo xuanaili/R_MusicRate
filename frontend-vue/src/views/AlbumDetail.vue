@@ -52,6 +52,7 @@
           :album="album"
           :main-color="albumMainColor"
           :main-color-dark="albumMainColorDark"
+          :main-color-dark-double="albumMainColorDarkDouble"
           @add-review="addSingleReview"
           @delete-single="deleteSingleReview"
           @delete-all="deleteAllReview"
@@ -1191,6 +1192,24 @@ export default {
       const now = new Date();
       const createTime = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
+
+            let scoreList = []
+      // 兼容两种情况：1.my_score是数组 2.my_score是JSON字符串（后端返回的格式）
+      if (this.album.my_score) {
+        if (typeof this.album.my_score === 'string') {
+          try {
+            scoreList = JSON.parse(this.album.my_score)
+          } catch (err) {
+            scoreList = []
+          }
+        } else if (Array.isArray(this.album.my_score)) {
+          scoreList = this.album.my_score
+        }
+      }
+
+
+
+
       this.$axios({
         url: `/api/album/review/add/${this.album.id}`,
         method: 'POST',
@@ -1200,13 +1219,17 @@ export default {
         },
         data: {
           content: content.trim(),
-          create_time: createTime
+          create_time: createTime,
+      listening_duration: Math.floor(this.album.listening_duration), // ✅ 核心修正：传【用户实际收听时长】，取整避免小数
+      my_score: calculateAlbumTotalScore(scoreList),    // ✅ 补充修正：数组转JSON字符串，后端接收正常
         }
       })
           .then((res) => {
             if (res.data.code === 200) {
               alert('听后感添加成功！');
               this.getAlbumDetail(this.album.id);
+              console.log(calculateAlbumTotalScore(scoreList))
+              console.log(this.album)
             } else {
               alert(res.data.msg);
             }
