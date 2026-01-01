@@ -95,7 +95,7 @@
     <!-- 右侧 60% 区域 - ✅ 蒙版和评论输入框一致 + 纯净无按钮遮挡 -->
     <div class="review-content">
 
-      <!-- ✅ 历史听后感列表 + 新增听后感按钮在该模块右下角 -->
+      <!-- ✅ 历史听后感列表 -->
       <div class="feelings-list" v-if="sortedFeelingsList.length">
         <!-- ✅ 核心修改：右侧滚动容器样式和左侧完全统一 -->
         <div class="feelings-scroll-box">
@@ -115,15 +115,10 @@
             <button class="delete-single-btn" @click="handleDeleteSingle(feeling.id)">删除</button>
           </div>
         </div>
-        <button
-          @click="handleAddReview"
-          class="save-btn"
-          :disabled="!newFeelingContent.trim()"
-        >新增听后感</button>
       </div>
       <p class="no-feeling" v-else>暂无听后感记录，快来添加吧~</p>
 
-      <!-- ✅ 听后感输入框 去掉所有边界颜色 纯净透明 -->
+      <!-- ✅ 听后感输入框 去掉所有边界颜色 纯净透明 + 右上角提交按钮【核心修复】 -->
       <div class="review-edit-area">
         <textarea
           v-model="newFeelingContent"
@@ -131,6 +126,12 @@
           class="review-textarea"
           rows="3"
         ></textarea>
+        <!-- ✅ 按钮移出列表、放到输入框容器内 → 永久显示 + 固定在右上角 -->
+        <button
+          @click="handleAddReview"
+          class="save-btn"
+          :disabled="!newFeelingContent.trim()"
+        >新增听后感</button>
       </div>
     </div>
   </div>
@@ -209,11 +210,18 @@ export default {
         canvas.width = 10;
         canvas.height = 10;
         ctx.drawImage(img, 0, 0, 10, 10);
-        const data = ctx.getImageData(0,0,10,10).data;
-        let r=0,g=0,b=0,c=0;
-        for(let i=0;i<data.length;i+=4){r+=data[i];g+=data[i+1];b+=data[i+2];c++}
-        r=Math.floor(r/c);g=Math.floor(g/c);b=Math.floor(b/c);
-        const hex = `#${((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1)}`;
+        const data = ctx.getImageData(0, 0, 10, 10).data;
+        let r = 0, g = 0, b = 0, c = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+          c++
+        }
+        r = Math.floor(r / c);
+        g = Math.floor(g / c);
+        b = Math.floor(b / c);
+        const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
         this.mainColor = hex;
         this.mainColorDark = this.darkenColor(hex, 0.3);
         this.mainColorDarkDouble = this.darkenColor(hex, 0.5); // ✅ 同步双层深色
@@ -226,16 +234,16 @@ export default {
       img.src = imgUrl;
     },
     darkenColor(hex, amount) {
-      const r = parseInt(hex.slice(1,3),16)*(1-amount);
-      const g = parseInt(hex.slice(3,5),16)*(1-amount);
-      const b = parseInt(hex.slice(5,7),16)*(1-amount);
-      return `#${Math.round(r).toString(16).padStart(2,'0')}${Math.round(g).toString(16).padStart(2,'0')}${Math.round(b).toString(16).padStart(2,'0')}`;
+      const r = parseInt(hex.slice(1, 3), 16) * (1 - amount);
+      const g = parseInt(hex.slice(3, 5), 16) * (1 - amount);
+      const b = parseInt(hex.slice(5, 7), 16) * (1 - amount);
+      return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
     },
     lightenColor(hex, amount) {
-      const r = Math.min(255, parseInt(hex.slice(1,3),16)*(1+amount));
-      const g = Math.min(255, parseInt(hex.slice(3,5),16)*(1+amount));
-      const b = Math.min(255, parseInt(hex.slice(5,7),16)*(1+amount));
-      return `#${Math.round(r).toString(16).padStart(2,'0')}${Math.round(g).toString(16).padStart(2,'0')}${Math.round(b).toString(16).padStart(2,'0')}`;
+      const r = Math.min(255, parseInt(hex.slice(1, 3), 16) * (1 + amount));
+      const g = Math.min(255, parseInt(hex.slice(3, 5), 16) * (1 + amount));
+      const b = Math.min(255, parseInt(hex.slice(5, 7), 16) * (1 + amount));
+      return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
     },
     formatSecondsToHourMin(seconds) {
       if (!seconds || isNaN(seconds) || Number(seconds) <= 0) {
@@ -266,7 +274,7 @@ export default {
     },
     calcCurrentMonthStat() {
       const currentMonthRecords = this.reviewRecordData.filter(item =>
-        item.year === this.currentYear && item.month === this.currentMonth
+          item.year === this.currentYear && item.month === this.currentMonth
       );
       this.totalReviewCount = currentMonthRecords.length;
 
@@ -274,10 +282,10 @@ export default {
         const totalScore = currentMonthRecords.reduce((sum, item) => sum + (item.score || 0), 0);
         this.avgScore = (totalScore / currentMonthRecords.length).toFixed(1);
         const sortedList = [...currentMonthRecords].sort((a, b) => {
-          return new Date(b.year, b.month-1, b.day) - new Date(a.year, a.month-1, a.day);
+          return new Date(b.year, b.month - 1, b.day) - new Date(a.year, a.month - 1, a.day);
         });
         const last = sortedList[0];
-        this.lastWriteDate = `${last.year}-${last.month.toString().padStart(2,0)}-${last.day.toString().padStart(2,0)}`;
+        this.lastWriteDate = `${last.year}-${last.month.toString().padStart(2, 0)}-${last.day.toString().padStart(2, 0)}`;
       } else {
         this.avgScore = '0.0';
         this.lastWriteDate = '暂无记录';
@@ -290,7 +298,7 @@ export default {
       this.emptyStartDays = firstDayWeek;
       this.currentMonthDays = [];
       for (let i = 1; i <= daysInMonth; i++) {
-        this.currentMonthDays.push({ day: i });
+        this.currentMonthDays.push({day: i});
       }
     },
     prevMonth() {
@@ -320,17 +328,17 @@ export default {
     },
     getDayDetailList() {
       const dayRecords = this.reviewRecordData.filter(
-        item =>
-          item.year === this.currentYear &&
-          item.month === this.currentMonth &&
-          item.day === this.selectedDay
+          item =>
+              item.year === this.currentYear &&
+              item.month === this.currentMonth &&
+              item.day === this.selectedDay
       );
       const correctFeelings = this.album.review?.feelings || [];
       const matchList = dayRecords.map(record => {
         const matchItem = correctFeelings.find(f => f.id === record.id);
         return matchItem
-          ? { ...matchItem, listening_duration: matchItem.listening_duration }
-          : record;
+            ? {...matchItem, listening_duration: matchItem.listening_duration}
+            : record;
       });
       return matchList.sort((a, b) => {
         const toSec = str => {
@@ -343,13 +351,13 @@ export default {
     },
     isToday(day) {
       const now = new Date()
-      return now.getFullYear() === this.currentYear && now.getMonth()+1 === this.currentMonth && now.getDate() === day
+      return now.getFullYear() === this.currentYear && now.getMonth() + 1 === this.currentMonth && now.getDate() === day
     },
     showTooltip(e, text) {
       this.tooltipVisible = true;
       this.tooltipText = text || '暂无听后感内容';
-  this.tooltipX = e.clientX - 200;   // 右移 12px，不挡鼠标
-  this.tooltipY = e.clientY+50 ;   // 下移 12px
+      this.tooltipX = e.clientX - 200;   // 右移 12px，不挡鼠标
+      this.tooltipY = e.clientY + 50;   // 下移 12px
     },
     hideTooltip() {
       this.tooltipVisible = false;
@@ -384,84 +392,94 @@ export default {
   width: 100%;
   box-sizing: border-box;
 }
+
 /* 左侧容器 ✅ 透明纯净 无任何边框/分割线 */
 .calendar-statistics {
   width: 40%;
   background: transparent;
-	padding: 15px;
-	border-radius: 8px;
+  padding: 15px;
+  border-radius: 8px;
   border: none;
-	box-sizing: border-box;
-	height: 700px;
-	max-height: 700px;
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	overflow: hidden;
+  box-sizing: border-box;
+  height: 700px;
+  max-height: 700px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
+
 /* ✅ 年月标题和Tab页单曲列表格式完全一致 */
 .calendar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-	text-align: center;
-	font-size: 16px;
-	color: v-bind(mainColorDark);
-	margin-bottom: 12px;
-	font-weight: 600;
+  text-align: center;
+  font-size: 16px;
+  color: v-bind(mainColorDark);
+  margin-bottom: 12px;
+  font-weight: 600;
   flex-shrink: 0;
 }
+
 .calendar-month {
   font-size: inherit;
   font-weight: inherit;
   color: inherit;
 }
-.arrow-group{
+
+.arrow-group {
   display: flex;
   align-items: center;
   gap: 6px;
 }
+
 .arrow-btn {
   background: transparent;
-	border: none;
-	font-size: 16px;
-	cursor: pointer;
-	padding: 0 8px;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 8px;
   line-height: 1;
 }
+
 .arrow-btn:hover {
   opacity: 0.7;
 }
+
 /* ✅ 星期栏 日/一/二 → 颜色=mainColorDark + 加粗 */
 .calendar-week {
   display: flex;
-	width: 100%;
+  width: 100%;
   margin-bottom: 8px;
   flex-shrink: 0;
 }
+
 .week-item {
   width: calc(100% / 7);
-	text-align: center;
-	font-size: 13px;
-	color: v-bind(mainColorDark) !important;
+  text-align: center;
+  font-size: 13px;
+  color: v-bind(mainColorDark) !important;
   font-weight: bold !important;
 }
+
 /* 日历主体 行列间距一致 */
 .calendar-days {
   display: flex;
   flex-wrap: wrap;
-	width: 100%;
+  width: 100%;
   margin-bottom: 10px;
   flex-shrink: 0;
   gap: 2px;
-	padding: 0;
+  padding: 0;
 }
+
 /* ✅ 去掉每个日期的白色边界 + 日期数字 颜色=mainColorDark + 加粗 */
 .day-item {
   width: calc((100% - 12px) / 7);
   aspect-ratio: 1 / 1;
   min-height: 36px;
-	border-radius: 6px;
+  border-radius: 6px;
   border: none !important;
   display: flex;
   align-items: center;
@@ -471,48 +489,52 @@ export default {
   cursor: pointer;
   transition: all 0.2s;
   box-sizing: border-box;
-	padding: 0 2px;
-	margin: 0;
+  padding: 0 2px;
+  margin: 0;
   color: v-bind(mainColorDark) !important;
   font-weight: bold !important;
 }
+
 .day-item.empty {
   background: transparent;
-	border: none;
-	cursor: default;
+  border: none;
+  cursor: default;
 }
+
 .day-item.hasRecord {
   font-weight: bold;
 }
+
 .day-item.today {
   border-radius: 50% !important;
   background-color: v-bind(mainColorDark) !important;
   color: #fff !important;
   transform: none !important;
-  box-shadow: 0 0 6px rgba(66, 185, 131, 0.3);
 }
+
 .day-item.active {
   border-radius: 50% !important;
   background-color: v-bind(mainColor) !important;
   color: #fff !important;
   transform: none !important;
-  box-shadow: 0 0 6px rgba(66, 185, 131, 0.3);
 }
+
 .day-item:hover:not(.empty):not(.active):not(.today) {
   transform: scale(1.05);
-  background-color: rgba(47,148,101,0.05);
+  background-color: rgba(47, 148, 101, 0.05);
 }
+
 /* 听后感数量角标 圆角小矩形 */
 .record-badge {
   position: absolute;
   top: 2px;
   right: 2px;
-	padding: 0 4px;
-	height: 12px;
-	border-radius: 4px;
-	color: #fff;
-	font-size: 7px;
-	display: flex;
+  padding: 0 4px;
+  height: 12px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 7px;
+  display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
@@ -520,7 +542,7 @@ export default {
 
 /* 听后感详情区 - 透明无样式 */
 .day-detail-list {
-	width: 100%;
+  width: 100%;
   margin-top: 5px;
   box-sizing: border-box;
   flex: 1;
@@ -528,45 +550,51 @@ export default {
   flex-direction: column;
   overflow: hidden;
 }
+
 .day-detail-list h4 {
   margin: 0 0 8px 0;
-	padding: 0;
-	line-height: 1.2;
+  padding: 0;
+  line-height: 1.2;
   flex-shrink: 0;
 }
 
 /* ✅✅✅ 核心修改1：左侧听后感详情滚动条 - 无三角+样式统一 ✅✅✅ */
 .detail-scroll-box {
-	width: 100%;
+  width: 100%;
   color: v-bind(mainColorDarkDouble) !important;
   background: transparent !important;
   white-space: pre-wrap;
   word-wrap: break-word;
-	border:none !important;
+  border: none !important;
   overflow-y: auto;
   overflow-x: hidden;
   direction: rtl; /* 核心：反向排版，让滚动条到左侧 */
   text-align: left; /* 强制文字还是左对齐，不影响阅读 */
   padding-left: 10px; /* 给左侧滚动条预留位置，防止遮挡文字 */
 }
+
 /* 强制内容左对齐 */
 .detail-scroll-box > div {
   direction: ltr;
 }
+
 /* 滚动条轨道 - 透明无样式 */
 .detail-scroll-box::-webkit-scrollbar-track {
   background: transparent !important;
-	border-radius: 2px;
+  border-radius: 2px;
 }
+
 /* 滚动条宽度 - 4px 统一 */
 .detail-scroll-box::-webkit-scrollbar {
   width: 4px !important;
 }
+
 /* 滚动条滑块 - 颜色+圆角统一 */
 .detail-scroll-box::-webkit-scrollbar-thumb {
   background: v-bind(mainColorDarkDouble) !important;
-	border-radius: 2px !important;
+  border-radius: 2px !important;
 }
+
 /* 隐藏webkit滚动条三角按钮 */
 .detail-scroll-box::-webkit-scrollbar-button {
   display: none !important;
@@ -575,64 +603,73 @@ export default {
 /* ✅ 去掉详情列表每个元素的白色边界 透明纯净 */
 .detail-item {
   background: transparent;
-	padding: 10px;
-	border-radius: 6px;
+  padding: 10px;
+  border-radius: 6px;
   border: none !important;
-	margin-bottom: 8px;
-	cursor: pointer;
-	transition: all 0.2s;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
+
 .detail-item:last-child {
   margin-bottom: 0;
 }
+
 .detail-item:hover {
-  background: rgba(47,148,101,0.05);
+  background: rgba(47, 148, 101, 0.05);
 }
+
 /* ✅ 核心修改：专辑名 加粗放大 */
 .album-name {
   font-size: 16px;
   color: v-bind(mainColorDark) !important;
-	font-weight: 600;
+  font-weight: 600;
   margin-bottom: 4px;
   line-height: 1.6;
 }
+
 .album-name span {
   font-size: 14px;
-	color: v-bind(mainColorDark) !important;
+  color: v-bind(mainColorDark) !important;
   font-weight: 400;
 }
+
 .album-score {
   font-size: 14px;
-	color: v-bind(mainColorDark) !important;
+  color: v-bind(mainColorDark) !important;
   font-weight: 400;
   line-height: 1.6;
 }
+
 .album-score span {
   color: v-bind(mainColorDark) !important;
-	font-weight: 400;
+  font-weight: 400;
 }
+
 .duration-text {
   font-size: 14px;
-	color: v-bind(mainColorDark) !important;
+  color: v-bind(mainColorDark) !important;
   font-weight: 400;
   line-height: 1.6;
 }
+
 /* ✅ 核心修改：左侧时长横线容器，和右侧duration-wrapper样式完全一致 */
 .detail-duration-wrapper {
   position: relative;
-	width: 100%;
-	padding: 8px;
+  width: 100%;
+  padding: 8px;
   box-sizing: border-box;
   margin-top: 8px;
 }
+
 .detail-duration-wrapper::before {
   content: '';
   position: absolute;
-	left: 0;
-	top: 0;
-	width: 100%;
-	height: 4px;
-	border-radius: 2px;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
@@ -645,19 +682,20 @@ export default {
   background: rgba(255, 255, 255, 0.03) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-	padding: 12px 15px;
-	border-radius: 8px;
-	box-shadow: 0 2px 15px rgba(0,0,0,0.18);
+  padding: 12px 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.18);
   border: none !important;
-	pointer-events: none;
-	word-break: break-all;
-	line-height: 1.6;
-	max-height: 400px;
-	max-width: 380px;
-	overflow-y: auto;
+  pointer-events: none;
+  word-break: break-all;
+  line-height: 1.6;
+  max-height: 400px;
+  max-width: 380px;
+  overflow-y: auto;
   /* 移除手动偏移，完全跟随鼠标坐标 */
   transform: none !important;
 }
+
 .tooltip-content {
   font-size: 13px;
   /* 弹窗内文字颜色 和评分字体颜色完全一致 */
@@ -665,16 +703,20 @@ export default {
   font-weight: 400;
   line-height: 1.6;
 }
+
 /* 悬浮弹窗滚动条也隐藏三角 */
 .tooltip-box::-webkit-scrollbar-button {
   display: none !important;
 }
+
 .tooltip-box::-webkit-scrollbar {
   width: 4px !important;
 }
+
 .tooltip-box::-webkit-scrollbar-track {
   background: transparent !important;
 }
+
 .tooltip-box::-webkit-scrollbar-thumb {
   background: v-bind(mainColorDarkDouble) !important;
   border-radius: 2px;
@@ -683,7 +725,7 @@ export default {
 /* ✅ 统计概览 本月总条数/平均评分/最近编写 全部 颜色=mainColorDark + 加粗 */
 .stat-overview {
   margin-top: 15px;
-	padding-top: 12px;
+  padding-top: 12px;
   border: none;
   flex: 1;
   display: flex;
@@ -691,27 +733,30 @@ export default {
   justify-content: center;
   background: transparent;
 }
+
 .stat-item {
   font-size: 13px;
   color: v-bind(mainColorDark) !important;
   font-weight: bold !important;
-	margin-bottom: 10px;
+  margin-bottom: 10px;
 }
+
 .stat-item span {
   color: v-bind(mainColorDark) !important;
-	font-weight: bold !important;
-	margin-left: 5px;
+  font-weight: bold !important;
+  margin-left: 5px;
 }
 
 /* 右侧 60% 区域 */
 .review-content {
-	width: 60%;
+  width: 60%;
   box-sizing: border-box;
   height: 700px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 }
+
 .feelings-list {
   flex: 1;
   margin-bottom: 20px;
@@ -721,38 +766,42 @@ export default {
 
 /* ✅✅✅ 核心修改2：右侧听后感列表滚动条 - 和左侧完全统一+无三角 ✅✅✅ */
 .feelings-scroll-box {
-  height: calc(100% - 50px);
+  height: 100%;
   color: v-bind(mainColorDarkDouble) !important;
   background: transparent !important;
   white-space: pre-wrap;
   word-wrap: break-word;
-	border:none !important;
+  border: none !important;
   overflow-y: auto;
   overflow-x: hidden;
   text-align: left; /* 强制文字还是左对齐，不影响阅读 */
   padding-left: 10px; /* 给左侧滚动条预留位置，防止遮挡文字 */
 }
+
 /* 滚动条轨道 - 透明 */
 .feelings-scroll-box::-webkit-scrollbar-track {
   background: transparent !important;
-	border-radius: 2px;
+  border-radius: 2px;
 }
+
 /* 滚动条宽度 - 4px */
 .feelings-scroll-box::-webkit-scrollbar {
   width: 4px !important;
 }
+
 /* 滚动条滑块 - 双层深色+圆角 */
 .feelings-scroll-box::-webkit-scrollbar-thumb {
   background: v-bind(mainColorDarkDouble) !important;
-	border-radius: 2px !important;
+  border-radius: 2px !important;
 }
+
 /* 隐藏webkit滚动条三角按钮 */
 .feelings-scroll-box::-webkit-scrollbar-button {
   display: none !important;
 }
 
 .feeling-item {
-	border-radius: 8px;
+  border-radius: 8px;
   padding: 15px;
   margin-bottom: 15px;
   position: relative;
@@ -760,53 +809,59 @@ export default {
   background: transparent !important;
   border: none !important;
 }
+
 .feeling-top {
   margin-bottom: 10px;
   display: flex;
   align-items: center;
   gap: 8px;
-	padding: 6px 8px;
-	border-radius: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
   flex-wrap: nowrap;
-	background: transparent !important;
+  background: transparent !important;
 }
+
 .create-time {
-	font-size: 15px;
+  font-size: 15px;
   color: v-bind(mainColorDark) !important;
-	font-weight: 600;
-	line-height: 1;
-	background: transparent;
-	padding: 0;
-	margin: 0;
+  font-weight: 600;
+  line-height: 1;
+  background: transparent;
+  padding: 0;
+  margin: 0;
   position: relative;
 }
+
 .feeling-score {
-	font-size: 15px;
+  font-size: 15px;
   color: v-bind(mainColorDark) !important;
-	font-weight: 600;
-	line-height: 1;
-	background: transparent;
-	padding: 0;
-	margin: 0;
+  font-weight: 600;
+  line-height: 1;
+  background: transparent;
+  padding: 0;
+  margin: 0;
   position: relative;
 }
+
 .feeling-content {
   line-height: 1.6;
   margin-bottom: 0;
   font-size: 14px;
   font-weight: 400;
-	padding: 8px;
-	border-radius: 4px;
-	color: v-bind(mainColorDark) !important;
+  padding: 8px;
+  border-radius: 4px;
+  color: v-bind(mainColorDark) !important;
   background: transparent !important;
 }
+
 .duration-wrapper {
   position: relative;
-	width: 100%;
-	padding: 8px;
+  width: 100%;
+  padding: 8px;
   box-sizing: border-box;
   margin-top: 8px;
 }
+
 .listening-duration {
   font-size: 14px;
   font-weight: 400;
@@ -814,74 +869,55 @@ export default {
   color: v-bind(mainColorDark) !important;
   background: transparent !important;
   position: static;
-	margin: 0;
-	padding: 0;
+  margin: 0;
+  padding: 0;
 }
+
 .duration-wrapper::before {
   content: '';
   position: absolute;
-	left: 0;
-	top: 0;
-	width: 100%;
-	height: 4px;
-	border-radius: 2px;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
+
 /* ✅ 删除按钮样式 - 统一样式到css，方便复用 */
 .delete-single-btn {
-	padding: 4px 8px;
-	border: none;
-	border-radius: 4px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
   cursor: pointer;
-	font-size: 12px;
+  font-size: 12px;
   transition: all 0.2s;
   position: absolute;
-	right: 15px;
-	bottom: 15px;
+  right: 15px;
+  bottom: 15px;
   color: #ffffff;
   background-color: v-bind(mainColorDark) !important;
 }
+
 .delete-single-btn:hover {
   opacity: 0.95;
   filter: brightness(0.9);
 }
-/* ✅✅✅ 核心修改：新增听后感按钮 和删除按钮背景色+hover效果 完全一致 */
-.save-btn {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-	padding: 8px 20px;
-	color: #fff;
-	border: none;
-	border-radius: 8px;
-	cursor: pointer;
-	transition: all 0.2s;
-  font-size: 12px;
-  background-color: v-bind(mainColorDark) !important;
-}
-.save-btn:disabled {
-  background: #999 !important;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-.save-btn:hover:not(:disabled) {
-  opacity: 0.95;
-  filter: brightness(0.9);
-}
+
 .no-feeling {
   font-size: 15px;
-	font-weight: 600;
+  font-weight: 600;
   margin: 5px 0;
-	text-align: center;
-	padding: 30px 0;
-	background: transparent !important;
+  text-align: center;
+  padding: 30px 0;
+  background: transparent !important;
   color: v-bind(mainColorDark) !important;
 }
 
-/* ✅ 核心修改：输入框彻底去掉所有边界颜色，纯净透明无任何边框 */
+/* ✅ 核心修改：输入框彻底去掉所有边界颜色，纯净透明无任何边框 + 相对定位承载按钮 */
 .review-edit-area {
-	width: 100%;
+  width: 100%;
   box-sizing: border-box;
   flex-shrink: 0;
   padding: 6px 10px;
@@ -891,24 +927,54 @@ export default {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   border: none !important;
+  position: relative; /* 关键：给按钮做绝对定位的父容器 */
 }
+
 .review-textarea {
-	width: 100%;
-	padding: 6px 10px;
-	border: none !important;
-	outline: none !important;
-	border-radius: 4px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none !important;
+  outline: none !important;
+  border-radius: 4px;
   resize: vertical;
   font-size: 14px;
-	font-weight: 400;
-	line-height: 1.6;
+  font-weight: 400;
+  line-height: 1.6;
   background: transparent !important;
-	color: v-bind(mainColorDark) !important;
+  color: v-bind(mainColorDark) !important;
   font-family: inherit;
 }
+
 .review-textarea::placeholder {
   color: v-bind(mainColorDark) !important;
   opacity: 0.8;
-	font-weight: 400;
+  font-weight: 400;
+}
+
+/* ✅✅✅ 按钮样式修改：固定在输入框右上角 + 完美间距 + 样式不变 */
+.save-btn {
+  position: absolute;
+  top: 6px; /* 和输入框padding一致，垂直对齐 */
+  right: 10px; /* 和输入框padding一致，水平对齐 */
+  padding: 8px 20px;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 12px;
+  background-color: v-bind(mainColorDark) !important;
+  z-index: 10;
+}
+
+.save-btn:disabled {
+  background: #999 !important;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.save-btn:hover:not(:disabled) {
+  opacity: 0.95;
+  filter: brightness(0.9);
 }
 </style>

@@ -24,14 +24,14 @@
     <!-- 歌手 -->
     <div class="form-item">
       <label>歌手：</label>
-      <input v-model="album.singer" type="text" placeholder="请输入歌手名">
+      <input v-model="album.album_singer" type="text" placeholder="请输入歌手名">
     </div>
     <!-- 发行年份 -->
     <div class="form-item">
       <label>发行年份：</label>
       <input v-model="album.release_year" type="number" placeholder="如：2024">
     </div>
-    <!-- ✅✅✅ 新增：专辑类型选择框 (LP/EP/Mix/Com) 核心改动1 -->
+    <!-- 专辑类型选择框 (LP/EP/Mix/Com) -->
     <div class="form-item">
       <label>专辑类型：</label>
       <select v-model="album.duration_type" class="album-type-select">
@@ -43,9 +43,7 @@
       </select>
     </div>
 
-
-
-    <!-- 新增：专辑简介（放在单曲列表上方） -->
+    <!-- 专辑简介 -->
     <div class="form-item">
       <label>专辑简介：</label>
       <textarea
@@ -58,10 +56,10 @@
       <p class="intro-tip">提示：支持分段（按Enter）、特殊符号，内容将完整保存</p>
     </div>
 
-    <!-- 核心：单曲列表（优化交互） -->
+    <!-- 核心：单曲列表【新增时间戳输入框】 -->
     <div class="form-item">
       <label>单曲列表：</label>
-      <!-- 循环渲染单曲输入框 -->
+      <!-- 循环渲染单曲+时间戳输入框 -->
       <div class="song-item" v-for="(song, index) in album.songs" :key="index">
         <div class="song-input-wrapper">
           <span class="song-index">{{ index + 1 }}.</span>
@@ -70,6 +68,16 @@
             type="text"
             placeholder="请输入单曲名"
             class="song-input"
+          >
+          <!-- ✅✅✅ 新增：时间戳输入框 -->
+          <input
+            v-model="song.track_time"
+            type="text"
+            placeholder="0:00:00 时间戳"
+            class="song-time-input"
+            maxlength="8"
+            @input="song.track_time = filterDurationInput(song.track_time)"
+            @blur="formatDurationInput(song)"
           >
         </div>
         <!-- 至少保留1个输入框才显示删除按钮 -->
@@ -81,8 +89,11 @@
           ×
         </button>
       </div>
-      <!-- 添加单曲按钮（优化样式，更突出） -->
-      <button @click="addSong" class="btn-add-song">+ 添加单曲</button>
+      <!-- 添加单曲 + 文本解析 按钮并排 -->
+      <div class="song-btn-group">
+        <button @click="addSong" class="btn-add-song">+ 添加单曲</button>
+        <button @click="showParseModal = true" class="btn-parse-song">📝 文本解析</button>
+      </div>
     </div>
 
     <!-- 按钮区 -->
@@ -92,27 +103,41 @@
     </div>
     <!-- 错误提示 -->
     <div class="error-tip" v-if="errorMsg">{{ errorMsg }}</div>
+
+    <!-- 文本解析组件弹窗 -->
+    <TrackParse
+      v-if="showParseModal"
+      :visible="showParseModal"
+      :main-color-dark="'#359469'"
+      :main-color-dark-double="'#257d51'"
+      @close="showParseModal = false"
+      @parse-success="handleParseSuccess"
+    />
   </div>
 </template>
 
 <script>
+// 引入文本解析组件
+import TrackParse from '@/components/sidebar/TrackParse.vue'
+
 export default {
   name: 'AddAlbum',
+  components: { TrackParse },
   data() {
     return {
-      // 新增 album_intro 字段
       album: {
         album_name: "",
         cover_img: "",
-        singer: "",
+        album_singer: "",
         release_year: "",
         duration_type:"LP",
-        album_intro: "", // 专辑简介
-        // 单曲列表：初始1个空输入框
-        songs: [{ song_name: "" }]
+        album_intro: "",
+        // ✅✅✅ 修改：单曲数组新增 track_time 字段 存放时间戳文本
+        songs: [{ song_name: "", track_time: "0:00:00" }]
       },
       errorMsg: "",
-      isUploading: false
+      isUploading: false,
+      showParseModal: false
     };
   },
   created() {
@@ -122,13 +147,45 @@ export default {
     }
   },
   methods: {
+    // ========== 新增：时间戳格式化相关方法（和你参考页面逻辑完全一致） ==========
+    // 过滤时间戳输入：只保留数字和冒号，最多2个冒号
+    filterDurationInput(val) {
+      if (!val) return '';
+      let filterVal = val.replace(/[^0-9:]/g, '');
+      const colonCount = filterVal.split(':').length - 1;
+      if (colonCount > 2) filterVal = filterVal.substring(0, filterVal.lastIndexOf(':'));
+      return filterVal;
+    },
+    // 时间戳文本 转 总秒数
+    timeToSeconds(timeStr) {
+      if (!timeStr || timeStr.length === 0) return 0;
+      let timeArr = timeStr.split(':').map(item => Number(item)).filter(item => !isNaN(item));
+      let hours = 0, minutes = 0, seconds = 0;
+      if (timeArr.length === 2) { minutes = timeArr[0]; seconds = timeArr[1]; }
+      else if (timeArr.length === 3) { hours = timeArr[0]; minutes = timeArr[1]; seconds = timeArr[2]; }
+      minutes = Math.min(Math.max(minutes, 0), 59);
+      seconds = Math.min(Math.max(seconds, 0), 59);
+      hours = Math.max(hours, 0);
+      return hours * 3600 + minutes * 60 + seconds;
+    },
+    // 总秒数 转 标准时间戳文本 0:00:00
+    secondsToTime(seconds) {
+      if (!seconds || isNaN(seconds) || seconds < 0) return '0:00:00';
+      const totalSeconds = Math.floor(seconds);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const sec = Math.floor(totalSeconds % 60);
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    },
+    // 失去焦点时自动格式化时间戳
+    formatDurationInput(song) {
+      song.track_time = this.secondsToTime(this.timeToSeconds(song.track_time));
+    },
+
     // ========== 单曲列表核心方法 ==========
-    // 添加单曲输入框
     addSong() {
-      this.album.songs.push({ song_name: "" });
-      // 清除之前的错误提示
+      this.album.songs.push({ song_name: "", track_time: "0:00:00" });
       this.errorMsg = "";
-      // 可选：新增后自动聚焦到新输入框（提升体验）
       this.$nextTick(() => {
         const inputs = document.querySelectorAll('.song-input');
         if (inputs.length > 0) {
@@ -136,7 +193,6 @@ export default {
         }
       });
     },
-    // 删除指定索引的单曲输入框
     removeSong(index) {
       if (this.album.songs.length <= 1) {
         this.errorMsg = "至少保留1首单曲！";
@@ -168,7 +224,7 @@ export default {
       const file = e.target.files[0];
       if (file && file.type.startsWith('image/')) {
         this.uploadToImgBed(file);
-        e.target.value = ""; // 清空文件选择器，避免重复选择同一文件无反应
+        e.target.value = "";
       } else {
         this.errorMsg = "请选择有效的图片文件！";
       }
@@ -199,7 +255,7 @@ export default {
       }
     },
 
-    // ========== 提交专辑方法 ==========
+    // ========== 提交专辑方法【核心修改：新增 tracks_time 数组提交】 ==========
     submitAlbum() {
       this.errorMsg = "";
       // 1. 基础字段校验
@@ -207,7 +263,7 @@ export default {
         this.errorMsg = "专辑名不能为空！";
         return;
       }
-      if (!this.album.singer.trim()) {
+      if (!this.album.album_singer.trim()) {
         this.errorMsg = "歌手名不能为空！";
         return;
       }
@@ -218,22 +274,28 @@ export default {
 
       // 2. 单曲列表校验：过滤空值并检查至少1首有效单曲
       const validSongs = this.album.songs
-        .map(song => song.song_name.trim())
-        .filter(name => name); // 过滤空字符串
+        .filter(song => song.song_name.trim()) // 过滤单曲名为空的项
+        .map(song => {
+          return {
+            name: song.song_name.trim(),
+            time: this.timeToSeconds(song.track_time) // 转成秒数
+          }
+        });
       if (validSongs.length === 0) {
         this.errorMsg = "至少填写1首单曲名！";
         return;
       }
 
-      // 3. 构造提交数据（新增 album_intro 字段）
+      // 3. 构造提交数据 ✅✅✅ 核心：新增 tracks_time 数组
       const submitData = {
         album_name: this.album.album_name.trim(),
         cover_img: this.album.cover_img.trim(),
-        singer: this.album.singer.trim(),
+        singer: this.album.album_singer.trim(),
         release_year: Number(this.album.release_year),
-        album_intro: this.album.album_intro.trim(), // 专辑简介（保留原始格式）
+        album_intro: this.album.album_intro.trim(),
         duration_type: this.album.duration_type,
-        tracks: validSongs // 仅传递有效单曲名数组
+        tracks: validSongs.map(item => item.name), // 单曲名数组
+        tracks_time: validSongs.map(item => item.time) // 时间戳秒数数组 ✅✅✅
       };
 
       // 4. 调用后端接口
@@ -246,32 +308,48 @@ export default {
         },
         data: submitData
       })
-      .then(res => {
-        if (res.data.code === 200) {
-          alert("专辑添加成功！");
-          // 提交成功后跳回专辑列表
-          this.$router.push("/albumDetail");
-        } else {
-          this.errorMsg = res.data.msg;
-        }
-      })
-      .catch(err => {
-        console.error("添加专辑失败：", err);
-        this.errorMsg = "添加失败，请检查后端是否启动或网络连接！";
-      });
+          .then(res => {
+            if (res.data.code === 200) {
+              alert("专辑添加成功！");
+              this.$router.push("/albumDetail");
+            } else {
+              this.errorMsg = res.data.msg;
+            }
+          })
+          .catch(err => {
+            console.error("添加专辑失败：", err);
+            this.errorMsg = "添加失败，请检查后端是否启动或网络连接！";
+          });
     },
 
     // 取消按钮：返回上一页
     goBack() {
-      this.$router.go(-1); // 通用返回，比固定路由更灵活
+      this.$router.go(-1);
+    },
+
+// ========== 文本解析成功回调【修复核心：适配子组件传递的 对象数组，不用动子组件！】 ==========
+handleParseSuccess(parseSongs) {
+  this.showParseModal = false;
+  this.errorMsg = '';
+  // ✅ 核心修复：parseSongs是子组件传的【对象数组】，里面包含 name(单曲名) + duration(格式化时间戳)
+  // 这里循环解析对象的属性，转成当前页面需要的 {song_name:xxx, track_time:xxx} 格式
+  const formatSongs = parseSongs.map(item => {
+    return {
+      song_name: item.name ? item.name.trim() : '', // 取对象的name字段作为单曲名
+      track_time: item.duration ? item.duration : '0:00:00' // 取对象的duration字段作为时间戳
     }
+  });
+  // ✅ 把解析好的数组赋值给页面的单曲列表，完成填充
+  this.album.songs = formatSongs;
+  alert(`解析成功！共识别到 ${formatSongs.length} 首单曲，已自动填充 ✔️`);
+}
   }
 };
 </script>
 
 <style scoped>
 .add-album-container {
-  width: 500px;
+  width: 600px;
   margin: 50px auto;
   padding: 20px;
   border: 1px solid #eee;
@@ -300,7 +378,6 @@ export default {
   font-size: 14px;
 }
 
-/* ✅✅✅ 新增：专辑类型下拉框样式 */
 .album-type-select {
   width: 100%;
   padding: 10px;
@@ -312,7 +389,6 @@ export default {
   background: #fff;
 }
 
-/* 专辑简介文本框样式 */
 .album-intro-textarea {
   width: 100%;
   padding: 12px;
@@ -321,10 +397,10 @@ export default {
   border-radius: 4px;
   font-size: 14px;
   line-height: 1.6;
-  resize: vertical; /* 允许垂直调整大小 */
+  resize: vertical;
   font-family: inherit;
-  white-space: pre-wrap; /* 保留换行和空格 */
-  word-wrap: break-word; /* 自动换行 */
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 .intro-tip {
@@ -334,7 +410,6 @@ export default {
   line-height: 1.4;
 }
 
-/* 封面上传区域 */
 .upload-area {
   width: 100%;
   height: 120px;
@@ -360,7 +435,6 @@ export default {
   object-fit: contain;
 }
 
-/* 单曲列表样式优化 */
 .song-item {
   display: flex;
   align-items: center;
@@ -376,7 +450,7 @@ export default {
   display: flex;
   align-items: center;
   flex: 1;
-  gap: 8px;
+  gap: 10px;
 }
 
 .song-index {
@@ -387,9 +461,18 @@ export default {
 }
 
 .song-input {
+  flex: 3;
+  padding: 8px !important;
+  border: 1px solid #ddd !important;
+}
+
+/* ✅✅✅ 新增：时间戳输入框样式 */
+.song-time-input {
   flex: 1;
   padding: 8px !important;
   border: 1px solid #ddd !important;
+  text-align: center;
+  font-size: 13px;
 }
 
 .btn-delete-song {
@@ -408,6 +491,13 @@ export default {
   justify-content: center;
 }
 
+/* 按钮并排样式 */
+.song-btn-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
 .btn-add-song {
   padding: 10px 16px;
   background: #42b983;
@@ -415,16 +505,33 @@ export default {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  margin-top: 8px;
   font-size: 14px;
   transition: background 0.2s;
+  flex: 1;
+  text-align: center;
 }
 
 .btn-add-song:hover {
   background: #359469;
 }
 
-/* 按钮区样式优化 */
+.btn-parse-song {
+  padding: 10px 16px;
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+  flex: 1;
+  text-align: center;
+}
+
+.btn-parse-song:hover {
+  background: #1976d2;
+}
+
 .btn-group {
   margin-top: 20px;
   display: flex;
@@ -454,7 +561,6 @@ export default {
   font-size: 14px;
 }
 
-/* 错误提示 */
 .error-tip {
   color: #ff4444;
   margin-top: 10px;

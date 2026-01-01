@@ -219,6 +219,8 @@ def register_album_pool_routes(app):
             album['main_type'] = safe_json_loads(album.get('main_type')) or []
             # 核心：处理tracks字段（兼容字典/数组/空值）
             album['tracks'] = safe_json_loads(album.get('tracks')) or []
+            # ✅✅✅ 新增：处理tracks_time字段，JSON解析后返回，前端才能拿到秒数数组
+            album['tracks_time'] = safe_json_loads(album.get('tracks_time')) or []
             # 处理时长类型 duration_type
             album['duration_type'] = album.get('duration_type', 'LP') or 'LP'
             # 新增：处理专辑简介字段
@@ -590,6 +592,7 @@ def register_album_pool_routes(app):
             return jsonify({"code": 500, "msg": f"获取用户列表失败：{str(e)}", "data": {}}), 200
 
     # 4. 修改公共专辑接口（核心修改：只同步专辑名/歌手/发行时间，保留用户所有自定义内容 + 重复友好提示）
+    # 4. 修改公共专辑接口（核心修改：新增 tracks_time 字段处理+只同步专辑名/歌手/发行时间，保留用户所有自定义内容 + 重复友好提示）
     @app.route('/api/album/pool/update/<int:pool_id>', methods=['PUT', 'OPTIONS'])
     @login_required
     def update_pool_album(pool_id):
@@ -634,7 +637,6 @@ def register_album_pool_routes(app):
             duplicate_album = cursor.fetchone()
             if duplicate_album:
                 cursor.close()
-                # ✅ 重点：返回200状态码 + 409业务码，前端正常解析文案，不报错！
                 return jsonify({
                     "code": 409,
                     "msg": f"公共专辑池中已存在【{new_album_name} - {new_singer} ({new_release_year})】，无法修改！",
@@ -643,8 +645,9 @@ def register_album_pool_routes(app):
 
             update_fields = []
             params = []
+            # ✅✅✅ 修复点1：allowed_fields 数组中 新增 tracks_time 字段，加入白名单
             allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score',
-                              'tracks', 'album_intro', 'duration_type']
+                              'tracks', 'tracks_time', 'album_intro', 'duration_type']
             update_log = []
 
             # 预处理tracks
@@ -653,6 +656,15 @@ def register_album_pool_routes(app):
             if isinstance(new_pool_tracks, list):
                 new_pool_tracks = [track.strip() for track in new_pool_tracks if track and track.strip()]
             sync_tracks = json.dumps(new_pool_tracks) if new_pool_tracks else album.get('tracks', '[]')
+
+            # ✅✅✅ 修复点2：预处理 tracks_time 字段（和tracks逻辑完全一致）
+            original_pool_tracks_time = safe_json_loads(album.get('tracks_time')) or []
+            new_pool_tracks_time = data.get('tracks_time', original_pool_tracks_time)
+            if isinstance(new_pool_tracks_time, list):
+                new_pool_tracks_time = [int(sec) for sec in new_pool_tracks_time if
+                                        isinstance(sec, (int, float)) and sec >= 0]
+            sync_tracks_time = json.dumps(new_pool_tracks_time) if new_pool_tracks_time else album.get('tracks_time',
+                                                                                                       '[]')
 
             # 构造公共专辑更新语句
             for field in allowed_fields:
@@ -663,6 +675,14 @@ def register_album_pool_routes(app):
                         update_log.append(f"{field}：{safe_slice(old_val)}... → {safe_slice(new_val)}...")
                         update_fields.append(f"`{field}` = %s")
                         params.append(sync_tracks)
+                # ✅✅✅ 修复点3：新增 tracks_time 字段的更新逻辑（和tracks逻辑完全一致）
+                elif field == 'tracks_time':
+                    if new_pool_tracks_time != original_pool_tracks_time:
+                        old_val = json.dumps(original_pool_tracks_time)
+                        new_val = sync_tracks_time
+                        update_log.append(f"{field}：{safe_slice(old_val)}... → {safe_slice(new_val)}...")
+                        update_fields.append(f"`{field}` = %s")
+                        params.append(sync_tracks_time)
                 elif field == 'album_intro':
                     new_val = data.get('album_intro', album.get('album_intro', '')).strip()
                     old_val = album.get('album_intro', '')

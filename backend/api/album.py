@@ -370,6 +370,7 @@ def register_album_routes(app):
             release_year = int(data.get('release_year'))
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+            # 校验公共池是否存在相同专辑
             cursor.execute('''
                 SELECT id FROM album_pool 
                 WHERE album_name = %s AND singer = %s AND release_year = %s
@@ -382,6 +383,7 @@ def register_album_routes(app):
                     "msg": f"公共专辑池中已存在【{album_name} - {singer} ({release_year})】，无法重复创建！",
                     "data": {"pool_id": existing_pool_album['id']}
                 }), 200
+            # 校验用户库是否存在相同专辑
             cursor.execute(f'''
                 SELECT id FROM `{table_name}` 
                 WHERE album_name = %s AND singer = %s AND release_year = %s
@@ -406,6 +408,28 @@ def register_album_routes(app):
                 except:
                     return json.dumps([])
 
+            # ========== ✅✅✅ 核心修改 1：获取前端传递的 tracks_time 并格式化 ==========
+            # 获取前端的单曲名数组 + 时间戳秒数数组
+            tracks_list = data.get('tracks', [])
+            tracks_time_list = data.get('tracks_time', [])
+            # 格式化处理：保证是数组、长度一致、空值填充0
+            if not isinstance(tracks_list, list):
+                tracks_list = []
+            if not isinstance(tracks_time_list, list):
+                tracks_time_list = []
+            # 过滤空的单曲名，保证数据干净
+            tracks_list = [track.strip() for track in tracks_list if track.strip()]
+            # 补全时间戳数组：长度不一致时，缺的部分填充0
+            if len(tracks_time_list) < len(tracks_list):
+                tracks_time_list += [0] * (len(tracks_list) - len(tracks_time_list))
+            elif len(tracks_time_list) > len(tracks_list):
+                tracks_time_list = tracks_time_list[:len(tracks_list)]
+            # 转JSON字符串，存入数据库
+            tracks_json = json.dumps(tracks_list, ensure_ascii=False)
+            tracks_time_json = json.dumps(tracks_time_list, ensure_ascii=False)
+            track_count = len(tracks_list)  # 自动计算单曲数量
+            # ========== ✅✅✅ 核心修改 1 结束 ==========
+
             album_intro = data.get('album_intro', '').strip()
             new_album = {
                 "album_name": album_name,
@@ -413,7 +437,7 @@ def register_album_routes(app):
                 "singer": singer,
                 "release_year": release_year,
                 "start_time": data.get('start_time', ''),
-                "track_count": int(data.get('track_count', 0)),
+                "track_count": track_count,  # ✅ 修改：自动赋值单曲数量
                 "track_duration": data.get('track_duration', ''),
                 "my_score": float(data.get('my_score', 0.0)),
                 "burn_class": data.get('burn_class', ''),
@@ -424,7 +448,7 @@ def register_album_routes(app):
                 "video_shared": data.get('video_shared', ''),
                 "mandopop_code": data.get('mandopop_code', ''),
                 "album_intro": album_intro,
-                "tracks": json.dumps(data.get('tracks', [])) or "",
+                "tracks": tracks_json,  # ✅ 修改：赋值格式化后的单曲名JSON
                 "review": json.dumps({
                     "feelings": [],
                     "single_score": 0.0,
@@ -438,15 +462,16 @@ def register_album_routes(app):
                 "source_pool_id": 0,
                 "sync_pool_update": 1,
                 "is_customized": 0,
-                "tracks_time": json.dumps([])
+                "tracks_time": tracks_time_json  # ✅ 修改：赋值格式化后的时间戳JSON
             }
             main_type_str = json.dumps(data.get('main_type', [])) if data.get('main_type') else ""
-            tracks_str = get_default_tracks_value(data.get('tracks', []))
+
+            # ========== ✅✅✅ 核心修改 2：修改 album_pool 插入SQL → 新增 tracks_time 字段 ==========
             cursor.execute('''
                 INSERT INTO album_pool (
                     album_name, cover_img, singer, release_year, 
-                    main_type, tags, album_intro, tracks, my_score, create_user
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    main_type, tags, album_intro, tracks, tracks_time, my_score, create_user
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 new_album['album_name'],
                 new_album['cover_img'],
@@ -455,12 +480,17 @@ def register_album_routes(app):
                 main_type_str,
                 new_album['tags'],
                 new_album['album_intro'],
-                tracks_str,
+                new_album['tracks'],
+                new_album['tracks_time'],  # ✅ 插入：公共池 存入 tracks_time
                 new_album['my_score'],
                 current_user_id
             ))
+            # ========== ✅✅✅ 核心修改 2 结束 ==========
+
             new_pool_id = cursor.lastrowid
             new_album['source_pool_id'] = new_pool_id
+
+            # ========== ✅✅✅ 核心修改 3：用户表插入SQL 不变，tracks_time 已在new_album赋值好 ==========
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
@@ -485,8 +515,10 @@ def register_album_routes(app):
                 new_album['source_pool_id'],
                 new_album['sync_pool_update'],
                 new_album['is_customized'],
-                new_album['tracks_time']
+                new_album['tracks_time']  # ✅ 插入：用户表 存入 tracks_time
             ))
+            # ========== ✅✅✅ 核心修改 3 结束 ==========
+
             new_album_id = cursor.lastrowid
             if album_intro:
                 save_user_album_intro(current_user_id, new_album_id, album_intro)
@@ -499,10 +531,10 @@ def register_album_routes(app):
             return_album['tracks'] = json.loads(return_album['tracks'])
             return_album['review'] = json.loads(return_album['review'])
             return_album['comments'] = json.loads(return_album['comments'])
-            return_album['tracks_time'] = json.loads(return_album['tracks_time'])
+            return_album['tracks_time'] = json.loads(return_album['tracks_time'])  # ✅ 返回：时间戳数组
             return jsonify({
                 "code": 200,
-                "msg": "专辑添加成功！",
+                "msg": "专辑添加成功！单曲时间戳已同步保存",
                 "data": return_album
             })
         except Exception as e:

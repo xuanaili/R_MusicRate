@@ -67,8 +67,7 @@
         >
       </div>
 
-
-      <!-- ✅✅✅ 新增：专辑类型下拉选择框 -->
+      <!-- 专辑类型下拉选择框 -->
       <div class="form-item">
         <label>专辑类型：</label>
         <select v-model="album.duration_type" class="form-input album-type-select">
@@ -80,8 +79,7 @@
         </select>
       </div>
 
-
-      <!-- 替换标签：专辑简介（支持长文本、分段、特殊符号） -->
+      <!-- 专辑简介 -->
       <div class="form-item">
         <label>专辑简介：</label>
         <textarea
@@ -94,18 +92,36 @@
         <p class="intro-tip">提示：支持分段（按Enter）、特殊符号，内容将完整保存</p>
       </div>
 
-      <!-- 核心：单曲列表（和添加专辑一致的交互） -->
+      <!-- 核心：单曲列表 + 时间戳输入框 + 文本解析按钮 -->
       <div class="form-item">
-        <label>单曲列表：</label>
-        <!-- 循环渲染单曲输入框 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <label>单曲列表：</label>
+          <!-- ✅ 新增：文本解析按钮 -->
+          <button @click="showParseModal = true" class="btn-add-song" style="padding: 6px 12px; font-size: 12px;">
+            📝 文本解析
+          </button>
+        </div>
+        <!-- 循环渲染单曲+时间戳输入框 -->
         <div class="song-item" v-for="(song, index) in album.songs" :key="index">
-          <div class="song-input-wrapper">
+          <div class="song-input-wrapper" style="display: flex; align-items: center; gap: 10px; flex: 1;">
             <span class="song-index">{{ index + 1 }}.</span>
             <input
                 v-model="song.song_name"
                 type="text"
                 placeholder="请输入单曲名"
                 class="song-input form-input"
+                style="flex: 3;"
+            >
+            <!-- ✅ 新增：时间戳输入框 -->
+            <input
+                v-model="song.track_time"
+                type="text"
+                placeholder="0:00:00"
+                class="song-input form-input"
+                style="flex: 1; text-align: center;"
+                maxlength="8"
+                @input="song.track_time = filterDurationInput(song.track_time)"
+                @blur="formatDurationInput(song, index)"
             >
           </div>
           <!-- 至少保留1个输入框才显示删除按钮 -->
@@ -138,16 +154,30 @@
         <button @click="goBack" class="cancel-btn btn-cancel" :disabled="loading || isUploading">取消</button>
       </div>
     </div>
+
+    <!-- ✅ 新增：文本解析弹窗组件 (和AddAlbum一致，组件源码完全不动) -->
+    <TrackParse
+      :visible="showParseModal"
+      :main-color-dark="mainColorDark"
+      :main-color-dark-double="mainColorDarkDouble"
+      @close="showParseModal = false"
+      @parse-success="handleParseSuccess"
+    />
   </div>
 </template>
 
 <script>
+// ✅ 新增：导入文本解析组件，路径和你其他页面一致，不动组件源码
+import TrackParse from '@/components/sidebar/TrackParse.vue'
+
 export default {
   name: 'EditPoolAlbum',
+  // ✅ 注册组件
+  components: { TrackParse },
   data() {
     return {
       albumId: '', // 公共专辑ID
-      // 专辑表单（新增album_intro字段，移除tagInput）
+      // 专辑表单（新增tracks_time字段）
       album: {
         album_name: "",
         cover_img: "",
@@ -155,12 +185,17 @@ export default {
         release_year: "",
         duration_type: "LP", // 默认选中正式专辑
         album_intro: "", // 专辑简介
-        songs: [{song_name: ""}] // 单曲列表
+        songs: [{song_name: "", track_time: "0:00:00"}], // ✅ 新增 track_time 时间戳字段
+        tracks_time: [] // ✅ 新增：存储时间戳对应的秒数数组
       },
       loading: false,
       isUploading: false,
       syncResult: null, // 存储同步结果
-      errorMsg: "" // 错误提示
+      errorMsg: "", // 错误提示
+      // ✅ 新增解析相关变量
+      showParseModal: false,
+      mainColorDark: '#2f9465',
+      mainColorDarkDouble: '#257d51'
     }
   },
   created() {
@@ -181,16 +216,49 @@ export default {
     this.getAlbumData();
   },
   methods: {
-    // ========== 单曲列表核心方法（和添加专辑一致） ==========
+    // ========== ✅ 新增：时间戳处理核心工具方法 (和AddAlbum/AlbumTrackList完全一致) ==========
+    timeToSeconds(timeStr) {
+      if (!timeStr || timeStr.length === 0) return 0;
+      let timeArr = timeStr.split(':').map(item => Number(item)).filter(item => !isNaN(item));
+      let hours = 0, minutes = 0, seconds = 0;
+      if (timeArr.length === 2) { minutes = timeArr[0]; seconds = timeArr[1]; }
+      else if (timeArr.length === 3) { hours = timeArr[0]; minutes = timeArr[1]; seconds = timeArr[2]; }
+      minutes = Math.min(Math.max(minutes, 0), 59);
+      seconds = Math.min(Math.max(seconds, 0), 59);
+      hours = Math.max(hours, 0);
+      return hours * 3600 + minutes * 60 + seconds;
+    },
+    secondsToTime(seconds) {
+      if (!seconds || isNaN(seconds) || seconds < 0) return '0:00:00';
+      const totalSeconds = Math.floor(seconds);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const sec = Math.floor(totalSeconds % 60);
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    },
+    filterDurationInput(val) {
+      if (!val) return '';
+      let filterVal = val.replace(/[^0-9:]/g, '');
+      const colonCount = filterVal.split(':').length - 1;
+      if (colonCount > 2) filterVal = filterVal.substring(0, filterVal.lastIndexOf(':'));
+      return filterVal;
+    },
+    formatDurationInput(song) {
+      song.track_time = this.filterDurationInput(song.track_time);
+      const sec = this.timeToSeconds(song.track_time);
+      song.track_time = this.secondsToTime(sec);
+    },
+
+    // ========== 单曲列表核心方法（改造适配时间戳） ==========
     // 添加单曲输入框
     addSong() {
-      this.album.songs.push({song_name: ""});
+      this.album.songs.push({song_name: "", track_time: "0:00:00"}); // ✅ 新增时间戳默认值
       this.errorMsg = "";
       // 新增后自动聚焦
       this.$nextTick(() => {
         const inputs = document.querySelectorAll('.song-input');
         if (inputs.length > 0) {
-          inputs[inputs.length - 1].focus();
+          inputs[inputs.length - 2].focus(); // 聚焦到歌曲名输入框
         }
       });
     },
@@ -204,7 +272,7 @@ export default {
       this.errorMsg = "";
     },
 
-    // ========== 封面上传相关方法（和添加专辑一致） ==========
+    // ========== 封面上传相关方法（无改动） ==========
     handleDragOver(e) {
       e.preventDefault();
     },
@@ -258,8 +326,7 @@ export default {
       }
     },
 
-    // ========== 原有核心逻辑（修改适配专辑简介） ==========
-    // 获取原有专辑数据（新增album_intro赋值，移除标签相关逻辑）
+    // ========== ✅ 核心改造：加载原有专辑数据（适配 tracks + tracks_time 回显） ==========
     getAlbumData() {
       this.loading = true;
       this.$axios({
@@ -273,18 +340,31 @@ export default {
             this.loading = false;
             if (res.data.code === 200) {
               const data = res.data.data;
-              // 基础信息赋值（新增album_intro）
+              // 后端返回的 tracks 和 tracks_time 都是数组
+              const trackNames = data.tracks && Array.isArray(data.tracks) ? data.tracks : [];
+              const trackSecs = data.tracks_time && Array.isArray(data.tracks_time) ? data.tracks_time : [];
+              // 组装单曲列表：歌曲名 + 格式化时间戳
+              const songs = [];
+              if (trackNames.length > 0) {
+                trackNames.forEach((name, idx) => {
+                  songs.push({
+                    song_name: name.trim() || '未知曲目',
+                    track_time: this.secondsToTime(trackSecs[idx] || 0)
+                  })
+                })
+              } else {
+                songs.push({song_name: "", track_time: "0:00:00"});
+              }
+              // 基础信息赋值
               this.album = {
                 album_name: data.album_name || "",
                 cover_img: data.cover_img || "",
                 singer: data.singer || "",
                 release_year: data.release_year || "",
-                duration_type: data.duration_type || "LP", // 赋值专辑类型，兜底默认LP
-                album_intro: data.album_intro || "", // 专辑简介赋值
-                // 处理单曲列表：后端返回的tracks转成输入框格式
-                songs: data.tracks && Array.isArray(data.tracks)
-                    ? data.tracks.map(song => ({song_name: song}))
-                    : [{song_name: ""}]
+                duration_type: data.duration_type || "LP",
+                album_intro: data.album_intro || "",
+                songs: songs, // 赋值组装好的单曲+时间戳
+                tracks_time: trackSecs // 赋值原始秒数数组
               };
             } else {
               alert('加载专辑数据失败：' + res.data.msg);
@@ -299,7 +379,22 @@ export default {
           });
     },
 
-    // 提交修改（新增album_intro字段，移除标签相关逻辑）
+    // ========== ✅ 新增：文本解析成功回调（和AddAlbum一致，适配组件返回的对象数组，不动组件） ==========
+    handleParseSuccess(parseSongs) {
+      this.showParseModal = false;
+      this.errorMsg = '';
+      // 适配子组件返回的对象数组：{name:xxx, duration:xxx} → 转当前页面的 {song_name:xxx, track_time:xxx}
+      const formatSongs = parseSongs.map(item => {
+        return {
+          song_name: item.name ? item.name.trim() : '',
+          track_time: item.duration ? item.duration : '0:00:00'
+        }
+      });
+      this.album.songs = formatSongs;
+      alert(`解析成功！共识别到 ${formatSongs.length} 首单曲，已自动填充 ✔️`);
+    },
+
+    // ========== ✅ 核心改造：提交修改（新增 tracks_time 秒数提交给后端） ==========
     submitEdit() {
       // 清除之前的错误提示
       this.errorMsg = "";
@@ -320,22 +415,30 @@ export default {
 
       // 2. 单曲列表校验
       const validSongs = this.album.songs
-          .map(song => song.song_name.trim())
-          .filter(name => name);
+          .map(song => ({
+            name: song.song_name.trim(),
+            time: song.track_time || '0:00:00'
+          }))
+          .filter(item => item.name);
       if (validSongs.length === 0) {
         this.errorMsg = "至少填写1首单曲名！";
         return;
       }
 
-      // 3. 构造提交数据（新增album_intro，移除tags）
+      // ✅ 核心：把 格式化时间戳 → 转成 秒数数组 tracks_time
+      const trackNames = validSongs.map(item => item.name);
+      const trackSecs = validSongs.map(item => this.timeToSeconds(item.time));
+
+      // 3. 构造提交数据（✅ 新增 tracks_time 字段传给后端）
       const submitData = {
         album_name: this.album.album_name.trim(),
         cover_img: this.album.cover_img.trim(),
         singer: this.album.singer.trim(),
         release_year: this.album.release_year ? Number(this.album.release_year) : '',
-        duration_type: this.album.duration_type, // 专辑类型提交给后端
-        album_intro: this.album.album_intro.trim(), // 专辑简介（保留原始格式）
-        tracks: validSongs // 单曲列表转数组
+        duration_type: this.album.duration_type,
+        album_intro: this.album.album_intro.trim(),
+        tracks: trackNames, // 歌曲名数组
+        tracks_time: trackSecs // ✅ 新增：时间戳秒数数组，后端直接存入album_pool表
       };
 
       this.loading = true;
@@ -416,7 +519,7 @@ export default {
   font-size: 14px;
 }
 
-/* 新增：专辑简介文本框样式 */
+/* 专辑简介文本框样式 */
 .album-intro-textarea {
   line-height: 1.6;
   resize: vertical; /* 允许垂直调整大小 */
@@ -432,10 +535,10 @@ export default {
   line-height: 1.4;
 }
 
-/* 封面上传区域（和添加专辑一致） */
+/* 封面上传区域 */
 .upload-area {
   width: 100%;
-  height: 120px;
+	height: 120px;
   border: 2px dashed #ddd;
   border-radius: 4px;
   display: flex;
@@ -458,7 +561,7 @@ export default {
   object-fit: contain;
 }
 
-/* 单曲列表样式（和添加专辑一致） */
+/* 单曲列表样式 */
 .song-item {
   display: flex;
   align-items: center;
@@ -485,12 +588,11 @@ export default {
 }
 
 .song-input {
-  flex: 1;
   padding: 8px !important;
   border: 1px solid #ddd !important;
 }
 
-/* ✅✅✅ 新增：专辑类型下拉框样式 适配现有风格 */
+/* 专辑类型下拉框样式 适配现有风格 */
 .album-type-select {
   background: #fff;
   color: #333;
@@ -528,7 +630,7 @@ export default {
   background: #359469;
 }
 
-/* 按钮区样式（和添加专辑一致） */
+/* 按钮区样式 */
 .btn-group {
   margin-top: 20px;
   display: flex;
@@ -539,7 +641,7 @@ export default {
   flex: 1;
   padding: 12px;
   border: none;
-  border-radius: 4px;
+	border-radius: 4px;
   cursor: pointer;
   background: #42b983;
   color: white;
@@ -564,7 +666,7 @@ export default {
   cursor: not-allowed;
 }
 
-/* 错误提示（和添加专辑一致） */
+/* 错误提示 */
 .error-tip {
   color: #ff4444;
   margin-top: 10px;

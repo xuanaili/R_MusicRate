@@ -1,4 +1,5 @@
 <template>
+  <div class="root-container">
   <div class="tab-content">
     <!-- ✅ 整体弹性布局：左60% 列表区 + 右40% 评分+节奏组件区 完全自适应 -->
     <div class="main-layout">
@@ -25,7 +26,7 @@
               </div>
             </div>
 
-            <!-- ✅ 编辑按钮和Tab联动，置顶固定 + 新增【切换输入模式】按钮 -->
+            <!-- ✅ 编辑按钮和Tab联动，置顶固定 + 新增【切换输入模式】按钮 + 新增【文本解析】按钮 -->
             <div class="tracks-header sticky-header">
               <div class="tracks-action-btn">
                 <button
@@ -48,6 +49,16 @@
                   style="margin-left: 8px;"
                 >
                   {{ isDurationMode ? '切换为时间戳' : '切换为时长' }}
+                </button>
+
+                <!-- ✅ ✅ ✅ 新增：文本解析按钮 - 仅在单曲列表+编辑模式显示 -->
+                <button
+                  v-if="activeTab === 'tracks' && isTrackEditMode"
+                  class="mode-btn"
+                  @click="showParseModal = true"
+                  style="margin-left: 8px;"
+                >
+                  文本解析
                 </button>
               </div>
             </div>
@@ -193,14 +204,14 @@
           <div class="rate-content-wrap">
             <div class="rate-text-area">
               <h3>整体感觉</h3>
-<div class="rate-score">{{ score.toFixed(1) }} 分</div>
+              <div class="rate-score">{{ score.toFixed(1) }} 分</div>
               <button class="reset-rate-btn" @click="resetRating">重置评分</button>
             </div>
             <div class="rate-circle-area">
               <div class="outer-circle"
-                @mousedown="startRating"
-                @mouseup="stopRating"
-                @mouseleave="stopRating"
+                   @mousedown="startRating"
+                   @mouseup="stopRating"
+                   @mouseleave="stopRating"
               >
                 <div class="inner-circle" :style="{ width: `${score}%`, height: `${score}%` }"></div>
               </div>
@@ -219,11 +230,25 @@
       </div>
     </div>
   </div>
+
+  <TrackParse
+    :visible="showParseModal"
+    :mainColorDark="mainColorDark"
+    :mainColorDarkDouble="mainColorDarkDouble"
+    @close="showParseModal = false"
+    @parse-success="handleParseSuccess"
+  />
+    </div>
 </template>
 
 <script>
+// ✅ ✅ ✅ 新增：导入文本解析子组件
+import TrackParse from '@/components/sidebar/TrackParse.vue';
+
 export default {
   name: 'AlbumTrackList',
+  // ✅ ✅ ✅ 新增：注册子组件
+  components: { TrackParse },
   props: {
     album: {
       type: Object,
@@ -258,7 +283,8 @@ export default {
       tailBalls: [],
       wrapDom: null,
       isScalingUp: true,
-
+      // ✅ ✅ ✅ 新增：控制文本解析弹窗显隐的变量
+      showParseModal: false
     };
   },
   watch: {
@@ -359,6 +385,17 @@ export default {
     // ✅ 修复核心3：新增【主动触发读取评分】的方法，可选加
     async triggerGetScore() {
       await this.getAllScore();
+    },
+
+    // ✅ ✅ ✅ 新增核心方法：接收子组件解析成功的曲目列表并赋值
+    handleParseSuccess(newTrackList) {
+      this.showParseModal = false;
+      this.trackList = newTrackList;
+      // 如果当前是时长模式，自动重新计算时间戳
+      if (this.isDurationMode) {
+        this.calcTrackTimestamp();
+      }
+      alert(`✅ 文本解析完成，已填充 ${newTrackList.length} 首曲目！`);
     },
 
     // 以下是你原有所有方法，完全不变，直接复制保留 ↓↓↓
@@ -686,7 +723,7 @@ export default {
   top: 0;
   z-index: 10;
   background: transparent !important;
-  padding-bottom: 10px;
+	padding-bottom: 10px;
   margin-bottom: 15px;
 }
 
@@ -696,14 +733,14 @@ export default {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding-bottom: 8px;
+	padding-bottom: 8px;
   margin-bottom: 15px;
 }
 
 .track-tab-nav {
   display: flex;
   gap: 10px;
-  padding-bottom: 0;
+	padding-bottom: 0;
   margin-bottom: 0;
   width: auto;
   box-sizing: border-box;
@@ -744,7 +781,7 @@ export default {
   justify-content: flex-end;
   align-items: center;
   margin-bottom: 0;
-  padding-bottom: 0;
+	padding-bottom: 0;
   border-bottom: none;
   display: flex;
   background: transparent !important;
@@ -805,7 +842,7 @@ export default {
   font-size: 16px;
   color: v-bind(mainColorDarkDouble) !important;
   font-weight: 600;
-  padding-bottom: 8px;
+	padding-bottom: 8px;
   width: 100%;
   box-sizing: border-box;
   text-align: left;
@@ -940,7 +977,7 @@ export default {
   text-align: center;
   margin-right: 12px;
   position: relative;
-  padding-bottom: 0;
+	padding-bottom: 0;
   flex-shrink: 0;
   z-index: 99; /* 最高层级 永远挡住歌名 */
 }
@@ -959,7 +996,7 @@ export default {
   width: 260px; /* 缩小容器宽度 精准裁切 彻底不遮挡右侧内容 | 想改宽度只改这个值 */
   flex-shrink: 0;
   position: relative;
-  padding-bottom: 8px;
+	padding-bottom: 8px;
   margin-right: 0;
   cursor: pointer;
   box-sizing: border-box;
