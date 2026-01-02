@@ -39,7 +39,7 @@ AUDIO_BASE_URL = f"http://{HOST}:{PORT}/tracks/"
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 10
 # 排序字段白名单
-VALID_SORT_FIELDS = ['album_name', 'release_year', 'singer', 'my_score']
+VALID_SORT_FIELDS = ['album_name', 'release_year', 'singer', 'my_score','created_at' ]
 # 默认管理员账号
 DEFAULT_ADMIN_USER = "admin"
 DEFAULT_ADMIN_PWD = "123456"

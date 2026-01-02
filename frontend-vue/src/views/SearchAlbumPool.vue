@@ -32,6 +32,23 @@
       </div>
     </div>
 
+    <!-- ✅✅✅ 新增：排序按钮区域 -->
+    <div class="sort-area">
+      <span class="sort-title">排序方式：</span>
+      <button
+        v-for="item in sortOptions"
+        :key="item.field"
+        @click="changeSort(item.field)"
+        :class="['sort-btn', currentSort.field === item.field ? 'active' : '']"
+      >
+        {{ item.name }}
+        <span class="sort-icon">{{ currentSort.field === item.field ? (currentSort.order === 'asc' ? '↑' : '↓') : '' }}</span>
+      </button>
+      <span class="current-sort-text" v-if="currentSort">
+        当前排序：{{ getSortName(currentSort.field) }} {{ currentSort.order === 'asc' ? '升序' : '降序' }}
+      </span>
+    </div>
+
     <!-- 操作按钮 + 统一重置按钮 -->
     <div class="action-btns">
       <button @click="goAddOriginalAlbum" class="add-original-btn">新增原创专辑</button>
@@ -106,7 +123,18 @@ export default {
         page_size: 10,
         total_pages: 0
       },
-      isAdmin: false          // 是否为管理员
+      isAdmin: false,         // 是否为管理员
+      // ✅✅✅ 新增：排序配置
+      sortOptions: [
+        { field: 'create_time', name: '创建时间' },
+        { field: 'release_year', name: '发行年份' },
+        { field: 'album_name', name: '专辑名' },
+        { field: 'singer', name: '歌手' }
+      ],
+      currentSort: {
+        field: 'create_time', // 默认排序字段
+        order: 'desc'         // 默认排序方式：倒序 (最新优先)
+      }
     }
   },
   computed: {
@@ -127,7 +155,33 @@ export default {
     this.searchByNameSinger();
   },
   methods: {
-    // 核心方法1：按【专辑名/歌手】搜索，调用后端专属接口
+    // ✅✅✅ 新增：获取排序名称
+    getSortName(field) {
+      const item = this.sortOptions.find(item => item.field === field);
+      return item ? item.name : '创建时间';
+    },
+
+    // ✅✅✅ 新增：切换排序方式（点击同一字段切换正序/倒序）
+    changeSort(field) {
+      if (this.currentSort.field === field) {
+        // 同一字段，切换排序方向
+        this.currentSort.order = this.currentSort.order === 'asc' ? 'desc' : 'asc';
+      } else {
+        // 不同字段，默认倒序，创建时间默认倒序，其他默认正序
+        this.currentSort.field = field;
+        this.currentSort.order = field === 'create_time' ? 'desc' : 'asc';
+      }
+      // 排序后重置页码为1
+      this.page = 1;
+      // 重新请求数据
+      if(this.tagKeyword.trim()){
+        this.searchByTag()
+      }else{
+        this.searchByNameSinger()
+      }
+    },
+
+    // 核心方法1：按【专辑名/歌手】搜索，调用后端专属接口 + ✅新增排序参数
     searchByNameSinger() {
       this.loading = true;
       this.$axios({
@@ -140,7 +194,9 @@ export default {
         params: {
           keyword: this.nameSingerKeyword.trim(),
           page: this.hasSearchKeyword ? this.page : 1,
-          page_size: this.hasSearchKeyword ? this.pageSize : 10
+          page_size: this.hasSearchKeyword ? this.pageSize : 10,
+          sort_field: this.currentSort.field,
+          sort_order: this.currentSort.order
         }
       })
       .then(res => {
@@ -165,7 +221,7 @@ export default {
       });
     },
 
-    // 核心方法2：按【标签】搜索，调用后端专属接口
+    // 核心方法2：按【标签】搜索，调用后端专属接口 + ✅新增排序参数
     searchByTag() {
       this.loading = true;
       this.$axios({
@@ -178,7 +234,9 @@ export default {
         params: {
           tag: this.tagKeyword.trim(),
           page: this.hasSearchKeyword ? this.page : 1,
-          page_size: this.hasSearchKeyword ? this.pageSize : 10
+          page_size: this.hasSearchKeyword ? this.pageSize : 10,
+          sort_field: this.currentSort.field,
+          sort_order: this.currentSort.order
         }
       })
       .then(res => {
@@ -203,15 +261,16 @@ export default {
       });
     },
 
-    // 重置所有搜索条件：清空两个输入框、页码归1、加载【最新10条】
+    // 重置所有搜索条件：清空两个输入框、页码归1、恢复默认排序、加载【最新10条】
     resetSearch() {
       this.nameSingerKeyword = '';
       this.tagKeyword = '';
       this.page = 1;
+      this.currentSort = { field: 'create_time', order: 'desc' };
       this.searchByNameSinger();
     },
 
-    // 切换页码：只在【有搜索条件】时生效
+    // 切换页码：只在【有搜索条件】时生效，保留排序条件
     changePage(newPage) {
       if (newPage < 1 || newPage > this.pagination.total_pages || newPage === this.page || !this.hasSearchKeyword) {
         return;
@@ -348,13 +407,52 @@ h2 {
   padding: 8px 20px;
   background: #42b983;
   color: white;
-  border: none;
+	border: none;
 	border-radius: 4px;
   cursor: pointer;
 }
 
 .tag-search-btn {
   background: #007acc;
+}
+
+/* ✅✅✅ 新增：排序按钮样式 */
+.sort-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  padding: 10px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+.sort-title {
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+}
+.sort-btn {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+.sort-btn.active {
+  background: #42b983;
+  color: #fff;
+  border-color: #42b983;
+}
+.sort-icon {
+  margin-left: 4px;
+  font-size: 12px;
+}
+.current-sort-text {
+  margin-left: 15px;
+  color: #999;
+  font-size: 13px;
 }
 
 .action-btns {
@@ -397,7 +495,7 @@ h2 {
   align-items: center;
   gap: 10px;
   margin-top: 30px;
-  padding-top: 20px;
+	padding-top: 20px;
   border-top: 1px solid #eee;
   flex-wrap: wrap;
 }

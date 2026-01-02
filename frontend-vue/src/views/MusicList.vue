@@ -13,7 +13,7 @@
           <option value="release_year">发行年份</option>
           <option value="singer">歌手</option>
           <option value="my_score">我的评分</option>
-          <option value="add_time">添加时间</option>
+          <option value="created_at">添加时间</option>
         </select>
         <select v-model="sortOrder" @change="getMusicList()">
           <option value="asc">升序</option>
@@ -162,7 +162,7 @@ export default {
         total_pages: 0
       },
       // 排序参数
-      sortBy: 'add_time',
+      sortBy: 'created_at',
       sortOrder: 'desc',
       // 跳转页码
       jumpPageNum: 1,

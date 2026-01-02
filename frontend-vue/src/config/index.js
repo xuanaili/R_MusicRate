@@ -2,6 +2,7 @@
 export default {
   // 专辑/音乐 通用标签库 ✅新增这一段
   albumTagOptions: [
+      'Indie Pop【独立流行】',
       'Art Rock【艺术摇滚】',
        'Folk Rock【民谣摇滚】',
       'Jazz Rock【爵士摇滚】',

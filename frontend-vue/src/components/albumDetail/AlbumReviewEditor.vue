@@ -64,7 +64,6 @@
             <div class="album-score">评分：<span>{{ item.score }}</span></div>
             <!-- ✅ 新增时长容器，用于承载横线样式 -->
             <div class="detail-duration-wrapper">
-              <div class="duration-text">时长：{{ formatMinSecToHourMin(item.listening_duration)}}</div>
             </div>
           </div>
         </div>
@@ -72,9 +71,6 @@
 
       <!-- 无选中/无记录时展示：统计概览 -->
       <div class="stat-overview" v-else>
-        <div class="stat-item" v-if="!loading">本月总条数：<span>{{ totalReviewCount }}</span></div>
-        <div class="stat-item" v-if="!loading">平均评分：<span>{{ avgScore }}</span></div>
-        <div class="stat-item" v-if="!loading">最近编写：<span>{{ lastWriteDate }}</span></div>
         <div class="stat-item" v-if="loading">加载统计数据中...</div>
       </div>
 
@@ -106,11 +102,11 @@
           >
             <div class="feeling-top">
               <span class="create-time">{{ feeling.create_time }}</span>
-              <span class="feeling-score">评分：{{ feeling.my_score || 0 }}</span>
+              <span class="feeling-score">{{ feeling.my_score || 0 }}分</span>
             </div>
             <div class="feeling-content">{{ feeling.content }}</div>
             <div class="duration-wrapper">
-              <div class="listening-duration">听取时长：{{ formatSecondsToHourMin(feeling.listening_duration) }}</div>
+              <div class="listening-duration">已听{{ formatSecondsToHourMin(feeling.listening_duration) }}</div>
             </div>
             <button class="delete-single-btn" @click="handleDeleteSingle(feeling.id)">删除</button>
           </div>
@@ -150,9 +146,9 @@ export default {
   data() {
     return {
       newFeelingContent: '',
-      mainColor: '#42b983',
-      mainColorDark: '#2f9465',
-      mainColorDarkDouble: '#257d51', // ✅ 双层深色 用于滚动条配色
+      mainColor: 'transparent',
+      mainColorDark: 'transparent',
+      mainColorDarkDouble: 'transparent', // ✅ 双层深色 用于滚动条配色
       // 日历核心变量
       currentYear: new Date().getFullYear(),
       currentMonth: new Date().getMonth() + 1,
@@ -326,29 +322,28 @@ export default {
     getRecordCount(day) {
       return this.reviewRecordData.filter(item => item.year === this.currentYear && item.month === this.currentMonth && item.day === day).length;
     },
-    getDayDetailList() {
-      const dayRecords = this.reviewRecordData.filter(
-          item =>
-              item.year === this.currentYear &&
-              item.month === this.currentMonth &&
-              item.day === this.selectedDay
-      );
-      const correctFeelings = this.album.review?.feelings || [];
-      const matchList = dayRecords.map(record => {
-        const matchItem = correctFeelings.find(f => f.id === record.id);
-        return matchItem
-            ? {...matchItem, listening_duration: matchItem.listening_duration}
-            : record;
-      });
-      return matchList.sort((a, b) => {
-        const toSec = str => {
-          if (!str || !/^\d{1,3}:\d{2}$/.test(str)) return 0;
-          const [m, s] = str.split(':').map(Number);
-          return m * 60 + s;
-        };
-        return toSec(b.listening_duration) - toSec(a.listening_duration);
-      });
-    },
+getDayDetailList() {
+  const dayRecords = this.reviewRecordData.filter(
+      item =>
+          item.year === this.currentYear &&
+          item.month === this.currentMonth &&
+          item.day === this.selectedDay
+  );
+  const correctFeelings = this.album.review?.feelings || [];
+  const matchList = dayRecords.map(record => {
+    const matchItem = correctFeelings.find(f => f.id === record.id);
+    return matchItem
+        ? {...matchItem, listening_duration: matchItem.listening_duration}
+        : record;
+  });
+  // ========== 核心修改 - 替换原有的时长排序 ==========
+  // 按 创建时间(create_time) 倒序排序 → 最新的在最上面
+
+  return matchList.sort((a, b) => {
+    return new Date(b.create_time) - new Date(a.create_time);
+  });
+  // ==================================================
+},
     isToday(day) {
       const now = new Date()
       return now.getFullYear() === this.currentYear && now.getMonth() + 1 === this.currentMonth && now.getDate() === day
@@ -435,6 +430,7 @@ export default {
 }
 
 .arrow-btn {
+  color: v-bind(mainColorDark) !important;
   background: transparent;
   border: none;
   font-size: 16px;
@@ -679,7 +675,7 @@ export default {
   position: fixed;
   z-index: 99999;
   /* 透明底色+蒙版，和输入框样式完全一致 */
-  background: rgba(255, 255, 255, 0.03) !important;
+  background: rgba(255, 255, 255, 0.5) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   padding: 12px 15px;
@@ -699,7 +695,7 @@ export default {
 .tooltip-content {
   font-size: 13px;
   /* 弹窗内文字颜色 和评分字体颜色完全一致 */
-  color: v-bind(mainColorDark) !important;
+  color: v-bind(mainColorDarkDouble) !important;
   font-weight: 400;
   line-height: 1.6;
 }
@@ -850,7 +846,7 @@ export default {
   font-weight: 400;
   padding: 8px;
   border-radius: 4px;
-  color: v-bind(mainColorDark) !important;
+  color: v-bind(mainColorDarkDouble) !important;
   background: transparent !important;
 }
 

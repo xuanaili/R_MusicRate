@@ -28,6 +28,11 @@
             <span class="meta-label">我的评分：</span>
             <span class="meta-value">{{ albumTotalScore  }}</span>
           </div>
+          <!-- ✅ 核心新增：听取时间，放在我的评分正下方，样式完全一致 -->
+          <div class="meta-item">
+            <span class="meta-label">听取时间：</span>
+            <span class="meta-value">{{ formatListeningDuration() }}</span>
+          </div>
         </div>
 
         <!-- 第二列：标签搜索+已选标签 -->
@@ -123,7 +128,6 @@
 <script>
 import TagBubbleChart from '@/components/TagBubbleChart'
 import config from '@/config/index.js'
-
 export default {
   name: 'AlbumBaseInfo',
   components: { TagBubbleChart },
@@ -147,12 +151,18 @@ export default {
       required: true,
       default: '#2f9465'
     },
-      // ✅ 新增这一段
-  albumTotalScore: {
-    type: Number,
-    required: false,
-    default: 0.0
-  }
+    // ✅ 原有新增：专辑评分
+    albumTotalScore: {
+      type: Number,
+      required: false,
+      default: 0.0
+    },
+    // ✅ 核心新增：听取时间 listening_duration 接收字段
+    listening_duration: {
+      type: [String, Number], // 兼容字符串/数字格式的时长（如 "125分钟" 或 125）
+      required: false,
+      default: ''
+    }
   },
   data() {
     return {
@@ -225,7 +235,21 @@ export default {
         this.filterTagOptions();
         this.tagSearchInput = '';
       }
+      console.log(this.album)
     },
+      // ✅✅✅ 核心新增：纯秒数 转 xxh xxmin 格式 【精准适配你的需求】
+  formatListeningDuration() {
+    // 拿到专辑的纯秒数，容错处理：非数字/空/0 都返回 未知
+    const totalSeconds = this.album.listening_duration
+    if (!totalSeconds || isNaN(Number(totalSeconds)) || Number(totalSeconds) <= 0) {
+      return '未知'
+    }
+    const secNum = Number(totalSeconds)
+    const hours = Math.floor(secNum / 3600) // 总秒数 ÷3600 = 小时数
+    const minutes = Math.floor((secNum % 3600) / 60) // 剩余秒数 ÷60 = 分钟数
+    // 拼接格式：有小时显示xxhxxmin，无小时只显示xxmin，无多余空格/字符
+    return hours > 0 ? `${hours}h${minutes}min` : `${minutes}min`
+  },
     removeMyTag(index) {
       this.selectedMyTags.splice(index, 1);
       this.filterTagOptions();
@@ -320,8 +344,8 @@ export default {
   position: relative;
   z-index: 1;
   background: transparent !important;
-  padding-bottom: 20px !important;
-  margin-bottom: 0 !important;
+	padding-bottom: 20px !important;
+	margin-bottom: 0 !important;
 }
 
 .new-base-info-card {
@@ -372,8 +396,8 @@ export default {
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 100%;
-  height: 4px;
+	width: 100%;
+	height: 4px;
 	border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
@@ -397,9 +421,9 @@ export default {
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
+	width: 100%;
+	height: 4px;
+	border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
@@ -674,7 +698,7 @@ export default {
 	border-radius: 4px;
   cursor: pointer;
   align-self: flex-start;
-  font-size: 14px;
+	font-size: 14px;
   transition: all 0.2s;
   position: relative;
   z-index: 9999;

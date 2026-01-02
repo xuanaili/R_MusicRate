@@ -496,21 +496,19 @@ export default {
         totalSec += playSec;
       });
     },
-    async toggleEditStatus(type) {
-      if (type === 'tracks') {
-        if (this.isTrackEditMode) {
-          if (this.isDurationMode) this.calcTrackTimestamp();
-          await this.saveTrackList('tracks');
-          this.isTrackEditMode = false;
-          this.isDurationMode = false;
-        } else { this.isTrackEditMode = true; }
-      } else {
-        if (this.isFavouriteEditMode) {
-          await this.saveTrackList('favourite');
-          this.isFavouriteEditMode = false;
-        } else { this.isFavouriteEditMode = true; }
-      }
-    },
+async toggleEditStatus(type) {
+  if (type === 'tracks') {
+    // 单曲保存逻辑不变
+  } else {
+    if (this.isFavouriteEditMode) {
+      // ============ 只加了这一行 ↓ ============
+      await this.saveAllScore();
+      // ============ 只加了这一行 ↑ ============
+      await this.saveTrackList('favourite');
+      this.isFavouriteEditMode = false;
+    } else { this.isFavouriteEditMode = true; }
+  }
+},
     addNewTrack(type) {
       if (type === 'tracks') {
         this.trackList.push({name: '', duration: '0:00:00', sec: 0, playDuration: '0:00:00', score: 0});

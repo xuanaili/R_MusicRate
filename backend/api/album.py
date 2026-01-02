@@ -58,11 +58,22 @@ def register_album_routes(app):
                 like_search = f"%{search_keyword}%"
                 sql_params.extend([like_search, like_search])
 
-            # 条件2：独立类型搜索 → 只匹配tags标签数组
+            # 条件2：独立类型搜索 → 只匹配tags标签（整串模糊，兼容中文+特殊符号）
             if tag_keyword:
-                where_conditions.append("tags LIKE %s")
-                like_tag = f"%{tag_keyword}%"
-                sql_params.append(like_tag)
+                # 统一转小写，实现大小写不敏感；把JSON数组拼成长串再LOCATE
+                where_conditions.append("""
+                    tags IS NOT NULL
+                    AND JSON_VALID(tags)
+                    AND LOCATE(%s, LOWER(
+                        REPLACE(
+                            REPLACE(
+                                REPLACE(JSON_EXTRACT(tags, '$'), '"', ''),
+                                '[', ''
+                            ), ']', ''
+                        )
+                    )) > 0
+                """)
+                sql_params.append(tag_keyword.lower())
 
             # 拼接所有搜索条件（多个条件用 AND 连接 → 叠加筛选）
             if where_conditions:
@@ -128,6 +139,7 @@ def register_album_routes(app):
                 album_list.append(album_dict)
 
             total_pages = (total + page_size - 1) // page_size
+
             return jsonify({
                 "code": 200,
                 "msg": "获取专辑列表成功",

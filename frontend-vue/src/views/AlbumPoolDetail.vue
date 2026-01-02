@@ -118,9 +118,9 @@ export default {
       recentUsers: [],
       showIntro: false,
       bgStyle: {},
-      mainColor: '#42b983',
-      mainColorDark: '#2f9465',
-      mainColorDarkDouble: '#257750'
+      mainColor: 'transparent',
+      mainColorDark: 'transparent',
+      mainColorDarkDouble: 'transparent'
     }
   },
   created() {

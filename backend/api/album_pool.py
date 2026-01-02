@@ -19,7 +19,6 @@ def register_album_pool_routes(app):
         """
         安全的字符串切片函数，处理None和非字符串类型
         :param value: 原始值（可能为None/字符串/数字等）
-        :param max_length: 最大长度
         :return: 截断后的字符串
         """
         if value is None:
@@ -105,6 +104,29 @@ def register_album_pool_routes(app):
             return json.loads(s)
         except (json.JSONDecodeError, TypeError):
             return None
+
+    # ========== ✅ 新增通用函数：获取排序SQL片段（防注入+安全校验） ==========
+    def get_order_by_sql(sort_field, sort_order):
+        """
+        安全获取排序SQL片段，只允许指定字段排序，防止SQL注入
+        :param sort_field: 排序字段 create_time/release_year/album_name/singer
+        :param sort_order: 排序方式 asc/desc
+        :return: 排序sql语句
+        """
+        # 白名单：只允许这4个字段排序，杜绝注入风险
+        allow_fields = {
+            "create_time": "ap.create_time",
+            "release_year": "ap.release_year",
+            "album_name": "ap.album_name",
+            "singer": "ap.singer"
+        }
+        # 校验排序方式
+        allow_orders = ["asc", "desc"]
+        # 赋值默认值
+        order_field = allow_fields.get(sort_field, "ap.create_time")
+        order_type = sort_order.lower() if sort_order.lower() in allow_orders else "desc"
+        # 返回排序sql
+        return f"ORDER BY {order_field} {order_type}"
 
     # ========== 修复：获取专辑标签统计接口（气泡图用） - 修正数据来源 ==========
     @app.route('/api/album/<int:album_pool_id>/tag-statistics', methods=['GET', 'OPTIONS'])
@@ -240,7 +262,7 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取失败：{str(e)}", "data": {}}), 200
 
-    # ✅✅✅ 拆分接口1：【专辑名+歌手 专属搜索】- 只搜专辑名、歌手、专辑简介，精准匹配基础信息
+    # ✅✅✅ 拆分接口1：【专辑名+歌手 专属搜索】- 新增排序功能+保留分页
     @app.route('/api/album/pool/search/name-singer', methods=['GET', 'OPTIONS'])
     @login_required
     def search_album_pool_by_name_singer():
@@ -251,6 +273,9 @@ def register_album_pool_routes(app):
             keyword_lower = keyword.lower()
             page = int(request.args.get('page', DEFAULT_PAGE))
             page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
+            # ✅ 新增：接收排序参数
+            sort_field = request.args.get('sort_field', 'create_time')
+            sort_order = request.args.get('sort_order', 'desc')
 
             if page < 1:
                 page = 1
@@ -282,7 +307,9 @@ def register_album_pool_routes(app):
             total = cursor.fetchone()['total']
 
             offset = (page - 1) * page_size
-            query += " ORDER BY ap.create_time DESC LIMIT %s OFFSET %s"
+            # ✅ 核心修改：拼接安全的排序SQL + 分页
+            order_by_sql = get_order_by_sql(sort_field, sort_order)
+            query += f" {order_by_sql} LIMIT %s OFFSET %s"
             params.extend([page_size, offset])
             cursor.execute(query, params)
             album_list = cursor.fetchall()
@@ -336,7 +363,7 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"搜索失败：{str(e)}", "data": {}}), 200
 
-    # ✅✅✅ 拆分接口2：【标签 专属搜索】- 只搜聚合标签+原始标签，纯标签维度精准匹配，无基础信息干扰
+    # ✅✅✅ 拆分接口2：【标签 专属搜索】- 新增排序功能+保留分页
     @app.route('/api/album/pool/search/tags', methods=['GET', 'OPTIONS'])
     @login_required
     def search_album_pool_by_tags():
@@ -347,6 +374,9 @@ def register_album_pool_routes(app):
             tag_keyword_lower = tag_keyword.lower()
             page = int(request.args.get('page', DEFAULT_PAGE))
             page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
+            # ✅ 新增：接收排序参数
+            sort_field = request.args.get('sort_field', 'create_time')
+            sort_order = request.args.get('sort_order', 'desc')
 
             if page < 1:
                 page = 1
@@ -364,12 +394,13 @@ def register_album_pool_routes(app):
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # 核心：查询全部公共专辑，不做SQL过滤，所有过滤逻辑在Python中按标签匹配
-            query = """
+            # ✅ 核心修改：拼接排序SQL，标签搜索先排序再过滤，体验更佳
+            order_by_sql = get_order_by_sql(sort_field, sort_order)
+            query = f"""
                 SELECT ap.*, u.username as create_user_name 
                 FROM album_pool ap
                 LEFT JOIN users u ON ap.create_user = u.user_id
-                ORDER BY ap.create_time DESC
+                {order_by_sql}
             """
             cursor.execute(query)
             album_list = cursor.fetchall()
@@ -784,7 +815,7 @@ def register_album_pool_routes(app):
                 cursor.close()
             return jsonify({"code": 500, "msg": f"修改公共专辑失败：{str(e)}", "data": {}}), 200
 
-    # 5. 复制专辑接口 ✅【终极修复核心】：重复时友好提示+无报错 + 所有BUG修复
+    # 5. 复制专辑接口 ✅【终极修复核心】：重复时友好提示+无报错 + tracks_time字段补全 + 所有BUG修复
     @app.route('/api/album/pool/copy/<int:album_id>', methods=['POST', 'OPTIONS'])
     @login_required
     def copy_album(album_id):
@@ -795,7 +826,6 @@ def register_album_pool_routes(app):
         try:
             current_user_id = get_current_user_id()
             if current_user_id is None:
-                # ✅ 未登录：返回200+401，友好提示，不触发服务异常
                 return jsonify({"code": 401, "msg": "用户未登录，请先登录！", "data": {}}), 200
 
             db = get_db()
@@ -806,7 +836,6 @@ def register_album_pool_routes(app):
             pool_album = cursor.fetchone()
             if not pool_album:
                 cursor.close()
-                # ✅ 无数据：返回200+404，友好提示
                 return jsonify({"code": 404, "msg": f"公共专辑池中未找到ID为{album_id}的专辑！", "data": {}}), 200
 
             table_name = get_album_table_name(current_user_id)
@@ -824,8 +853,6 @@ def register_album_pool_routes(app):
             duplicate_private_album = cursor.fetchone()
             if duplicate_private_album:
                 cursor.close()
-                # ✅ 最重要修复：返回【200 HTTP状态码】+ 【409 业务错误码】
-                # ✅ 前端能正常解析msg文案，弹窗显示「私有列表已存在」，不会出现「检查后端是否启动」
                 return jsonify({
                     "code": 409,
                     "msg": f"✅ 你的私有专辑列表中已存在【{album_name} - {singer} ({release_year})】，无需重复复制！",
@@ -846,11 +873,17 @@ def register_album_pool_routes(app):
                     "data": {"duplicate_pool_id": duplicate_pool_album['id']}
                 }), 200
 
-            # ===== 数据处理，原有逻辑不变 =====
+            # ===== ✅✅✅ 【新增修复1】处理 tracks 曲目名称 + tracks_time 曲目时长 字段 =====
             pool_tracks = safe_json_loads(pool_album.get('tracks')) or []
             pool_tracks = [track.strip() for track in pool_tracks if track and track.strip()]
             tracks_json = json.dumps(pool_tracks) if pool_tracks else json.dumps([])
 
+            # ✅ 新增：读取并处理 tracks_time 字段，和tracks逻辑完全一致，保证数据格式统一
+            pool_tracks_time = safe_json_loads(pool_album.get('tracks_time')) or []
+            pool_tracks_time = [int(sec) for sec in pool_tracks_time if isinstance(sec, (int, float)) and sec >= 0]
+            tracks_time_json = json.dumps(pool_tracks_time) if pool_tracks_time else json.dumps([])
+
+            # ===== ✅✅✅ 【新增修复2】组装数据时，添加 tracks_time 键值对 =====
             copy_album_data = {
                 "album_name": pool_album['album_name'],
                 "cover_img": pool_album['cover_img'],
@@ -865,6 +898,7 @@ def register_album_pool_routes(app):
                 "tags": pool_album['tags'],
                 "main_type": pool_album['main_type'],
                 "tracks": tracks_json,
+                "tracks_time": tracks_time_json,  # ✅ 新增：tracks_time 字段
                 "album_intro": pool_album.get('album_intro', '') or '',
                 "code": "",
                 "video_shared": "",
@@ -884,16 +918,17 @@ def register_album_pool_routes(app):
                 "is_customized": 0
             }
 
+            # ===== ✅✅✅ 【新增修复3】INSERT SQL 字段列表 + 值列表 都添加 tracks_time =====
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
                     track_count, track_duration, my_score, burn_class, duration_type,
                     tags, main_type, code, video_shared, mandopop_code,
-                    tracks, album_intro, review, score, comments,
+                    tracks, tracks_time, album_intro, review, score, comments,
                     source_pool_id, sync_pool_update, is_customized
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s
                 )
             ''', (
@@ -913,6 +948,7 @@ def register_album_pool_routes(app):
                 copy_album_data['video_shared'],
                 copy_album_data['mandopop_code'],
                 copy_album_data['tracks'],
+                copy_album_data['tracks_time'],  # ✅ 新增：tracks_time 对应的值
                 copy_album_data['album_intro'],
                 copy_album_data['review'],
                 copy_album_data['score'],
@@ -933,6 +969,7 @@ def register_album_pool_routes(app):
             db.commit()
             cursor.close()
 
+            # ===== ✅✅✅ 【新增修复4】返回数据中补全 tracks_time，前端可以按需使用 =====
             return jsonify({
                 "code": 200,
                 "msg": "复制成功！该专辑已添加到你的私有专辑列表中",
@@ -942,13 +979,13 @@ def register_album_pool_routes(app):
                     "sync_pool_update": 1,
                     "album_intro": copy_album_data['album_intro'][:50] + "..." if len(
                         copy_album_data['album_intro']) > 50 else copy_album_data['album_intro'],
-                    "duration_type": copy_album_data['duration_type']
+                    "duration_type": copy_album_data['duration_type'],
+                    "tracks_time": pool_tracks_time  # ✅ 新增：返回曲目时长数组
                 }
             })
         except Exception as e:
             print(f"❌ 复制专辑出错：{str(e)}")
             print(traceback.format_exc())
-            # ✅ 异常也返回200状态码，前端只提示文案，不报错
             return jsonify({"code": 500, "msg": f"复制专辑失败：{str(e)}", "data": {}}), 200
 
     # 6. 获取专辑池ID接口（修正路由路径，和前端保持一致）

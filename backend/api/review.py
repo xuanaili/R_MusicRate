@@ -278,7 +278,8 @@ def register_review_routes(app):
                             "score": round(feeling.get('my_score', 0.0), 1),  # 评分保留1位小数
                             "content": feeling.get('content', ''),
                             "listening_duration": format_duration(feeling.get('listening_duration', 0)),  # 格式化时长
-                            "feeling_id": feeling.get('id', '')
+                            "feeling_id": feeling.get('id', ''),
+                            "create_time": create_time
                         })
                 except Exception as e:
                     print(f"解析专辑[{album_name}]的review数据出错: {str(e)}")
