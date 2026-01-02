@@ -589,25 +589,14 @@ async handleJumpAlbumDetailByItem(album) {
   padding-bottom: 10px;
   border-bottom: 2px solid v-bind(mainColorDark);
 }
-
 .tab-scroll-box {
   display: flex;
   align-items: center;
   gap: 8px;
-	width: 100%;
+  width: 100%;
   overflow-x: auto;
   white-space: nowrap;
-  scrollbar-width: thin;
   padding-bottom: 5px;
-}
-
-.tab-scroll-box::-webkit-scrollbar {
-  height: 4px;
-}
-
-.tab-scroll-box::-webkit-scrollbar-thumb {
-  background: v-bind(mainColorDark);
-  border-radius: 2px;
 }
 
 .playlist-tab-item {
@@ -616,7 +605,7 @@ async handleJumpAlbumDetailByItem(album) {
   gap: 6px;
   padding: 5px 12px;
   background: rgba(255, 255, 255, 0.3);
-  border-radius: 20px;
+	border-radius: 20px;
   cursor: pointer;
   font-size: 13px;
   transition: all 0.2s;
@@ -656,7 +645,7 @@ async handleJumpAlbumDetailByItem(album) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+	font-size: 18px;
   color: v-bind(mainColorDark);
   cursor: pointer;
   transition: all 0.2s;
@@ -735,22 +724,6 @@ async handleJumpAlbumDetailByItem(album) {
 
 .common-album-card:hover {
   background: rgba(255, 255, 255, 0.5);
-}
-
-.common-scroll-list {
-  width: 100%;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  max-height: 260px;
-}
-
-.common-scroll-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.common-scroll-list::-webkit-scrollbar-thumb {
-  background: v-bind(mainColorDark);
-  border-radius: 2px;
 }
 
 .full-single-line {
@@ -837,7 +810,6 @@ async handleJumpAlbumDetailByItem(album) {
   background: v-bind(activeMenuBg);
   border-left: 3px solid v-bind(mainColorDark);
 }
-/* ✅ 样式优化：卡片默认是点击手势，拖拽时才是移动手势 */
 .album-play-item {
   cursor: pointer;
 }
@@ -917,5 +889,49 @@ async handleJumpAlbumDetailByItem(album) {
 	background: rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(2px);
 	z-index: 9998;
+}
+
+.common-scroll-list {
+  width: 100%;
+  overflow-y: auto;
+  max-height: 260px;
+}
+.album-list {
+  width: 100%;
+  overflow-y: auto;
+}
+
+/* ✅ 核心统一样式：三个滚动容器 全部无箭头 + 统一样式 */
+/* tab横向滚动条 + 歌单纵向滚动条 + 专辑列表纵向滚动条 完全一致 */
+.tab-scroll-box::-webkit-scrollbar,
+.common-scroll-list::-webkit-scrollbar,
+.album-list::-webkit-scrollbar {
+  width: 6px;    /* 纵向滚动条宽度 */
+  height: 6px;   /* 横向滚动条高度 */
+}
+/* 滚动条滑块样式 */
+.tab-scroll-box::-webkit-scrollbar-thumb,
+.common-scroll-list::-webkit-scrollbar-thumb,
+.album-list::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDarkDouble);
+  border-radius: 3px;
+}
+/* 滑块hover高亮 */
+.tab-scroll-box::-webkit-scrollbar-thumb:hover,
+.common-scroll-list::-webkit-scrollbar-thumb:hover,
+.album-list::-webkit-scrollbar-thumb:hover {
+  background: v-bind(mainColorDark);
+}
+/* 滚动条轨道 完全透明 */
+.tab-scroll-box::-webkit-scrollbar-track,
+.common-scroll-list::-webkit-scrollbar-track,
+.album-list::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+/* ✅ 彻底删除滚动条 上下/左右箭头按钮 无任何占位！ */
+.tab-scroll-box::-webkit-scrollbar-button,
+.common-scroll-list::-webkit-scrollbar-button,
+.album-list::-webkit-scrollbar-button {
+  display: none !important;
 }
 </style>

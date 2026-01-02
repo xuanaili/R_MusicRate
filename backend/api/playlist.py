@@ -210,9 +210,6 @@ def register_playlist_routes(app):
             playlist = data.get('playlist', [{"name": "默认歌单", "tracks": []}]) # 当前完整歌单数据
 
 
-            print(current_playlist_id)
-            print(current_album_id)
-            print(play_mode)
             # 2. 校验当前歌单是否存在、当前歌单内是否有专辑
             if current_playlist_id >= len(playlist):
                 return jsonify({"code": 400, "msg": "当前歌单ID无效", "data": {}})

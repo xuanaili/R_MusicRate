@@ -17,10 +17,11 @@
       <textarea
         v-model="parseText"
         placeholder="请粘贴带格式的曲目文本，例如：
+🖤🖤Introduction  0:00
+💛💙完全感覚Dreamer  5:18
 0->>>1.One Small Step   0:00
 5->>>2.Life Signs   0:26
-4->>>3.Nights in Armor   4:58
-支持任意数字前缀+序号+歌名+时间戳格式"
+支持 emoji+歌名+时间戳 / 数字前缀+序号+歌名+时间戳 任意格式"
         class="parse-textarea"
       ></textarea>
       <div class="parse-tips">{{ parseTips }}</div>
@@ -107,8 +108,9 @@ export default {
         return;
       }
       const lines = this.parseText.trim().split('\n').filter(line => line.trim());
-      // 兼容所有格式的正则表达式
-      const reg = /(?:\d+->>>)?\d+\.?\s*([\u4e00-\u9fa5a-zA-Z\s.\-_()（）&]+)\s+(\d{1,2}:?\d{1,2}:\d{2}|\d{1,2}:\d{2})/;
+      // ✅ 重点修复：万能兼容正则表达式【核心改动】
+      // 适配：emoji开头/数字前缀/无前缀 + 中英日文歌名 + 任意空格 + 时间戳(0:00 或 00:00:00)
+      const reg = /^[\p{Emoji}\p{Emoji_Presentation}\s]*([\u4e00-\u9fa5\u3040-\u309F\u30A0-\u30FFa-zA-Z\s.\-_()（）&!]+)\s+(\d{1,2}(?::\d{1,2}){1,2})$/u;
       const newTrackList = [];
 
       lines.forEach((line) => {
@@ -248,9 +250,9 @@ export default {
   height: 20px;
   line-height: 20px;
   text-align: center;
-  font-size: 13px;
-  font-weight: 500;
-  color: v-bind(mainColorDark);
+	font-size: 13px;
+	font-weight: 500;
+	color: v-bind(mainColorDark);
 }
 
 .parse-submit-btn {

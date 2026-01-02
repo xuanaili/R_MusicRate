@@ -285,8 +285,6 @@ def register_review_routes(app):
                     print(f"解析专辑[{album_name}]的review数据出错: {str(e)}")
                     continue
 
-
-            print(calendar_data)
             return jsonify({
                 "code": 200,
                 "msg": "数据获取成功！",

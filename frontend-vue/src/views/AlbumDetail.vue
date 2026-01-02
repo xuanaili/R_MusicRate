@@ -1,5 +1,13 @@
 <template>
   <div class="layout-container">
+    <!-- ✅✅✅ 核心整合：把小球动画容器 放到父组件根节点最外层【全屏底层】 -->
+    <div
+      class="ball-animation-wrap"
+      ref="ballWrap"
+      @mousemove="handleMouseMove"
+      @mouseleave="handleMouseLeave"
+    ></div>
+
     <!-- 全屏独立模糊封面背景层 - 保留 -->
     <div class="bg-layer" :style="bgStyle"></div>
 
@@ -38,78 +46,77 @@
         :favourite_tracks_time="album.favourite_tracks_time"
         @update-album-data="updateAlbumData"
         @track-jump="handleTrackJump"
-
+        @toggle-ball-play="handleToggleBallPlay"
+        :isMusicPlaying="isPlaying"
         :main-color="albumMainColor"
         :main-color-dark="albumMainColorDark"
         :main-color-dark-double="albumMainColorDarkDouble"
         :main-color-white="albumMainColorWhite"
         :main-color-white-double="albumMainColorWhiteDouble"
-
       />
 
       <AlbumReviewEditor
-        v-if="activeTab === 'review'"
-        :album="album"
-        :main-color="albumMainColor"
-        :main-color-dark="albumMainColorDark"
-        :main-color-dark-double="albumMainColorDarkDouble"
-        @add-review="addSingleReview"
-        @delete-single="deleteSingleReview"
-        @delete-all="deleteAllReview"
+          v-if="activeTab === 'review'"
+          :album="album"
+          :main-color="albumMainColor"
+          :main-color-dark="albumMainColorDark"
+          :main-color-dark-double="albumMainColorDarkDouble"
+          @add-review="addSingleReview"
+          @delete-single="deleteSingleReview"
+          @delete-all="deleteAllReview"
       />
 
       <AlbumCommentSection
-        v-if="activeTab === 'comments'"
-        :album="album"
-        :album-pool-id="albumPoolId"
-        :current-user-id="currentUserId"
-        :is-admin="isAdmin"
-        :blocked-comment-ids="blockedCommentIds"
-        :sort-type="sortType"
-        :public-comments="publicComments"
-        :has-comment="hasComment"
-        :my-comment="myComment"
-        :other-comments="otherComments"
-        :main-color="albumMainColor"
-        :main-color-dark="albumMainColorDark"
-        :main-color-dark-double="albumMainColorDarkDouble"
-        :main-color-white="albumMainColorWhite"
-        :main-color-white-double="albumMainColorWhiteDouble"
-
-        @sort-change="changeSortType"
-        @block-comment="blockComment"
-        @unblock-all="unblockAllComments"
-        @submit-comment="submitPublicComment"
-        @like-comment="likePublicComment"
-        @delete-comment="deletePublicComment"
-        @update-comment-content="(val) => newCommentContent = val"
+          v-if="activeTab === 'comments'"
+          :album="album"
+          :album-pool-id="albumPoolId"
+          :current-user-id="currentUserId"
+          :is-admin="isAdmin"
+          :blocked-comment-ids="blockedCommentIds"
+          :sort-type="sortType"
+          :public-comments="publicComments"
+          :has-comment="hasComment"
+          :my-comment="myComment"
+          :other-comments="otherComments"
+          :main-color="albumMainColor"
+          :main-color-dark="albumMainColorDark"
+          :main-color-dark-double="albumMainColorDarkDouble"
+          :main-color-white="albumMainColorWhite"
+          :main-color-white-double="albumMainColorWhiteDouble"
+          @sort-change="changeSortType"
+          @block-comment="blockComment"
+          @unblock-all="unblockAllComments"
+          @submit-comment="submitPublicComment"
+          @like-comment="likePublicComment"
+          @delete-comment="deletePublicComment"
+          @update-comment-content="(val) => newCommentContent = val"
       />
     </main>
 
-    <!-- ✅ 核心修改：播放列表组件传参完整，双向绑定+防抖保存 -->
+    <!-- 播放列表组件传参完整，双向绑定+防抖保存 -->
     <PlayerPlaylist
-      :visible="showPlaylistSidebar"
-      :main-color-dark="albumMainColorDark"
-      :main-color-dark-double="albumMainColorDarkDouble"
-      :active-menu-bg="activeMenuBg"
-      :current-user-id="currentUserId"
-      :albumList="albumList"
-      :current-track-index="currentTrackIndex"
-      :play-mode="playMode"
-      :playlistTabs="playlistTabs"
-      :activeTabIndex="activeTabIndex"
-      :currentAlbumId="currentAlbumId"
-      :currentPlaylistId="currentPlaylistId"
-      @play-track="handlePlayTrack"
-      @close-sidebar="handleClosePlaylistSidebar"
-      @update:currentTrackIndex="val => currentTrackIndex = val"
-      @update:playMode="val => playMode = val"
-      @update:playlistTabs="val => playlistTabs = val"
-      @update:activeTabIndex="val => activeTabIndex = val"
-      @trigger-upload-duration="pauseListeningTimer"
+        :visible="showPlaylistSidebar"
+        :main-color-dark="albumMainColorDark"
+        :main-color-dark-double="albumMainColorDarkDouble"
+        :active-menu-bg="activeMenuBg"
+        :current-user-id="currentUserId"
+        :albumList="albumList"
+        :current-track-index="currentTrackIndex"
+        :play-mode="playMode"
+        :playlistTabs="playlistTabs"
+        :activeTabIndex="activeTabIndex"
+        :currentAlbumId="currentAlbumId"
+        :currentPlaylistId="currentPlaylistId"
+        @play-track="handlePlayTrack"
+        @close-sidebar="handleClosePlaylistSidebar"
+        @update:currentTrackIndex="val => currentTrackIndex = val"
+        @update:playMode="val => playMode = val"
+        @update:playlistTabs="val => playlistTabs = val"
+        @update:activeTabIndex="val => activeTabIndex = val"
+        @trigger-upload-duration="pauseListeningTimer"
     />
 
-    <!-- ✅ 底部播放器区域 核心重构：精准坐标对齐+透明背景 -->
+    <!-- 底部播放器区域 核心重构：精准坐标对齐+透明背景 -->
     <div class="full-player-wrapper">
       <div class="album-rotate-box" @click="togglePlayPause" v-if="audioSrc && album.cover_img">
         <div class="album-rotate-circle" :class="{playing: isPlaying}">
@@ -125,12 +132,12 @@
       <div class="player-right-box">
         <div class="music-player-core">
           <input
-            type="range"
-            class="progress-bar"
-            :value="currentProgress"
-            min="0"
-            max="100"
-            @input="handleProgressChange"
+              type="range"
+              class="progress-bar"
+              :value="currentProgress"
+              min="0"
+              max="100"
+              @input="handleProgressChange"
           />
           <div class="time-text">
             {{ formatTime(currentTime) }} / {{ durationFormat }}
@@ -140,12 +147,12 @@
             <span class="volume-icon">🔊</span>
             <div class="volume-dropdown" v-show="showVolume">
               <input
-                type="range"
-                class="volume-bar"
-                v-model="volume"
-                min="0"
-                max="1"
-                step="0.05"
+                  type="range"
+                  class="volume-bar"
+                  v-model="volume"
+                  min="0"
+                  max="1"
+                  step="0.05"
               />
             </div>
           </div>
@@ -174,16 +181,16 @@
         <button class="close-btn" @click="showUploadSidebar = false">×</button>
       </div>
       <div
-        class="upload-area"
-        @dragover.prevent
-        @drop.prevent="handleDrop"
+          class="upload-area"
+          @dragover.prevent
+          @drop.prevent="handleDrop"
       >
         <input
-          type="file"
-          ref="fileInput"
-          accept=".mp3"
-          class="file-input"
-          @change="handleFileChange"
+            type="file"
+            ref="fileInput"
+            accept=".mp3"
+            class="file-input"
+            @change="handleFileChange"
         />
         <div class="upload-tips">
           <p>📂 点击上传 或 拖拽MP3文件到此处</p>
@@ -197,7 +204,7 @@
     </div>
     <div class="mask" v-show="showUploadSidebar" @click="showUploadSidebar = false"></div>
 
-    <!-- ✅✅✅ 修复核心报错：audio标签补全闭合标签 解决编译失败 -->
+    <!-- 修复核心报错：audio标签补全闭合标签 解决编译失败 -->
     <audio ref="audioRef" :src="audioSrc" @timeupdate="handleTimeUpdate" @ended="handleEnded" :volume="volume"></audio>
   </div>
 </template>
@@ -208,8 +215,10 @@ import AlbumTrackList from '@/components/albumDetail/AlbumTrackList'
 import AlbumReviewEditor from '@/components/albumDetail/AlbumReviewEditor'
 import AlbumCommentSection from '@/components/albumDetail/AlbumCommentSection'
 import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
-// ✅ 核心新增：引入评分计算工具函数
+// 核心新增：引入评分计算工具函数
 import {calculateAlbumTotalScore} from '@/utils/scoreCalc.js'
+// ✅✅✅ 整合新增：引入全局配置文件 (小球动画配置)
+import globalConfig from "@/config/index.js";
 
 export default {
   name: 'AlbumDetail',
@@ -222,7 +231,7 @@ export default {
   },
   data() {
     return {
-      // ✅✅✅ 核心修复1：完整初始化album对象，补全所有必填字段，杜绝undefined
+      // 完整初始化album对象，补全所有必填字段，杜绝undefined
       album: {
         id: 0,
         album_name: '',
@@ -234,7 +243,7 @@ export default {
         tracks_time: [],
         full_tracks: [],
         review: {},
-        my_score: [], // ✅ 修正：评分字段默认是数组，不是0.0
+        my_score: [], // 修正：评分字段默认是数组，不是0.0
         track_count: 0,
         source_pool_id: 0,
         sync_pool_update: 1,
@@ -242,7 +251,6 @@ export default {
         album_intro: '',
         tags: [],
         main_type: [],
-
       },
       activeTab: 'base',
       newCommentContent: '',
@@ -260,13 +268,15 @@ export default {
       albumMainColor: 'transparent',
       albumMainColorDark: 'transparent',
       albumMainColorDarkDouble: 'transparent',
+      albumMainColorWhite: 'transparent',
+      albumMainColorWhiteDouble: 'transparent',
       activeMenuBg: 'rgba(255,255,255,0.2)',
       // 播放器相关数据
       showUploadSidebar: false,
       audioSrc: '',
       fileName: '',
       volume: 0.7,
-      originVolume: 0.7, // ✅ 新增：保存原始音量，用于渐变恢复
+      originVolume: 0.7, // 新增：保存原始音量，用于渐变恢复
       isPlaying: false,
       currentTime: 0,
       duration: 0,
@@ -277,10 +287,10 @@ export default {
       showVolume: false,
       oldMp3Url: '',
       showMenu: false,
-      fadeTimer: null, // ✅ 新增：音量渐变定时器，防止内存泄漏
-    volumeTimer: null, // ✅ 新增：线性恢复音量的定时器，防止内存泄漏
-    isVolumeFading: false, // ✅ 新增：音量渐变状态锁，防止重复触发渐变
-      // ✅✅✅ 播放列表核心数据【完整初始化，对接后端接口】
+      fadeTimer: null, // 新增：音量渐变定时器，防止内存泄漏
+      volumeTimer: null, // 新增：线性恢复音量的定时器，防止内存泄漏
+      isVolumeFading: false, // 新增：音量渐变状态锁，防止重复触发渐变
+      // 播放列表核心数据【完整初始化，对接后端接口】
       showPlaylistSidebar: false,
       playlistTabs: [{name: '默认歌单', tracks: []}],
       activeTabIndex: 0,
@@ -290,11 +300,19 @@ export default {
       currentPlaylistId: 0,
       albumList: [],
       saveTimer: null,
-      // ✅✅✅ 核心修复2：新增加载状态锁，控制所有异步操作时序
+      // 核心修复2：新增加载状态锁，控制所有异步操作时序
       albumLoading: true,
       currentPlaySourcePoolId: 0,  // 专门存 album_pool 的id=17
       currentPlayRealAlbumId: 0,   // 专门存 用户专辑表的id=27
-
+      // ✅✅✅ 整合新增：小球动画所有核心数据 (从子组件迁移到父组件) + ✅【修复1】补全缺失的 isBallPlay
+      ballAnimationId: null,
+      tailBalls: [],
+      wrapDom: null,
+      isScalingUp: true,
+      isMouseHover: false,
+      autoBallTimer: null,
+      currentBallConfig: globalConfig.ballConfig.default,
+      isBallPlay: false // ✅【重中之重】父组件新增核心变量，和子组件联动控制小球开关
     };
   },
   computed: {
@@ -304,7 +322,7 @@ export default {
     currentPlaylist() {
       return this.playlistTabs[this.activeTabIndex]?.tracks || []
     },
-    // ✅ ✅ ✅ 核心新增：计算属性 - 自动计算专辑综合评分，响应式更新
+    // 核心新增：计算属性 - 自动计算专辑综合评分，响应式更新
     albumTotalScore() {
       let scoreList = []
       // 兼容两种情况：1.my_score是数组 2.my_score是JSON字符串（后端返回的格式）
@@ -353,6 +371,8 @@ export default {
 
           this.setFullPageBg(newVal.cover_img);
           if (newVal.cover_img) this.extractAlbumMainColor(newVal.cover_img);
+          // ✅✅✅ 整合新增：专辑切换时，重新匹配小球配置
+          this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
         }
       }
     },
@@ -361,7 +381,7 @@ export default {
         this.$refs.albumBaseInfo?.getAllUsersTagStatistics(this.albumPoolId);
       }
     },
-// ✅✅✅ 修复核心：路由监听逻辑【完美版】- 跳转后自动刷新数据+自动播放音频，无需手动刷新
+    // 修复核心：路由监听逻辑【完美版】- 跳转后自动刷新数据+自动播放音频，无需手动刷新
     $route: {
       deep: true,
       immediate: true,
@@ -377,7 +397,7 @@ export default {
               setTimeout(() => {
                 if (this.album.source_pool_id) {
                   this.getAlbumAudioInfo().then(() => {
-                    // ✅ 改为直接调用播放方法，而不是autoPlay，跳转后必播放
+                    // 改为直接调用播放方法，而不是autoPlay，跳转后必播放
                     this.autoPlayCurrentAlbumAudio();
                   }).catch(() => console.log('音频加载失败'));
                 }
@@ -387,6 +407,14 @@ export default {
         }
       },
     },
+    // ✅✅✅ 【修复2】核心新增监听：同时监听播放状态 + 小球开关状态，双重控制
+    isPlaying(newVal) {
+      this.isBallPlay && newVal ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
+    },
+    // ✅✅✅ 【修复2】核心新增监听：单独监听小球开关状态，子组件点击后立即生效
+    isBallPlay(newVal) {
+      newVal && this.isPlaying ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
+    }
   },
   async created() {
     if (!localStorage.getItem('token')) {
@@ -413,82 +441,119 @@ export default {
     this.checkUserComment();
     this.getPublicComments();
     if (this.album.source_pool_id) await this.getAlbumAudioInfo().catch(() => console.log('音频加载失败'));
-    this.currentAlbumId = -1; // ✅ 初始化默认值：无播放，下标为-1
+    this.currentAlbumId = -1; // 初始化默认值：无播放，下标为-1
     this.currentTrackIndex = -1;
     await this.getUserHasAudioAlbums();
     this.autoPlayCurrentAlbumAudio();
   },
+  mounted() {
+    // ✅✅✅ 整合新增：父组件挂载后初始化小球动画
+    this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
+    this.initBallAnimation();
+    this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();
+    window.addEventListener("resize", this.initBallAnimation);
+  },
+  activated() {
+    // ✅✅✅ 整合新增：组件激活时重新初始化小球动画
+    this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
+    this.initBallAnimation();
+    this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();
+  },
+  deactivated() {
+    // ✅✅✅ 整合新增：组件失活时销毁小球动画
+    this.destroyBallAnimation();
+    this.stopAutoBallGenerate();
+  },
+  beforeDestroy() {
+    // ✅✅✅ 整合新增：组件销毁时彻底销毁小球动画+移除监听
+    clearInterval(this.ratingTimer);
+    this.destroyBallAnimation();
+    this.stopAutoBallGenerate();
+    window.removeEventListener("resize", this.initBallAnimation);
+    // 原有清除逻辑
+    if (this.fadeTimer) clearInterval(this.fadeTimer);
+    if (this.volumeTimer) clearInterval(this.volumeTimer);
+    this.volumeTimer = null;
+    this.fadeOutVolume(() => {
+      this.pauseListeningTimer();
+    });
+    this.$refs.albumTrackListRef?.triggerSaveScore();
+  },
+  beforeUnmount() {
+    if (this.audioSrc && this.audioSrc.includes('blob:')) {
+      URL.revokeObjectURL(this.audioSrc);
+    }
+    if (this.fadeTimer) clearInterval(this.fadeTimer);
+    if (this.volumeTimer) clearInterval(this.volumeTimer);
+    this.volumeTimer = null;
+    this.fadeOutVolume(() => {
+      this.pauseListeningTimer();
+    });
+  },
   methods: {
-    // ✅ ✅ ✅ 核心新增：音量平滑渐变淡出方法 (通用，所有暂停/切歌都调用这个)
-async fadeOutVolume(callback) {
-  const audio = this.$refs.audioRef;
-  if (!audio || !this.isPlaying) {
-    callback && callback();
-    return;
-  }
-  // ✅ 新增这1行：淡出前清除恢复音量的定时器，防止冲突
-  if (this.volumeTimer) clearInterval(this.volumeTimer);
-  this.volumeTimer = null;
-
-  // 以下所有代码 完全不变 ↓↓↓
-  if (this.fadeTimer) clearInterval(this.fadeTimer);
-  let currentVol = this.volume;
-  this.fadeTimer = setInterval(() => {
-    currentVol -= 0.03;
-    if (currentVol <= 0) {
-      currentVol = 0;
-      clearInterval(this.fadeTimer);
-      this.fadeTimer = null;
-      audio.pause();
-      this.isPlaying = false;
-      this.volume = currentVol;
-      audio.volume = currentVol;
-      callback && callback();
-    }
-    audio.volume = currentVol;
-    this.volume = currentVol;
-  }, 30);
-},
-// ✅✅✅ 核心重构：替换原有的 resetVolume 方法【重中之重】
-// 功能：线性平滑递增恢复音量到用户自定义的 originVolume，渐进式恢复，不是瞬间恢复
-resetVolume() {
-  const audio = this.$refs.audioRef;
-  if (!audio) return;
-
-  // 1. 清除所有旧的定时器，防止多个渐变冲突、内存泄漏
-  if (this.fadeTimer) clearInterval(this.fadeTimer);
-  if (this.volumeTimer) clearInterval(this.volumeTimer);
-  this.fadeTimer = null;
-  this.isVolumeFading = false;
-  console.log(this.originVolume)
-  // 2. 如果当前音量已经等于用户自定义音量，无需渐变，直接赋值
-  if (this.volume >= this.originVolume) {
-    this.volume = this.originVolume;
-    audio.volume = this.originVolume;
-    return;
-  }
-
-  // 3. 核心逻辑：线性平滑恢复音量【你要的效果】
-  this.isVolumeFading = true;
-  // 每20ms增加0.02音量 → 恢复过程约300-500ms，听觉上丝滑无感知，体验最佳
-  this.volumeTimer = setInterval(() => {
-    // 音量递增，步长0.02
-    this.volume += 0.02;
-    // 音量上限：用户自定义的 originVolume，绝不超量
-    if (this.volume >= this.originVolume) {
-      this.volume = this.originVolume;
-      audio.volume = this.originVolume;
-      // 恢复完成，清除定时器+解锁状态
-      clearInterval(this.volumeTimer);
+    // ✅✅✅ 【修复3】父组件新增：接收子组件的小球开关事件，修改父组件状态
+    handleToggleBallPlay(val) {
+      this.isBallPlay = val;
+    },
+    // 核心新增：音量平滑渐变淡出方法 (通用，所有暂停/切歌都调用这个)
+    async fadeOutVolume(callback) {
+      const audio = this.$refs.audioRef;
+      if (!audio || !this.isPlaying) {
+        callback && callback();
+        return;
+      }
+      if (this.volumeTimer) clearInterval(this.volumeTimer);
       this.volumeTimer = null;
-      this.isVolumeFading = false;
-    }
-    // 实时同步原生audio音量
-    audio.volume = this.volume;
-  }, 20);
-},
 
-    // ✅✅✅ 加载用户播放列表数据【对接后端GET接口】
+      if (this.fadeTimer) clearInterval(this.fadeTimer);
+      let currentVol = this.volume;
+      this.fadeTimer = setInterval(() => {
+        currentVol -= 0.03;
+        if (currentVol <= 0) {
+          currentVol = 0;
+          clearInterval(this.fadeTimer);
+          this.fadeTimer = null;
+          audio.pause();
+          this.isPlaying = false;
+          this.volume = currentVol;
+          audio.volume = currentVol;
+          callback && callback();
+        }
+        audio.volume = currentVol;
+        this.volume = currentVol;
+      }, 30);
+    },
+    // 核心重构：替换原有的 resetVolume 方法【重中之重】
+    resetVolume() {
+      const audio = this.$refs.audioRef;
+      if (!audio) return;
+
+      if (this.fadeTimer) clearInterval(this.fadeTimer);
+      if (this.volumeTimer) clearInterval(this.volumeTimer);
+      this.fadeTimer = null;
+      this.isVolumeFading = false;
+
+      if (this.volume >= this.originVolume) {
+        this.volume = this.originVolume;
+        audio.volume = this.originVolume;
+        return;
+      }
+
+      this.isVolumeFading = true;
+      this.volumeTimer = setInterval(() => {
+        this.volume += 0.02;
+        if (this.volume >= this.originVolume) {
+          this.volume = this.originVolume;
+          audio.volume = this.originVolume;
+          clearInterval(this.volumeTimer);
+          this.volumeTimer = null;
+          this.isVolumeFading = false;
+        }
+        audio.volume = this.volume;
+      }, 20);
+    },
+
+    // 加载用户播放列表数据【对接后端GET接口】
     async getUserPlaylistData() {
       try {
         const res = await this.$axios.get('/api/playlist/get-user-playlist-data', {
@@ -499,9 +564,7 @@ resetVolume() {
           this.playlistTabs = data.playlist || [{name: '默认歌单', tracks: []}];
           this.activeTabIndex = data.current_playlist_id || 0;
           this.currentPlaylistId = data.current_playlist_id || 0;
-// ✅ 后端返回的 current_album_id 就是「歌单下标」，直接赋值
           this.currentAlbumId = data.current_album_id || -1;
-// ✅ 播放索引 和 歌单下标 必须完全一致，同步赋值
           this.currentTrackIndex = this.currentAlbumId;
           this.playMode = data.play_mode || 'order';
           console.log('✅ 从后端加载播放下标：current_album_id = ', this.currentAlbumId);
@@ -540,20 +603,17 @@ resetVolume() {
       this.saveUserPlaylistData();
     },
 
-// ✅✅✅ 自动播放当前专辑音频 - 兼容浏览器策略+静默失败+优化用户体验
+    // 自动播放当前专辑音频 - 兼容浏览器策略+静默失败+优化用户体验
     autoPlayCurrentAlbumAudio() {
       const audio = this.$refs.audioRef;
       if (this.audioSrc && audio) {
-        // 播放前恢复音量
         this.resetVolume();
-        // 先重置播放进度，避免上次播放残留进度
         this.currentTime = 0;
         this.currentProgress = 0;
         audio.currentTime = 0;
-        // 执行自动播放
         audio.play().then(() => {
           this.isPlaying = true;
-          this.startListeningTimer(); // ✅✅✅ 新增：自动播放成功，触发开始计时API
+          this.startListeningTimer();
           console.log('✅ 专辑音频自动播放成功');
         }).catch((err) => {
           console.log('ℹ️ 浏览器策略限制自动播放，需要用户手动交互解锁：', err.message);
@@ -575,7 +635,6 @@ resetVolume() {
         return;
       }
 
-      // ========== 1. 先渐变淡出暂停上一首，上传时长 ==========
       await new Promise(resolve => {
         this.fadeOutVolume(async () => {
           await this.pauseListeningTimer();
@@ -594,16 +653,12 @@ resetVolume() {
           this.duration = res.data.data.mp3_duration
           this.durationFormat = res.data.data.duration_format
 
-          // ========== ✅✅✅ 核心强制赋值【重中之重】- 写死这三行，下标回归0 ==========
-          this.currentTrackIndex = index;    // 歌单播放下标（高亮用）
-          this.currentAlbumId = index;       // ✔️ 这个变量 100% 等于下标，再也不会是17/27
+          this.currentTrackIndex = index;
+          this.currentAlbumId = index;
           this.currentPlaylistId = this.activeTabIndex;
-          // ======================================================================
 
-          // ========== ✅✅✅ 新增：缓存当前播放项的【两个真实ID】，解决上传时长ID=0的问题 ==========
-          this.currentPlaySourcePoolId = playAlbum.source_pool_id; // 缓存 album_pool.id=17
-          this.currentPlayRealAlbumId = playAlbum.id; // 缓存 用户专辑表.id=27
-          // ======================================================================
+          this.currentPlaySourcePoolId = playAlbum.source_pool_id;
+          this.currentPlayRealAlbumId = playAlbum.id;
 
           this.currentTime = 0;
           this.currentProgress = 0;
@@ -623,18 +678,16 @@ resetVolume() {
               }
             }
           }
-          // 播放前恢复音量
           this.resetVolume();
           audio.currentTime = 0;
           audio.play().then(() => {
             this.isPlaying = true;
-            this.startListeningTimer(); // 播放新歌，开始计时
+            this.startListeningTimer();
           }).catch(() => {
             this.isPlaying = false;
             this.$message?.info('📢 点击底部专辑封面即可解锁播放～');
             audio.load();
           });
-          // ✅ 打印正确日志，确认下标是0
           console.log(`✅ 播放成功：歌单下标 = current_album_id = ${index} | source_pool_id=${playAlbum.source_pool_id} | 真实专辑ID=${playAlbum.id}`);
         } else {
           this.$message.error('该专辑暂无音频资源，无法播放');
@@ -646,7 +699,7 @@ resetVolume() {
       this.saveUserPlaylistData();
     },
 
-// 曲目跳转事件 - 异常捕获
+    // 曲目跳转事件 - 异常捕获
     handleTrackJump(targetSec) {
       if (!this.audioSrc) {
         alert('暂无整轨音频资源，无法跳转播放！');
@@ -656,11 +709,10 @@ resetVolume() {
       audio.currentTime = targetSec;
       this.currentTime = targetSec;
       this.currentProgress = this.duration ? (targetSec / this.duration) * 100 : 0;
-      // 跳转播放前恢复音量
       this.resetVolume();
       audio.play().then(() => {
         this.isPlaying = true;
-        this.startListeningTimer(); // ✅✅✅ 新增：曲目跳转播放，触发开始计时API
+        this.startListeningTimer();
       }).catch(() => {
         alert('📢 请点击底部专辑封面解锁播放权限后再试～');
       });
@@ -674,8 +726,7 @@ resetVolume() {
       return `${min}:${sec.toString().padStart(2, '0')}`;
     },
 
-    // 获取专辑音频信息
-// 获取专辑音频信息 - ✅ 核心优化：增加return Promise，确保自动播放时机准确
+    // 获取专辑音频信息 - 核心优化：增加return Promise，确保自动播放时机准确
     async getAlbumAudioInfo() {
       try {
         const res = await this.$axios.get(`/api/album/pool/audio/info/${this.album.source_pool_id}`)
@@ -687,7 +738,6 @@ resetVolume() {
           this.oldMp3Url = res.data.data.mp3_url
           console.log('⚠️ 跳过真实专辑ID赋值，保留歌单下标：', this.currentAlbumId);
         }
-        // ✅ 新增：无论是否获取到音频，都返回promise，避免报错
         return Promise.resolve();
       } catch (err) {
         this.oldMp3Url = ''
@@ -742,7 +792,6 @@ resetVolume() {
       }
       this.statusText = this.audioSrc ? '⏳ 更新中，请稍候...' : '⏳ 上传中，请稍候...';
       this.statusClass = '';
-      // ✅ 上传/更新音频时，渐变淡出暂停播放
       this.fadeOutVolume();
       try {
         const formData = new FormData()
@@ -779,7 +828,6 @@ resetVolume() {
     async handleDeleteAudio() {
       const confirmDel = confirm("确定要删除该音频资源吗？删除后无法恢复！");
       if (!confirmDel) return;
-      // ✅ 删除音频时，渐变淡出暂停播放
       await new Promise(resolve => {
         this.fadeOutVolume(async () => {
           try {
@@ -818,8 +866,7 @@ resetVolume() {
       this.currentProgress = 0;
     },
 
-
-// ✅✅✅ 终极修复版 - 播放暂停切换 【彻底解决暂停进度条归零 + 平滑淡出】
+    // 终极修复版 - 播放暂停切换 【彻底解决暂停进度条归零 + 平滑淡出】
     togglePlayPause() {
       const audio = this.$refs.audioRef;
       if (!audio || !this.audioSrc) {
@@ -827,20 +874,15 @@ resetVolume() {
         return;
       }
       if (this.isPlaying) {
-        // ----- 暂停逻辑：平滑音量淡出 + 强制同步真实进度 -----
         this.fadeOutVolume(() => {
-          // 1. 读取原生audio的真实进度（绝对准确，不会错）
           const realCurrentTime = audio.currentTime || 0;
           const realProgress = this.duration && this.duration > 0 ? (realCurrentTime / this.duration) * 100 : 0;
-          // 2. 同步赋值给页面变量，确保是数字且非负
           this.currentTime = Math.max(0, realCurrentTime);
           this.currentProgress = Math.max(0, realProgress);
-          // 3. ✅ 关键核心：强制Vue立即更新DOM，跳过异步队列，解决视觉归零
           this.$forceUpdate();
-          this.pauseListeningTimer(); // 只传时长，不碰进度
+          this.pauseListeningTimer();
         });
       } else {
-        // 播放逻辑不变 + 恢复音量
         this.resetVolume();
         audio.play().then(() => {
           this.isPlaying = true;
@@ -852,7 +894,7 @@ resetVolume() {
       }
     },
 
-// ========== ✅✅✅ 新增：调用后端 开始播放计时API ========== ✅✅✅
+    // 新增：调用后端 开始播放计时API
     async startListeningTimer() {
       const token = localStorage.getItem('token') || '';
       if (!token || !this.album.id || !this.audioSrc) return;
@@ -868,11 +910,10 @@ resetVolume() {
       }
     },
 
-// ✅✅✅ 终极修复版 - 暂停计时上传时长：只暂停音频+传时长，【绝对不重置】任何进度数据！！！
+    // 终极修复版 - 暂停计时上传时长：只暂停音频+传时长，【绝对不重置】任何进度数据！！！
     async pauseListeningTimer() {
       const token = localStorage.getItem('token') || '';
       const audio = this.$refs.audioRef;
-      // 满足条件才执行上传，不满足直接静默返回
       if (!token || !this.album.id || !this.audioSrc || !audio) return;
 
       try {
@@ -904,19 +945,17 @@ resetVolume() {
     },
 
     async handleEnded() {
-      // ✅ 播放结束时，平滑淡出音量
       await new Promise(resolve => {
         this.fadeOutVolume(async () => {
           this.currentProgress = 0;
           this.currentTime = 0;
-          await this.pauseListeningTimer(); // ✅ 必须await，确保时长上传完成再切歌
+          await this.pauseListeningTimer();
           const audio = this.$refs.audioRef;
           if (!audio || !this.audioSrc || this.currentPlaylist.length === 0) {
             resolve();
             return;
           }
 
-          // 单曲循环：本地直接重播，不走接口，效率最高
           if (this.playMode === 'single') {
             this.resetVolume();
             audio.currentTime = 0;
@@ -944,8 +983,8 @@ resetVolume() {
             if (res.data.code === 200 && res.data.data && res.data.data.current_album_id !== undefined) {
               const {current_album_id: newTrackIndex, current_playlist_id: newTabIndex} = res.data.data;
               this.currentPlaylistId = newTabIndex;
-              this.currentAlbumId = newTrackIndex; // ✅ 同步赋值新下标
-              this.currentTrackIndex = newTrackIndex; // ✅ 同步赋值播放索引
+              this.currentAlbumId = newTrackIndex;
+              this.currentTrackIndex = newTrackIndex;
               await this.handlePlayTrack(newTrackIndex, true);
               console.log('✅ 切歌后新下标：current_album_id = ', newTrackIndex);
             } else {
@@ -1020,12 +1059,11 @@ resetVolume() {
       img.src = imgUrl;
     },
 
-// ✅ 修正版：支持加深/提亮，自动限制RGB值在0-255之间，杜绝非法色值
+    // 修正版：支持加深/提亮，自动限制RGB值在0-255之间，杜绝非法色值
     darkenColor(hex, amount) {
       const r = Math.min(255, Math.max(0, parseInt(hex.slice(1, 3), 16) * (1 - amount)));
       const g = Math.min(255, Math.max(0, parseInt(hex.slice(3, 5), 16) * (1 - amount)));
       const b = Math.min(255, Math.max(0, parseInt(hex.slice(5, 7), 16) * (1 - amount)));
-      // 补零+转16进制，避免出现 #f 这种不完整色值
       const toHex = (val) => Math.round(val).toString(16).padStart(2, '0');
       return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
     },
@@ -1080,15 +1118,10 @@ resetVolume() {
       const otherComments = this.filteredComments.filter(comment => comment.user_id != this.currentUserId);
 
       if (this.sortType === 'time') {
-        // 最新时间：创建时间降序 ✔️ 原有逻辑不变
         otherComments.sort((a, b) => new Date(b.create_time) - new Date(a.create_time));
       } else if (this.sortType === 'like') {
-        // 最多点赞：点赞数降序 ✔️ 原有逻辑不变
         otherComments.sort((a, b) => b.like_count - a.like_count);
       } else if (this.sortType === 'listen') {
-        // ✅✅✅ 新增核心：最长听取 排序规则
-        // 规则：听取时间 listening_duration 数值越大，越排在前面
-        // 容错处理：兼容 null/undefined/NaN，默认赋值0，防止排序报错
         otherComments.sort((a, b) => (b.listening_duration || 0) - (a.listening_duration || 0));
       }
 
@@ -1113,21 +1146,18 @@ resetVolume() {
       localStorage.removeItem(`blocked_comments_${this.albumPoolId}`);
     },
 
-    // ✅✅✅ 核心修复3：getAlbumPoolRealId 加【加载状态+字段非空三重校验】，根治核心报错
+    // 核心修复3：getAlbumPoolRealId 加【加载状态+字段非空三重校验】，根治核心报错
     async getAlbumPoolRealId() {
-      // 第一重：加载中不执行
       if (this.albumLoading) {
         console.log('⏳ 专辑数据加载中，稍后获取公共专辑ID');
         return;
       }
-      // 第二重：核心字段非空校验，杜绝空值请求
       const {album_name, singer} = this.album;
       if (!album_name || !album_name.trim() || !singer || !singer.trim()) {
         console.warn('⚠️ 专辑名称/歌手为空，跳过公共专辑创建');
         this.albumPoolId = '';
         return;
       }
-      // 第三重：发行年份容错
       if (!this.album.release_year) this.album.release_year = 0;
 
       try {
@@ -1154,7 +1184,7 @@ resetVolume() {
       }
     },
 
-    // ✅✅✅ 核心修复4：createAlbumPool 传参修正+字段补全，无undefined
+    // 核心修复4：createAlbumPool 传参修正+字段补全，无undefined
     async createAlbumPool() {
       const {album_name, singer, release_year, cover_img, main_type, tags, my_score, album_intro} = this.album;
       try {
@@ -1212,7 +1242,7 @@ resetVolume() {
       }
     },
 
-    // ✅✅✅ 核心修复5：getAlbumDetail 加加载状态锁，异步请求有开始/结束标记
+    // 核心修复5：getAlbumDetail 加加载状态锁，异步请求有开始/结束标记
     getAlbumDetail(albumId) {
       return new Promise((resolve, reject) => {
         this.albumLoading = true;
@@ -1283,9 +1313,7 @@ resetVolume() {
       const now = new Date();
       const createTime = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
-
       let scoreList = []
-      // 兼容两种情况：1.my_score是数组 2.my_score是JSON字符串（后端返回的格式）
       if (this.album.my_score) {
         if (typeof this.album.my_score === 'string') {
           try {
@@ -1298,7 +1326,6 @@ resetVolume() {
         }
       }
 
-
       this.$axios({
         url: `/api/album/review/add/${this.album.id}`,
         method: 'POST',
@@ -1309,8 +1336,8 @@ resetVolume() {
         data: {
           content: content.trim(),
           create_time: createTime,
-          listening_duration: Math.floor(this.album.listening_duration), // ✅ 核心修正：传【用户实际收听时长】，取整避免小数
-          my_score: calculateAlbumTotalScore(scoreList),    // ✅ 补充修正：数组转JSON字符串，后端接收正常
+          listening_duration: Math.floor(this.album.listening_duration),
+          my_score: calculateAlbumTotalScore(scoreList),
         }
       })
           .then((res) => {
@@ -1382,7 +1409,7 @@ resetVolume() {
           });
     },
 
-    // ✅✅✅ 核心修复6：完整重置方法，补全所有字段，无undefined
+    // 核心修复6：完整重置方法，补全所有字段，无undefined
     resetAlbumPageData() {
       this.album = {
         id: 0,
@@ -1394,7 +1421,7 @@ resetVolume() {
         tracks_time: [],
         full_tracks: [],
         review: {},
-        my_score: [], // ✅ 修正：评分字段默认是数组
+        my_score: [],
         track_count: 0,
         source_pool_id: 0,
         sync_pool_update: 1,
@@ -1546,32 +1573,112 @@ resetVolume() {
         console.error('删除公共评论失败：');
         alert('删除公共评论失败！');
       });
-    }
+    },
+    // ✅✅✅ ======================== 以下是整合新增的【小球动画所有核心方法】 ========================
+    getBallConfigByTag(tags) {
+      if (!tags || !Array.isArray(tags) || tags.length === 0) {
+        return globalConfig.ballConfig.default;
+      }
+      const firstTag = tags[0];
+      return globalConfig.ballConfig[firstTag] || globalConfig.ballConfig.default;
+    },
+    createTailBall(x, y, isAuto = false) {
+      let ballSize;
+      if (isAuto) {
+        const {minSize, maxSize} = this.currentBallConfig;
+        ballSize = Math.floor(Math.random() * (maxSize - minSize)) + minSize;
+      } else {
+        ballSize = Math.floor(Math.random() * 12) + 8;
+      }
+      const halfSize = ballSize / 2;
+      const ballDom = document.createElement("div");
+      const mainGradients = [
+        `linear-gradient(135deg, ${this.albumMainColorDarkDouble} 0%, ${this.albumMainColorDark} 100%)`,
+        `linear-gradient(135deg, ${this.albumMainColorDark} 0%, ${this.albumMainColor} 100%)`,
+        `linear-gradient(135deg, ${this.albumMainColor} 0%, ${this.albumMainColorWhite} 100%)`,
+        `linear-gradient(135deg, ${this.albumMainColorWhite} 0%, ${this.albumMainColorWhiteDouble} 100%)`,
+        `linear-gradient(135deg, ${this.albumMainColorDarkDouble} 0%, ${this.albumMainColorWhiteDouble} 100%)`,
+      ];
+      const randomColor = mainGradients[Math.floor(Math.random() * mainGradients.length)];
+      ballDom.style.cssText = `
+        position:absolute; width:${ballSize}px; height:${ballSize}px; border-radius:50%;
+        background:${randomColor}; pointer-events:none; z-index:100;
+        left:${x - halfSize}px; top:${y - halfSize}px;
+      `;
+      this.wrapDom.appendChild(ballDom);
+      this.tailBalls.push({dom: ballDom, alpha: 1});
+    },
+    initBallAnimation() {
+      this.destroyBallAnimation();
+      this.wrapDom = this.$refs.ballWrap;
+      this.wrapDom && (this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation));
+    },
+    renderBallAnimation() {
+      if (this.tailBalls.length === 0) {
+        this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
+        return;
+      }
+      this.tailBalls = this.tailBalls.filter((ball) => {
+        ball.alpha -= 0.01;
+        if (ball.alpha <= 0) {
+          ball.dom.remove();
+          return false;
+        }
+        ball.dom.style.opacity = ball.alpha;
+        ball.dom.style.transform = `scale(${ball.alpha})`;
+        return true;
+      });
+      this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
+    },
+    destroyBallAnimation() {
+      this.ballAnimationId && cancelAnimationFrame(this.ballAnimationId);
+      this.tailBalls.forEach((ball) => ball.dom?.remove());
+      this.ballAnimationId = null;
+      this.tailBalls = [];
+      this.wrapDom && (this.wrapDom.innerHTML = "");
+    },
+    handleMouseMove(e) {
+      if (!this.wrapDom || !this.isBallPlay) return; // ✅ 加判断：关闭状态不生成鼠标小球
+      this.isMouseHover = true;
+      this.stopAutoBallGenerate();
+      const x = e.offsetX, y = e.offsetY;
+      this.createTailBall(x, y);
+    },
+    handleMouseLeave() {
+      this.isMouseHover = false;
+      this.destroyBallAnimation();
+      this.$nextTick(() => {
+        this.initBallAnimation();
+        this.isBallPlay && this.isPlaying && this.startAutoBallGenerate(); // ✅ 加判断
+      });
+    },
+    startAutoBallGenerate() {
+      // ✅✅✅ 【修复4】核心判断：三重条件，缺一不可，彻底杜绝关不掉的问题
+      if (this.autoBallTimer || this.isMouseHover || !this.isPlaying || !this.isBallPlay) return;
+      const {minRate, maxRate, numWeight} = this.currentBallConfig;
+      this.autoBallTimer = setInterval(() => {
+        if (!this.wrapDom || this.isMouseHover || !this.isPlaying || !this.isBallPlay) return;
+        for (let i = 0; i < numWeight; i++) {
+          const x = Math.floor(Math.random() * this.wrapDom.offsetWidth);
+          const y = Math.floor(Math.random() * this.wrapDom.offsetHeight);
+          this.createTailBall(x, y, true);
+        }
+      }, Math.floor(Math.random() * (maxRate - minRate)) + minRate);
+    },
+    stopAutoBallGenerate() {
+      this.autoBallTimer && (clearInterval(this.autoBallTimer), (this.autoBallTimer = null));
+    },
   },
-// 路由离开守卫，强制保存播放列表 ✅✅✅ 新增渐变暂停计时
+  // 路由离开守卫，强制保存播放列表
   beforeRouteLeave(to, from, next) {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveUserPlaylistData();
     this.fadeOutVolume(() => {
-      this.pauseListeningTimer(); // ✅✅✅ 新增：离开页面，渐变暂停计时，保存时长
+      this.pauseListeningTimer();
     });
     this.$refs.albumTrackListRef?.triggerSaveScore();
     next();
   },
-beforeUnmount() {
-  if (this.audioSrc && this.audioSrc.includes('blob:')) {
-    URL.revokeObjectURL(this.audioSrc);
-  }
-  // ✅ 原有清除逻辑保留
-  if (this.fadeTimer) clearInterval(this.fadeTimer);
-  // ✅ 新增2行：清除音量恢复定时器
-  if (this.volumeTimer) clearInterval(this.volumeTimer);
-  this.volumeTimer = null;
-
-  this.fadeOutVolume(() => {
-    this.pauseListeningTimer();
-  });
-},
 };
 </script>
 
@@ -2036,5 +2143,20 @@ h4 {
   bottom: 0;
   background: rgba(0, 0, 0, 0.3);
   z-index: 998;
+}
+
+/* ✅✅✅ 核心修改：小球动画容器层级提升，和Album_TrackList同层，置顶不被遮挡 */
+.ball-animation-wrap {
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  z-index: 99 !important;
+  overflow: hidden !important;
+  cursor: none !important;
+  pointer-events: none !important;
 }
 </style>
