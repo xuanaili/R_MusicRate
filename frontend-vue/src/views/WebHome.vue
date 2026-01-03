@@ -1,106 +1,155 @@
 <template>
   <div class="home-container">
-    <!-- 顶部一级Tab栏：发现音乐 + 我的音乐 + 搜索音乐 + 右上角用户名 -->
-    <div class="main-tab-header">
-      <div class="main-tab-list">
-        <div
-          class="main-tab-item"
-          :class="{ active: activeMainTab === 'discover' }"
-          @click="activeMainTab = 'discover'"
-        >
-          发现音乐
+    <!-- 全屏模糊背景层【完全复刻AlbumDetail的bg-layer，满屏无死角】 -->
+    <div class="bg-layer" :style="bgStyle"></div>
+
+    <div class="nav-mask-container">
+      <div class="main-tab-header">
+        <div class="sort-options main-tab-list">
+          <div
+            class="tab-item main-tab-item"
+            :class="{ active: activeMainTab === 'discover' }"
+            @click="activeMainTab = 'discover'; activeSubTab = 'recommend'"
+          >
+            发现音乐
+          </div>
+          <div
+            class="tab-item main-tab-item"
+            :class="{ active: activeMainTab === 'mymusic' }"
+            @click="activeMainTab = 'mymusic'; activeSubTab = 'albumList'"
+          >
+            我的音乐
+          </div>
+          <div
+            class="tab-item main-tab-item"
+            :class="{ active: activeMainTab === 'searchmusic' }"
+            @click="activeMainTab = 'searchmusic'; activeSubTab = 'albumPool'"
+          >
+            搜索音乐
+          </div>
         </div>
-        <div
-          class="main-tab-item"
-          :class="{ active: activeMainTab === 'mymusic' }"
-          @click="activeMainTab = 'mymusic'"
-        >
-          我的音乐
-        </div>
-        <!-- ✅ 新增：搜索音乐 一级Tab项 -->
-        <div
-          class="main-tab-item"
-          :class="{ active: activeMainTab === 'searchmusic' }"
-          @click="activeMainTab = 'searchmusic'"
-        >
-          搜索音乐
+
+        <div class="user-info">
+          <span class="username">{{ username }}</span>
+          <button class="logout-btn" @click="logout">退出登录</button>
         </div>
       </div>
 
-      <div class="user-info">
-        <span class="username">{{ username }}</span>
-        <button class="logout-btn" @click="logout">退出登录</button>
+      <!-- ✅ 发现音乐 二级tab【原封不动保留】 -->
+      <div v-if="activeMainTab === 'discover'" class="sub-tab-list">
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'recommend' }"
+          @click="activeSubTab = 'recommend'"
+        >
+          今日推荐
+        </div>
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'ranking' }"
+          @click="activeSubTab = 'ranking'"
+        >
+          排行榜
+        </div>
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'category' }"
+          @click="activeSubTab = 'category'"
+        >
+          音乐类型
+        </div>
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'singer' }"
+          @click="activeSubTab = 'singer'"
+        >
+          歌手
+        </div>
+      </div>
+
+      <!-- ✅ 我的音乐 二级tab【新增核心】 -->
+      <div v-if="activeMainTab === 'mymusic'" class="sub-tab-list">
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'albumList' }"
+          @click="activeSubTab = 'albumList'"
+        >
+          专辑列表
+        </div>
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'playList' }"
+          @click="activeSubTab = 'playList'"
+        >
+          播放列表
+        </div>
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'yearMusic' }"
+          @click="activeSubTab = 'yearMusic'"
+        >
+          年度音乐
+        </div>
+      </div>
+
+      <!-- ✅ 搜索音乐 二级tab【新增核心】 -->
+      <div v-if="activeMainTab === 'searchmusic'" class="sub-tab-list">
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'albumPool' }"
+          @click="activeSubTab = 'albumPool'"
+        >
+          专辑搜索
+        </div>
       </div>
     </div>
 
-    <!-- 一级Tab内容区域 -->
     <div class="main-tab-content">
-      <!-- 发现音乐 面板：包含二级Tab -->
-      <div v-if="activeMainTab === 'discover'">
-        <!-- 二级Tab栏：今日推荐/排行榜/音乐类型/歌手 -->
-        <div class="sub-tab-list">
-          <div
-            class="sub-tab-item"
-            :class="{ active: activeSubTab === 'recommend' }"
-            @click="activeSubTab = 'recommend'"
-          >
-            今日推荐
-          </div>
-          <div
-            class="sub-tab-item"
-            :class="{ active: activeSubTab === 'ranking' }"
-            @click="activeSubTab = 'ranking'"
-          >
-            排行榜
-          </div>
-          <div
-            class="sub-tab-item"
-            :class="{ active: activeSubTab === 'category' }"
-            @click="activeSubTab = 'category'"
-          >
-            音乐类型
-          </div>
-          <div
-            class="sub-tab-item"
-            :class="{ active: activeSubTab === 'singer' }"
-            @click="activeSubTab = 'singer'"
-          >
-            歌手
-          </div>
-        </div>
+      <div class="sub-tab-content">
+        <!-- 发现音乐 子组件【原封不动】 -->
+        <DailyRecommend
+          v-if="activeMainTab === 'discover' && activeSubTab === 'recommend'"
+          @sendCoverBg="getCoverBgUrl"
+          @sendThemeColor="getThemeColor"
+        />
+        <RankingList v-if="activeMainTab === 'discover' && activeSubTab === 'ranking'" />
+        <CategoryList v-if="activeMainTab === 'discover' && activeSubTab === 'category'" />
+        <SingerList v-if="activeMainTab === 'discover' && activeSubTab === 'singer'" />
 
-        <!-- 二级Tab内容区域-加载改名后的4个子组件 -->
-        <div class="sub-tab-content">
-          <DailyRecommend v-if="activeSubTab === 'recommend'" />
-          <RankingList v-if="activeSubTab === 'ranking'" />
-          <CategoryList v-if="activeSubTab === 'category'" />
-          <SingerList v-if="activeSubTab === 'singer'" />
-        </div>
-      </div>
+        <!-- ✅ 我的音乐 子组件【核心改造】 -->
+        <MusicList
+          v-if="activeMainTab === 'mymusic' && activeSubTab === 'albumList'"
+          @sendCoverBg="getCoverBgUrl"
+          :mainColor="mainColor"
+          :mainColorDark="mainColorDark"
+          :mainColorDarkDouble="mainColorDarkDouble"
+        />
+        <PlayList v-if="activeMainTab === 'mymusic' && activeSubTab === 'playList'" />
+        <YearMusic v-if="activeMainTab === 'mymusic' && activeSubTab === 'yearMusic'" />
 
-      <!-- 我的音乐 面板：直接复用你原有的MusicList组件 无任何修改 -->
-      <div v-if="activeMainTab === 'mymusic'">
-        <MusicList />
-      </div>
-
-      <!-- ✅ 核心新增：搜索音乐 面板，直接嵌入SearchAlbumPool组件 -->
-      <div v-if="activeMainTab === 'searchmusic'">
-        <SearchAlbumPool />
+<!-- 修改后代码【复制即用】 -->
+<SearchAlbumPool
+  v-if="activeMainTab === 'searchmusic' && activeSubTab === 'albumPool'"
+  @sendCoverBg="getCoverBgUrl"
+  :mainColor="mainColor"
+  :mainColorDark="mainColorDark"
+  :mainColorDarkDouble="mainColorDarkDouble"
+/>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-// 引入【改名后】的4个发现音乐子组件
-import DailyRecommend from '@/components/discover/DailyRecommend.vue'
-import RankingList from '@/components/discover/RankingList.vue'
-import CategoryList from '@/components/discover/CategoryList.vue'
-import SingerList from '@/components/discover/SingerList.vue'
-// 引入你的原有核心组件 MusicList
-import MusicList from '@/views/MusicList.vue'
-// ✅ 新增：引入搜索专辑池核心组件 SearchAlbumPool
-import SearchAlbumPool from '@/views/SearchAlbumPool.vue'
+import DailyRecommend from '@/components/discoverMusic/DailyRecommend.vue'
+import RankingList from '@/components/discoverMusic/RankingList.vue'
+import CategoryList from '@/components/discoverMusic/CategoryList.vue'
+import SingerList from '@/components/discoverMusic/SingerList.vue'
+import MusicList from '@/components/myMusic/MusicList.vue'
+import SearchAlbumPool from '@/components/searchMusic/SearchAlbumPool.vue'
+// ✅ 引入两个占位组件
+import PlayList from '@/components/myMusic/PlayList.vue'
+import YearMusic from '@/components/myMusic/YearMusic.vue'
 
 export default {
   name: 'WebHome',
@@ -110,18 +159,53 @@ export default {
     CategoryList,
     SingerList,
     MusicList,
-    SearchAlbumPool // ✅ 注册新增的组件
+    SearchAlbumPool,
+    PlayList,
+    YearMusic
   },
   data() {
     return {
-      activeMainTab: 'discover', // 默认显示：发现音乐
-      activeSubTab: 'recommend',  // 默认显示：今日推荐
-      username: ''
+      activeMainTab: 'discover',
+      activeSubTab: 'recommend',
+      username: '',
+      coverBgUrl: localStorage.getItem('persistCoverBg') || '',
+      mainColor: localStorage.getItem('persistMainColor') || 'transparent',
+      mainColorDark: localStorage.getItem('persistMainColorDark') || 'transparent',
+      mainColorDarkDouble: localStorage.getItem('persistMainColorDarkDouble') || 'transparent'
+    }
+  },
+  computed: {
+    bgStyle() {
+      if (this.coverBgUrl) {
+        return {
+          backgroundImage: `url(${this.coverBgUrl})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat'
+        }
+      } else {
+        return { backgroundColor: 'transparent' }
+      }
     }
   },
   watch: {
     $route() {
-      this.$nextTick(() => this.setActiveTab())
+      this.$nextTick(() => {
+        this.setActiveTab()
+        this.$forceUpdate()
+      })
+    },
+    coverBgUrl(newVal) {
+      localStorage.setItem('persistCoverBg', newVal)
+    },
+    mainColor(newVal) {
+      localStorage.setItem('persistMainColor', newVal)
+    },
+    mainColorDark(newVal) {
+      localStorage.setItem('persistMainColorDark', newVal)
+    },
+    mainColorDarkDouble(newVal) {
+      localStorage.setItem('persistMainColorDarkDouble', newVal)
     }
   },
 
@@ -130,19 +214,25 @@ export default {
   },
   activated() {
     this.setActiveTab()
+    this.initThemeColor()
+    this.$forceUpdate()
   },
 
   created() {
-    // 登录校验逻辑 和你的MusicList、全局守卫一致
     this.username = localStorage.getItem('username') || ''
     const token = localStorage.getItem('token')
     if (!token || !this.username) {
       this.$router.push('/login')
       return
     }
+    this.initThemeColor()
   },
   methods: {
-    // 退出登录：复用你原有的逻辑，和MusicList里的logout一致
+    initThemeColor() {
+      this.mainColor = localStorage.getItem('persistMainColor') || 'transparent';
+      this.mainColorDark = localStorage.getItem('persistMainColorDark') || 'transparent';
+      this.mainColorDarkDouble = localStorage.getItem('persistMainColorDarkDouble') || 'transparent';
+    },
     logout() {
       try {
         localStorage.clear()
@@ -154,130 +244,221 @@ export default {
       }
     },
     setActiveTab() {
-      // 读取全局变量，判断是否有值
       if (window.targetTab) {
-        console.log(222)
-        this.activeMainTab = window.targetTab // 赋值切换到我的音乐
-        window.targetTab = null // 用完清空，避免下次进页面被影响
+        this.activeMainTab = window.targetTab
+        // ✅ 优化：切换主tab时自动选中对应默认子tab
+        if(window.targetTab === 'mymusic') this.activeSubTab = 'albumList'
+        if(window.targetTab === 'searchmusic') this.activeSubTab = 'albumPool'
+        window.targetTab = null
       }
+    },
+    getCoverBgUrl(url) {
+      this.coverBgUrl = url
+    },
+    getThemeColor(colorObj) {
+      this.mainColor = colorObj.mainColor
+      this.mainColorDark = colorObj.mainColorDark
+      this.mainColorDarkDouble = colorObj.mainColorDarkDouble
     }
   }
 }
 </script>
 
 <style scoped>
-/* 主容器样式，和你的MusicList样式完全统一，无缝衔接 */
+/* 主容器样式 - 加相对定位，让内部元素层级生效 */
 .home-container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
-  font-family: "Microsoft YaHei", sans-serif;
+	padding: 20px;
+	font-family: "Microsoft YaHei", sans-serif;
+	position: relative;
+	min-height: calc(100vh - 40px);
+	z-index: 2;
 }
 
-/* 一级Tab头部：左侧tab，右侧用户名 */
+/* 全屏模糊背景层【1:1复刻AlbumDetail的bg-layer，满屏无死角】 */
+.bg-layer {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 100vh;
+	z-index: -1;
+	filter: blur(25px) brightness(1.2);
+	-webkit-filter: blur(25px) brightness(1.2);
+	background-attachment: fixed;
+}
+
+/* 磨砂玻璃蒙版 */
+.nav-mask-container {
+  background-color: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  -moz-backdrop-filter: blur(8px);
+  border-radius: 12px;
+	padding: 20px;
+	position: relative;
+	z-index: 2;
+	width: 100%;
+	box-sizing: border-box;
+	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+	margin-bottom: 20px;
+}
+
+/* 头部布局 */
 .main-tab-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 10px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 15px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding-bottom: 10px;
+	gap: 15px;
+	position: relative;
+	z-index: 3;
+  border-bottom: none !important;
+  flex-wrap: nowrap;
+}
+.main-tab-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 6px;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background-color: v-bind(mainColorDark);
+  margin: 0;
 }
 
-/* 一级Tab列表样式 - 发现音乐/我的音乐/搜索音乐 */
+/* 核心样式：一级tab外层容器 */
+.sort-options {
+	display: flex;
+	gap: 10px;
+	padding-bottom: 8px;
+	background: transparent !important;
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+	border-radius: 4px;
+	border: none !important;
+	box-sizing: border-box;
+	text-align: left;
+	position: relative;
+}
+
+.tab-item {
+	padding: 8px 16px;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 15px;
+	transition: all 0.2s;
+	font-weight: 600;
+	position: relative;
+	border: none;
+	background: transparent;
+  color: v-bind(mainColorDarkDouble);
+}
+.tab-item.active {
+	background: v-bind(mainColorDarkDouble);
+	color: #ffffff;
+}
+.tab-item.active:hover {
+	color: #fff;
+  opacity: 1;
+}
+.tab-item::after {
+  display: none;
+}
+
 .main-tab-list {
-  display: flex;
-  gap: 30px;
+  gap: 10px;
 }
-
 .main-tab-item {
-  font-size: 18px;
-  font-weight: 600;
-  color: #666;
-  cursor: pointer;
-  padding: 8px 0;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s;
+	font-size: 18px;
+	font-weight: 600;
 }
 
-.main-tab-item.active {
-  color: #42b983;
-  border-bottom: 2px solid #42b983;
-}
-
-.main-tab-item:hover {
-  color: #42b983;
-}
-
-/* 右上角用户信息+退出按钮 */
+/* 用户信息 右上角紧凑布局 */
 .user-info {
-  display: flex;
-  align-items: center;
-  gap: 15px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+  white-space: nowrap;
 }
-
 .username {
-  font-size: 16px;
-  color: #333;
-  font-weight: 500;
+	font-size: 16px;
+	color: v-bind(mainColorDarkDouble);
+	font-weight: 500;
 }
-
 .logout-btn {
-  padding: 6px 12px;
-  background: #e74c3c;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
+	padding: 6px 12px;
+	background: v-bind(mainColorDarkDouble);
+	color: white;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 14px;
 }
 
-.logout-btn:hover {
-  background: #c0392b;
-}
-
-/* 二级Tab列表样式（发现音乐下） */
 .sub-tab-list {
-  display: flex;
-  gap: 25px;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 8px;
-  margin-bottom: 25px;
+	display: flex;
+	gap: 8px;
+	padding-bottom: 8px;
+	position: relative;
+	z-index: 3;
+  border-bottom: none !important;
+  background: transparent;
 }
-
 .sub-tab-item {
-  font-size: 16px;
-  color: #666;
-  cursor: pointer;
-  padding: 6px 0;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s;
+	font-size: 15px;
+  color: v-bind(mainColorDark);
+	cursor: pointer;
+	padding: 6px 12px;
+	border-radius: 5px;
+	border: none;
+	transition: all 0.2s;
+  font-weight: 600;
+  background: transparent;
 }
-
 .sub-tab-item.active {
-  color: #3498db;
-  border-bottom: 2px solid #3498db;
+	color: #fff;
+  background: v-bind(mainColorDark);
+	border-bottom: none !important;
+}
+.sub-tab-item.active:hover {
+	opacity: 1;
 }
 
-.sub-tab-item:hover {
-  color: #3498db;
+/* 下方内容区域 核心样式 */
+.main-tab-content {
+  position: relative;
+	z-index: 2;
+	width: 100%;
+	box-sizing: border-box;
 }
-
-/* 二级Tab内容区 */
 .sub-tab-content {
-  min-height: 500px;
+	min-height: 500px;
+	position: relative;
+	z-index: 2;
 }
 
-/* 响应式适配-手机端正常显示 */
+/* 响应式适配 */
 @media (max-width: 768px) {
-  .main-tab-list, .sub-tab-list {
-    gap: 15px;
+	.main-tab-header {
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
-
-  .main-tab-item {
-    font-size: 16px;
+  .nav-mask-container {
+    padding: 15px;
+    border-radius: 8px;
+  }
+	.main-tab-list, .sub-tab-list {
+		gap: 8px;
+	}
+	.main-tab-item {
+		font-size: 16px;
+	}
+  .sub-tab-item {
+    font-size: 14px;
+    padding: 5px 10px;
   }
 }
 </style>

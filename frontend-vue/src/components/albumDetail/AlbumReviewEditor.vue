@@ -498,6 +498,7 @@ getDayDetailList() {
 }
 
 .day-item.hasRecord {
+  border-radius: 50% !important;
   font-weight: bold;
 }
 

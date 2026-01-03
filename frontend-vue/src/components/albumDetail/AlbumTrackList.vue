@@ -18,7 +18,7 @@
                 :class="{active: activeTab === 'favourite'}"
                 @click="activeTab = 'favourite'"
               >
-                编辑喜欢时间戳
+                喜欢时刻
               </div>
             </div>
             <div class="tracks-header sticky-header">
@@ -29,8 +29,8 @@
                   :class="{active: activeTab === 'tracks' ? isTrackEditMode : isFavouriteEditMode}"
                 >
                   {{ activeTab === 'tracks'
-                    ? (isTrackEditMode ? '保存曲目' : '编辑曲目')
-                    : (isFavouriteEditMode ? '保存时间戳' : '编辑时间戳')
+                    ? (isTrackEditMode ? '保存' : '编辑')
+                    : (isFavouriteEditMode ? '保存' : '编辑')
                   }}
                 </button>
                 <button
@@ -542,7 +542,6 @@ export default {
           headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
         });
         if (res.data.code === 200) {
-          alert(type === 'tracks' ? '✅ 曲目列表保存成功！' : '✅ 喜欢时间戳保存成功！');
           this.$emit('update-album-data', {[emitKey1]: submitList, [emitKey2]: submitSecArr});
         } else {
           alert(`❌ 保存失败：${res.data.msg}`);

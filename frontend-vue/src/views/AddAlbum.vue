@@ -243,7 +243,6 @@ export default {
         });
         if (res.data.code === 200) {
           this.album.cover_img = res.data.data.img_url;
-          alert("图片上传成功！已自动填充封面链接～");
         } else {
           this.errorMsg = "图片上传失败：" + res.data.msg;
         }
@@ -310,8 +309,13 @@ export default {
       })
           .then(res => {
             if (res.data.code === 200) {
-              alert("专辑添加成功！");
-              this.$router.push("/albumDetail");
+                this.$router.push({ path: '/webhome' }).then(() => {
+    // 找到WebHome组件实例，修改其激活的tab值
+    const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
+    if (webHomeVm) {
+      webHomeVm.activeMainTab = 'mymusic'
+    }
+  })
             } else {
               this.errorMsg = res.data.msg;
             }

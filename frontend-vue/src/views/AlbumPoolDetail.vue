@@ -32,8 +32,8 @@
             </div>
           </div>
           <div class="actions">
-            <button @click="copyAlbum" class="copy-btn" :style="{backgroundColor: mainColorDark}">复制为我的副本</button>
-            <button @click="goBack" class="back-btn">返回搜索池</button>
+            <button @click="copyAlbum" class="copy-btn" :style="{backgroundColor: mainColorDarkDouble}">添加</button>
+            <button @click="goBack" class="back-btn">返回</button>
           </div>
         </div>
 
@@ -50,7 +50,7 @@
         </div>
 
         <!-- 切换箭头左移露全 - 主色加深色 -->
-        <div class="slide-toggle-btn" @click="showIntro = !showIntro" :style="{backgroundColor: mainColorDark}">
+        <div class="slide-toggle-btn" @click="showIntro = !showIntro" :style="{backgroundColor: mainColorDarkDouble}">
           <i class="icon-arrow" :class="showIntro ? 'arrow-left' : 'arrow-right'">
             {{ showIntro ? '←' : '→' }}
           </i>
@@ -345,7 +345,6 @@ goBack() {
   align-items: stretch;
 }
 
-/* ✅ 去掉白色边框 + 解决气泡溢出核心样式 */
 .album-left-section {
   flex: 1.8;
   min-width: 450px;
@@ -355,7 +354,6 @@ goBack() {
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   border-radius: 8px;
-  /* ✔️ 删除白色边框 border: 1px solid rgba(255,255,255,0.5); */
   position: relative;
   overflow: hidden;
   transition: all 0.5s ease;
@@ -399,7 +397,6 @@ goBack() {
   width: 260px;
   height: 260px;
   margin: 40px auto 20px;
-  /* ✔️ 删除封面白色边框 border: 1px solid rgba(255,255,255,0.6); */
   border-radius: 8px;
   overflow: hidden;
   display: flex;
@@ -451,7 +448,7 @@ goBack() {
 .info .create-time {
   font-size: 15px;
   display: block;
-  margin-top: 10px;
+  marginTop: 10px;
 }
 
 .actions {
@@ -478,11 +475,10 @@ goBack() {
   transform: scale(1.02);
 }
 
-/* 核心修改：标题带圆角下划线 */
 .intro-title, .songs-title, .users-title, .style-title {
   font-size: 18px;
-  color: #333;
   font-weight: 600;
+  color:v-bind(mainColorDarkDouble);
 	padding: 15px 20px 8px;
   margin: 0 !important;
 	width: 100%;
@@ -492,7 +488,6 @@ goBack() {
   margin: 0 auto !important;
   position: relative;
 }
-/* 伪元素实现圆角下划线 */
 .intro-title::after,
 .songs-title::after,
 .users-title::after,
@@ -503,8 +498,8 @@ goBack() {
   bottom: 0;
   width: 100%;
   height: 7px;
-  border-radius: 2px;
-  background-color: v-bind(mainColorDark);
+	border-radius: 2px;
+  background-color: v-bind(mainColorDarkDouble);
 }
 
 .intro-mask {
@@ -516,17 +511,6 @@ goBack() {
   padding: 10px;
 	height: calc(100% - 80px);
   box-sizing: border-box;
-}
-.intro-content {
-  font-size: 16px;
-  color: #333;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-	padding: 10px 15px;
-	height: 100%;
-  overflow-y: auto;
-  margin-top: 0;
 }
 .no-intro-tip {
   color: #999;
@@ -546,30 +530,74 @@ goBack() {
 	padding: 12px 20px 20px;
   marginTop: 0;
 }
+
+/** 1. 单曲列表滚动容器 - 核心样式 */
 .songs-list {
   list-style: none;
 	padding: 12px 20px 0;
   margin: 0;
   max-height: calc(100% - 60px);
   overflow-y: auto;
+  padding-right: 5px;
+  background: transparent !important;
 }
+.songs-list::-webkit-scrollbar { width: 6px; }
+.songs-list::-webkit-scrollbar-thumb { background: v-bind(mainColorDarkDouble); border-radius: 3px; }
+.songs-list::-webkit-scrollbar-thumb:hover { background: v-bind(mainColorDark); }
+.songs-list::-webkit-scrollbar-track { background: transparent !important; }
+.songs-list::-webkit-scrollbar-button { display: none !important; }
+
+/** 2. 最近收听用户滚动容器 - 统一相同样式 */
+.users-scroll-wrapper {
+	height: calc(100% - 50px);
+  overflow-y: auto;
+  padding: 12px 20px 0;
+  padding-right: 5px;
+  background: transparent !important;
+}
+.users-scroll-wrapper::-webkit-scrollbar { width: 6px; }
+.users-scroll-wrapper::-webkit-scrollbar-thumb { background: v-bind(mainColorDarkDouble); border-radius: 3px; }
+.users-scroll-wrapper::-webkit-scrollbar-thumb:hover { background: v-bind(mainColorDark); }
+.users-scroll-wrapper::-webkit-scrollbar-track { background: transparent !important; }
+.users-scroll-wrapper::-webkit-scrollbar-button { display: none !important; }
+
+/** 3. 专辑简介滚动容器 - 统一相同样式 */
+.intro-content {
+  font-size: 16px;
+  color: #333;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+	padding: 10px 15px;
+	height: 100%;
+  overflow-y: auto;
+  margin-top: 0;
+  padding-right: 5px;
+  background: transparent !important;
+}
+.intro-content::-webkit-scrollbar { width: 6px; }
+.intro-content::-webkit-scrollbar-thumb { background: v-bind(mainColorDarkDouble); border-radius: 3px; }
+.intro-content::-webkit-scrollbar-thumb:hover { background: v-bind(mainColorDark); }
+.intro-content::-webkit-scrollbar-track { background: transparent !important; }
+.intro-content::-webkit-scrollbar-button { display: none !important; }
+
 .song-item {
   display: flex;
   align-items: center;
   margin-bottom: 12px;
-  padding: 10px 15px;
+	padding: 10px 15px;
   background: rgba(255,255,255,0.3);
-  border-radius: 6px;
+	border-radius: 6px;
 }
 .song-index {
   display: inline-block;
   width: 26px;
-  height: 26px;
+	height: 26px;
   line-height: 26px;
   text-align: center;
   color: white;
   font-size: 14px;
-  border-radius: 3px;
+	border-radius: 3px;
   margin-right: 18px;
 }
 .song-name {
@@ -587,14 +615,12 @@ goBack() {
   max-width: 350px;
   height: 720px;
 }
-/* ✅ 去掉白色边框 */
 .album-songs-list {
   padding: 0 !important;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  border-radius: 8px;
-  /* ✔️ 删除白色边框 border: 1px solid rgba(255,255,255,0.5); */
+	border-radius: 8px;
 	height: 100%;
   box-sizing: border-box;
 }
@@ -603,33 +629,19 @@ goBack() {
   flex: 0.8;
   min-width: 220px;
   max-width: 500px;
-  height: 720px;
+	height: 720px;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
-/* ✅ 去掉白色边框 */
 .album-recent-users {
   padding: 0 !important;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  border-radius: 8px;
-  /* ✔️ 删除白色边框 border: 1px solid rgba(255,255,255,0.5); */
+	border-radius: 8px;
 	height: 250px;
   box-sizing: border-box;
-}
-.users-scroll-wrapper {
-	height: calc(100% - 50px);
-  overflow-y: auto;
-  padding: 12px 20px 0;
-}
-.users-scroll-wrapper::-webkit-scrollbar {
-  width: 4px;
-}
-.users-scroll-wrapper::-webkit-scrollbar-thumb {
-  background: #ddd;
-  border-radius: 2px;
 }
 .users-list {
   list-style: none;
@@ -637,55 +649,52 @@ goBack() {
   margin: 0;
 }
 .user-item {
-  display: flex;
-  align-items: center;
+  display:flex;
+  align-items:center;
   justify-content: space-between;
 	padding:8px 10px;
   margin-bottom:8px;
   background:rgba(255,255,255,0.3);
-  border-radius:6px;
-  font-size:14px;
+	border-radius:6px;
+	font-size:14px;
 }
 .user-avatar {
   width:26px;
-  height:26px;
-  border-radius:50%;
-  color:#fff;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:13px;
-  margin-right:8px;
+	height:26px;
+	border-radius:50%;
+	color:#fff;
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	font-size:13px;
+	margin-right:8px;
 }
 .user-name {
   flex:1;
-  font-size:14px;
-  color:#333;
+	font-size:14px;
+	color:#333;
 }
 .user-time {
-  font-size:12px;
+	font-size:12px;
 }
 
-/* ✅ ✅ ✅ 核心修改 二合一：1.去掉白色边框 2.气泡图不超框（不改气泡大小） 完美解决 */
 .album-style-chart {
-  padding: 0 !important;
+  padding:0 !important;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  border-radius: 8px;
-  /* ✔️ 删除白色边框 border: 1px solid rgba(255,255,255,0.5); */
-  flex: 1;
-  min-height: 320px;
+	border-radius:8px;
+  flex:1;
+  min-height:320px;
   box-sizing: border-box;
   position: relative;
-  overflow: hidden; /* ✔️ 核心：强制裁剪溢出的气泡，彻底解决超框问题，不改动任何气泡样式 */
+  overflow: hidden;
 }
-/** ✅ 不改动气泡大小+完美适配容器 - 只调整内边距和高度，气泡原样保留 */
 .album-style-chart >>> .tag-bubble-chart-container {
-  padding: 12px 20px 20px !important;
+  padding:12px 20px 20px !important;
   box-sizing: border-box;
-  width: 100%;
-  height: calc(100% - 55px) !important; /* ✔️ 精准计算高度，刚好填充容器，不溢出 */
+	width:100%;
+	height: calc(100% - 55px) !important;
   position: relative;
 }
 
@@ -696,17 +705,17 @@ goBack() {
   transform: translateY(-50%);
 	width:24px;
 	height:auto;
-  min-height: 48px;
-  color:#fff;
-  border-radius:12px 0 0 12px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
+  min-height:48px;
+	color:#fff;
+	border-radius:12px 0 0 12px;
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	cursor:pointer;
 	box-shadow:0 2px 8px rgba(0,0,0,0.15);
-  z-index:99;
-  transition:all 0.3s ease;
-  padding: 5px 0;
+	z-index:99;
+	transition:all 0.3s ease;
+	padding:5px 0;
 }
 .slide-toggle-btn:hover {
   opacity:0.95;
@@ -723,21 +732,21 @@ goBack() {
     align-items: flex-start;
   }
   .album-left-section {
-    max-width: 100%;
-    flex: 1 1 100%;
+    max-width:100%;
+    flex:1 1 100%;
   }
   .album-center-section {
-    flex: 1 1 100%;
-    min-width: 100%;
-    max-width: 100%;
-    margin-top: 20px;
+    flex:1 1 100%;
+    min-width:100%;
+    max-width:100%;
+    margin-top:20px;
     height:auto;
   }
   .album-right-section {
-    flex: 1 1 100%;
-    min-width: 100%;
-    max-width: 100%;
-    margin-top:20px;
+    flex:1 1 100%;
+    min-width:100%;
+    max-width:100%;
+    marginTop:20px;
     height:auto;
     flex-direction:row;
     gap:20px;

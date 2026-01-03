@@ -541,6 +541,7 @@ export default {
   background: transparent !important;
   border: none !important;
 	color: v-bind(mainColorDarkDouble) !important;
+  outline: none;
 }
 
 .tag-search-input::placeholder {

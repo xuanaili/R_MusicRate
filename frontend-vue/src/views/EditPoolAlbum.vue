@@ -314,7 +314,6 @@ export default {
         });
         if (res.data.code === 200) {
           this.album.cover_img = res.data.data.img_url || res.data.data.url; // 兼容两种返回格式
-          alert("图片上传成功！已自动填充封面链接～");
         } else {
           this.errorMsg = "图片上传失败：" + res.data.msg;
         }

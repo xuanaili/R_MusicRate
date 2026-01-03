@@ -110,7 +110,10 @@ export default {
       const lines = this.parseText.trim().split('\n').filter(line => line.trim());
       // ✅ 重点修复：万能兼容正则表达式【核心改动】
       // 适配：emoji开头/数字前缀/无前缀 + 中英日文歌名 + 任意空格 + 时间戳(0:00 或 00:00:00)
-      const reg = /^[\p{Emoji}\p{Emoji_Presentation}\s]*([\u4e00-\u9fa5\u3040-\u309F\u30A0-\u30FFa-zA-Z\s.\-_()（）&!]+)\s+(\d{1,2}(?::\d{1,2}){1,2})$/u;
+      const reg = /^[\p{Emoji}\p{Emoji_Presentation}\s]*([\u4e00-\u9fa5\u3040-\u309F\u30A0-\u30FFa-zA-Z\s.\-_()（）&!！？%*、《》…⋯+'’]+)\s+(\d{1,2}(?::\d{1,2}){1,2})$/u
+
+
+      ;
       const newTrackList = [];
 
       lines.forEach((line) => {

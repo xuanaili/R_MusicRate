@@ -5,11 +5,11 @@ import axios from 'axios'
 import VueRouter from 'vue-router'
 // 导入页面组件（统一用@别名，避免路径错误）
 import LoginPage from '@/views/LoginPage.vue'
-import MusicList from '@/views/MusicList.vue'
+import MusicList from '@/components/myMusic/MusicList.vue'
 import RegisterPage from '@/views/RegisterPage.vue'
 import AddAlbum from '@/views/AddAlbum.vue'
 import AlbumDetail from '@/views/AlbumDetail.vue'
-import SearchAlbumPool from '@/views/SearchAlbumPool.vue'
+import SearchAlbumPool from '@/components/searchMusic/SearchAlbumPool.vue'
 // ========== 核心新增：导入编辑页组件 ==========
 import EditPoolAlbum from '@/views/EditPoolAlbum.vue'
 // ========== 新增结束 ==========

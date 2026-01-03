@@ -118,13 +118,15 @@
 
     <!-- 底部播放器区域 核心重构：精准坐标对齐+透明背景 -->
     <div class="full-player-wrapper">
-      <div class="album-rotate-box" @click="togglePlayPause" v-if="audioSrc && album.cover_img">
+      <!-- ✅ 修改点 1：无音频时点击封面 触发上传弹窗；有音频时保留播放暂停功能 -->
+      <div class="album-rotate-box" @click="audioSrc ? togglePlayPause() : handleTriggerUpload" v-if="audioSrc && album.cover_img">
         <div class="album-rotate-circle" :class="{playing: isPlaying}">
           <img :src="album.cover_img" alt="专辑封面" class="album-rotate-img"/>
         </div>
       </div>
-      <div class="album-rotate-box no-cover" v-else>
-        <div class="album-rotate-circle">
+      <!-- ✅ 修改点 2：无音频的圆形封面 - 背景色绑定 mainColor + 点击触发上传 -->
+      <div class="album-rotate-box no-cover" @click="handleTriggerUpload" v-else>
+        <div class="album-rotate-circle" :style="{backgroundColor: albumMainColor}">
           <div class="no-resource-text">暂无整轨音频资源</div>
         </div>
       </div>
@@ -275,8 +277,8 @@ export default {
       showUploadSidebar: false,
       audioSrc: '',
       fileName: '',
-      volume: 0.7,
-      originVolume: 0.7, // 新增：保存原始音量，用于渐变恢复
+      volume: 0.3,
+      originVolume: 0.3, // 原始音量，用于渐变恢复
       isPlaying: false,
       currentTime: 0,
       duration: 0,
@@ -287,9 +289,12 @@ export default {
       showVolume: false,
       oldMp3Url: '',
       showMenu: false,
-      fadeTimer: null, // 新增：音量渐变定时器，防止内存泄漏
-      volumeTimer: null, // 新增：线性恢复音量的定时器，防止内存泄漏
-      isVolumeFading: false, // 新增：音量渐变状态锁，防止重复触发渐变
+      fadeTimer: null, // 音量渐变定时器，防止内存泄漏
+      volumeTimer: null, // 线性恢复音量的定时器，防止内存泄漏
+      isVolumeFading: false, // 音量渐变状态锁，防止重复触发渐变
+      // ✅ ✅ ✅ 核心新增：修复暂停调音量的两个关键状态
+      isPaused: false, // 标记当前是否处于暂停状态
+      pausedVolume: null, // 存储暂停时手动调整的音量值
       // 播放列表核心数据【完整初始化，对接后端接口】
       showPlaylistSidebar: false,
       playlistTabs: [{name: '默认歌单', tracks: []}],
@@ -342,10 +347,28 @@ export default {
     }
   },
   watch: {
-    volume(val) {
-      const audio = this.$refs.audioRef;
-      if (audio) audio.volume = val;
-    },
+  volume(val) {
+    const volumeNum = Number(val);
+    const validVolume = Number.isFinite(volumeNum) ? Math.max(0, Math.min(1, volumeNum)) : 0.3;
+
+    // 更新实际值和显示值
+    this.volume = validVolume;
+    const audio = this.$refs.audioRef;
+    if (audio) {
+      audio.volume = validVolume;
+    }
+
+    console.log('【音量变化】新值:', validVolume, ' isPlaying:', this.isPlaying, ' isPaused:', this.isPaused);
+
+    // ✅ 简化逻辑：始终更新 pausedVolume 作为期望音量
+    // 无论什么状态，用户调整的音量就是他们期望的音量
+    this.pausedVolume = validVolume;
+
+    // 如果是播放状态，也更新 originVolume
+    if (this.isPlaying && !this.isPaused) {
+      this.originVolume = validVolume;
+    }
+  },
     sortType() {
       this.processComments();
     },
@@ -424,19 +447,19 @@ export default {
     this.currentUserId = localStorage.getItem('user_id');
     this.isAdmin = localStorage.getItem('is_admin') === '1';
 
-const albumId = this.$route.params.id || this.$route.query.id;
-if (!albumId) {
-  alert('未找到专辑ID！');
-  // 核心修改：跳转WebHome主页 + 强制激活【我的音乐】Tab
-  this.$router.push({ path: '/webhome' }).then(() => {
-    // 跳转后主动修改WebHome的Tab激活状态为我的音乐
-    const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
-    if (webHomeVm) {
-      webHomeVm.activeMainTab = 'mymusic'
+    const albumId = this.$route.params.id || this.$route.query.id;
+    if (!albumId) {
+      alert('未找到专辑ID！');
+      // 核心修改：跳转WebHome主页 + 强制激活【我的音乐】Tab
+      this.$router.push({path: '/webhome'}).then(() => {
+        // 跳转后主动修改WebHome的Tab激活状态为我的音乐
+        const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
+        if (webHomeVm) {
+          webHomeVm.activeMainTab = 'mymusic'
+        }
+      })
+      return;
     }
-  })
-  return;
-}
 
     await this.getUserPlaylistData();
     await this.getAlbumDetail(Number(albumId));
@@ -498,67 +521,128 @@ if (!albumId) {
     });
   },
   methods: {
+    // ✅ ✅ ✅ 新增核心方法：触发上传音频弹窗
+    handleTriggerUpload() {
+      if (this.isAdmin) {
+        this.showUploadSidebar = true;
+      } else {
+        this.$message?.info('只有管理员才能上传音频资源哦～');
+      }
+    },
     // ✅✅✅ 【修复3】父组件新增：接收子组件的小球开关事件，修改父组件状态
     handleToggleBallPlay(val) {
       this.isBallPlay = val;
     },
     // 核心新增：音量平滑渐变淡出方法 (通用，所有暂停/切歌都调用这个)
-    async fadeOutVolume(callback) {
-      const audio = this.$refs.audioRef;
-      if (!audio || !this.isPlaying) {
-        callback && callback();
-        return;
-      }
-      if (this.volumeTimer) clearInterval(this.volumeTimer);
-      this.volumeTimer = null;
+async fadeOutVolume(callback) {
+  const audio = this.$refs.audioRef;
+  if (!audio || !this.isPlaying) {
+    callback && callback();
+    return;
+  }
 
-      if (this.fadeTimer) clearInterval(this.fadeTimer);
-      let currentVol = this.volume;
-      this.fadeTimer = setInterval(() => {
-        currentVol -= 0.03;
-        if (currentVol <= 0) {
-          currentVol = 0;
-          clearInterval(this.fadeTimer);
-          this.fadeTimer = null;
-          audio.pause();
-          this.isPlaying = false;
-          this.volume = currentVol;
-          audio.volume = currentVol;
-          callback && callback();
-        }
-        audio.volume = currentVol;
-        this.volume = currentVol;
-      }, 30);
-    },
-    // 核心重构：替换原有的 resetVolume 方法【重中之重】
-    resetVolume() {
-      const audio = this.$refs.audioRef;
-      if (!audio) return;
+  // ✅ 关键修复：在淡出开始前保存当前真实音量
+  // 这个值应该是用户期望暂停后再播放时的音量
+  const currentRealVolume = this.volume;
 
-      if (this.fadeTimer) clearInterval(this.fadeTimer);
-      if (this.volumeTimer) clearInterval(this.volumeTimer);
+  // 保存到两个地方，确保后续能恢复
+  this.pausedVolume = currentRealVolume;
+  this.originVolume = currentRealVolume;
+
+  console.log('【淡出前保存】真实音量:', currentRealVolume, ' pausedVolume:', this.pausedVolume);
+
+  // 清除之前的定时器
+  if (this.volumeTimer) clearInterval(this.volumeTimer);
+  this.volumeTimer = null;
+
+  if (this.fadeTimer) clearInterval(this.fadeTimer);
+  let fadeVolume = currentRealVolume; // 使用临时变量进行淡出
+
+  this.fadeTimer = setInterval(() => {
+    fadeVolume -= 0.03;
+    if (fadeVolume <= 0) {
+      fadeVolume = 0;
+      clearInterval(this.fadeTimer);
       this.fadeTimer = null;
+      audio.pause();
+      this.isPlaying = false;
+      this.volume = 0; // UI显示为0
+      audio.volume = 0; // 实际音量为0
+      callback && callback();
+
+      // ✅ 重要：淡出完成后，恢复保存的真实音量到UI显示
+      // 这样用户看到的是他们期望的音量值
+      setTimeout(() => {
+        this.volume = currentRealVolume;
+      }, 50);
+    }
+    audio.volume = fadeVolume;
+    // 注意：不更新 this.volume，以免影响保存的值
+  }, 30);
+},
+    // ✅ ✅ ✅ 核心重构：重置音量方法【完美修复核心问题】
+// ✅ ✅ ✅ 终极修复版 - 重置音量方法【完美修复核心问题+清空时机修正】
+resetVolume() {
+  const audio = this.$refs.audioRef;
+  if (!audio) return;
+
+  // 1. 清除所有定时器
+  if (this.fadeTimer) clearInterval(this.fadeTimer);
+  if (this.volumeTimer) clearInterval(this.volumeTimer);
+  this.fadeTimer = null;
+  this.volumeTimer = null;
+  this.isVolumeFading = false;
+
+  console.log('【重置音量】pausedVolume:', this.pausedVolume, ' originVolume:', this.originVolume);
+
+  // 2. ✅ 优先级：pausedVolume > originVolume > 0.3
+  let targetVolume = 0.3;
+  if (this.pausedVolume !== null && this.pausedVolume !== undefined) {
+    targetVolume = this.pausedVolume;
+  } else if (this.originVolume !== null && this.originVolume !== undefined) {
+    targetVolume = this.originVolume;
+  }
+
+  // 3. 合法性校验
+  targetVolume = Math.max(0, Math.min(1, targetVolume));
+
+  // 4. 如果当前已经是静音或接近0，直接设置为目标音量
+  if (this.volume < 0.05) {
+    this.volume = targetVolume;
+    audio.volume = targetVolume;
+    console.log('【直接设置】从静音恢复到:', targetVolume);
+    return;
+  }
+
+  // 5. 如果音量已经接近目标值，直接设置
+  if (Math.abs(this.volume - targetVolume) < 0.05) {
+    this.volume = targetVolume;
+    audio.volume = targetVolume;
+    console.log('【直接设置】接近目标值:', targetVolume);
+    return;
+  }
+
+  // 6. 渐变恢复音量
+  console.log('【开始渐变】从', this.volume, '到', targetVolume);
+  this.isVolumeFading = true;
+  this.volumeTimer = setInterval(() => {
+    const diff = targetVolume - this.volume;
+    if (Math.abs(diff) <= 0.01) {
+      this.volume = targetVolume;
+      audio.volume = targetVolume;
+      clearInterval(this.volumeTimer);
+      this.volumeTimer = null;
       this.isVolumeFading = false;
+      console.log('【渐变完成】最终音量:', targetVolume);
+      return;
+    }
 
-      if (this.volume >= this.originVolume) {
-        this.volume = this.originVolume;
-        audio.volume = this.originVolume;
-        return;
-      }
-
-      this.isVolumeFading = true;
-      this.volumeTimer = setInterval(() => {
-        this.volume += 0.02;
-        if (this.volume >= this.originVolume) {
-          this.volume = this.originVolume;
-          audio.volume = this.originVolume;
-          clearInterval(this.volumeTimer);
-          this.volumeTimer = null;
-          this.isVolumeFading = false;
-        }
-        audio.volume = this.volume;
-      }, 20);
-    },
+    // 动态步长：差值越大，变化越快
+    const step = Math.abs(diff) > 0.1 ? 0.05 : 0.02;
+    this.volume += diff > 0 ? step : -step;
+    audio.volume = this.volume;
+  }, 20);
+},
 
     // 加载用户播放列表数据【对接后端GET接口】
     async getUserPlaylistData() {
@@ -734,23 +818,30 @@ if (!albumId) {
     },
 
     // 获取专辑音频信息 - 核心优化：增加return Promise，确保自动播放时机准确
-    async getAlbumAudioInfo() {
-      try {
-        const res = await this.$axios.get(`/api/album/pool/audio/info/${this.album.source_pool_id}`)
-        if (res.data.code === 200 && res.data.data.mp3_url) {
-          this.audioSrc = res.data.data.mp3_url
-          this.fileName = res.data.data.mp3_name
-          this.duration = res.data.data.mp3_duration
-          this.durationFormat = res.data.data.duration_format
-          this.oldMp3Url = res.data.data.mp3_url
-          console.log('⚠️ 跳过真实专辑ID赋值，保留歌单下标：', this.currentAlbumId);
-        }
-        return Promise.resolve();
-      } catch (err) {
-        this.oldMp3Url = ''
-        return Promise.reject(err);
-      }
-    },
+// 在音频加载成功后初始化音量
+async getAlbumAudioInfo() {
+  try {
+    const res = await this.$axios.get(`/api/album/pool/audio/info/${this.album.source_pool_id}`)
+    if (res.data.code === 200 && res.data.data.mp3_url) {
+      this.audioSrc = res.data.data.mp3_url
+      this.fileName = res.data.data.mp3_name
+      this.duration = res.data.data.mp3_duration
+      this.durationFormat = res.data.data.duration_format
+      this.oldMp3Url = res.data.data.mp3_url
+
+      // ✅ 初始化音量相关状态
+      this.volume = 0.3;
+      this.originVolume = 0.3;
+      this.pausedVolume = 0.3;
+
+      console.log('⚠️ 跳过真实专辑ID赋值，保留歌单下标：', this.currentAlbumId);
+    }
+    return Promise.resolve();
+  } catch (err) {
+    this.oldMp3Url = ''
+    return Promise.reject(err);
+  }
+},
     // 获取用户有音频的专辑列表
     async getUserHasAudioAlbums() {
       try {
@@ -873,33 +964,57 @@ if (!albumId) {
       this.currentProgress = 0;
     },
 
-    // 终极修复版 - 播放暂停切换 【彻底解决暂停进度条归零 + 平滑淡出】
-    togglePlayPause() {
-      const audio = this.$refs.audioRef;
-      if (!audio || !this.audioSrc) {
-        this.$message?.info('暂无音频资源，无法播放');
-        return;
-      }
-      if (this.isPlaying) {
-        this.fadeOutVolume(() => {
-          const realCurrentTime = audio.currentTime || 0;
-          const realProgress = this.duration && this.duration > 0 ? (realCurrentTime / this.duration) * 100 : 0;
-          this.currentTime = Math.max(0, realCurrentTime);
-          this.currentProgress = Math.max(0, realProgress);
-          this.$forceUpdate();
-          this.pauseListeningTimer();
-        });
-      } else {
-        this.resetVolume();
-        audio.play().then(() => {
-          this.isPlaying = true;
-          this.startListeningTimer();
-        }).catch(() => {
-          this.isPlaying = false;
-          this.$message?.warning('📢 播放失败，请检查音频资源是否有效～');
-        });
-      }
-    },
+togglePlayPause() {
+  console.log('【点击瞬间】isPlaying:', this.isPlaying,
+        '  volume:', this.volume,
+        '  originVolume:', this.originVolume,
+        '  pausedVolume:', this.pausedVolume);
+
+  const audio = this.$refs.audioRef;
+  if (!audio || !this.audioSrc) {
+    this.$message?.info('暂无音频资源，无法播放');
+    return;
+  }
+
+  if (this.isPlaying) {
+    // 暂停操作
+    this.isPaused = true;
+    console.log('【开始暂停】保存当前音量:', this.volume);
+
+    this.fadeOutVolume(() => {
+      // 确保时间进度正确
+      const realCurrentTime = audio.currentTime || 0;
+      const realProgress = this.duration && this.duration > 0 ? (realCurrentTime / this.duration) * 100 : 0;
+      this.currentTime = Math.max(0, realCurrentTime);
+      this.currentProgress = Math.max(0, realProgress);
+      this.$forceUpdate();
+      this.pauseListeningTimer();
+    });
+  } else {
+    // 播放操作
+    this.isPaused = false;
+
+    console.log('【开始播放】使用pausedVolume:', this.pausedVolume);
+
+    // 确保有有效的音量值
+    if (this.pausedVolume === null || this.pausedVolume === undefined) {
+      this.pausedVolume = this.originVolume || 0.3;
+    }
+
+    this.resetVolume();
+    audio.play().then(() => {
+      this.isPlaying = true;
+      this.startListeningTimer();
+      // 强制同步一次音量，确保生效
+      audio.volume = this.volume;
+      console.log('【播放成功】当前音量:', this.volume);
+    }).catch((err) => {
+      this.isPlaying = false;
+      console.error('播放失败:', err);
+      this.$message?.warning('📢 播放失败，请检查音频资源是否有效～');
+    });
+  }
+},
 
     // 新增：调用后端 开始播放计时API
     async startListeningTimer() {
@@ -1272,7 +1387,7 @@ if (!albumId) {
               } else {
                 alert(res.data.msg);
                 // ======== 【修改点2/4】替换跳转逻辑 ========
-                this.$router.push({ path: '/webhome' }).then(() => {
+                this.$router.push({path: '/webhome'}).then(() => {
                   const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
                   if (webHomeVm) {
                     webHomeVm.activeMainTab = 'mymusic'
@@ -1285,7 +1400,7 @@ if (!albumId) {
               console.error('获取详情失败：');
               alert('获取专辑详情失败！');
               // ======== 【修改点3/4】替换跳转逻辑 ========
-              this.$router.push({ path: '/webhome' }).then(() => {
+              this.$router.push({path: '/webhome'}).then(() => {
                 const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
                 if (webHomeVm) {
                   webHomeVm.activeMainTab = 'mymusic'
@@ -1361,7 +1476,6 @@ if (!albumId) {
       })
           .then((res) => {
             if (res.data.code === 200) {
-              alert('听后感添加成功！');
               this.getAlbumDetail(this.album.id);
               console.log(calculateAlbumTotalScore(scoreList))
               console.log(this.album)
@@ -1464,15 +1578,18 @@ if (!albumId) {
       this.existingCommentId = null;
       this.albumPoolId = '';
       this.albumLoading = true;
+      // 重置音量相关状态
+      this.isPaused = false;
+      this.pausedVolume = null;
     },
     // ======== 【修改点4/4】核心修改：返回按钮的跳转逻辑 ========
-goBack() {
-  console.log(111)
-  // 核心：定义一个Vue全局变量，存要切换的tab值
-  window.targetTab = 'mymusic'
-  // 正常跳转/webhome即可，不用加任何meta
-  this.$router.push({ path: '/webhome' })
-},
+    goBack() {
+      console.log(111)
+      // 核心：定义一个Vue全局变量，存要切换的tab值
+      window.targetTab = 'mymusic'
+      // 正常跳转/webhome即可，不用加任何meta
+      this.$router.push({path: '/webhome'})
+    },
 
     getPublicComments() {
       if (!this.albumPoolId) return;
@@ -1881,7 +1998,6 @@ h4 {
 }
 
 .no-cover .album-rotate-circle {
-  background: #f3f4f6;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1889,9 +2005,11 @@ h4 {
 
 .no-resource-text {
   font-size: 12px;
-  color: #6b7280;
+  color: #fff;
+  font-weight: 500;
   text-align: center;
   padding: 0 10px;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.2);
 }
 
 .player-right-box {
@@ -1962,7 +2080,7 @@ h4 {
   bottom: 18px;
   right: 0;
   background: #fff;
-	padding: 6px;
+  padding: 6px;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -2064,7 +2182,7 @@ h4 {
   top: 0;
   right: 0;
   width: 360px;
-	height: 100vh;
+  height: 100vh;
   background: white;
   z-index: 999;
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
@@ -2115,13 +2233,13 @@ h4 {
 }
 
 .file-input {
-  position:absolute;
-  top:0;
-  left:0;
-  width:100%;
-  height:100%;
-  opacity:0;
-  cursor:pointer;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .upload-tips {
@@ -2135,17 +2253,17 @@ h4 {
 }
 
 .file-name {
-  font-size:14px;
-  color:#333;
-  margin-bottom:10px;
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 10px;
   word-break: break-all;
 }
 
 .upload-status {
-  font-size:14px;
-  padding:8px;
-  border-radius:4px;
-  text-align:center;
+  font-size: 14px;
+  padding: 8px;
+  border-radius: 4px;
+  text-align: center;
 }
 
 .upload-status.success {
@@ -2160,12 +2278,12 @@ h4 {
 
 .mask {
   position: fixed;
-  top:0;
-  left:0;
-  right:0;
-  bottom:0;
-  background: rgba(0,0,0,0.3);
-  z-index:998;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 998;
 }
 
 /* ✅✅✅ 核心修改：小球动画容器层级提升，和Album_TrackList同层，置顶不被遮挡 */
@@ -2183,5 +2301,3 @@ h4 {
   pointer-events: none !important;
 }
 </style>
-
-

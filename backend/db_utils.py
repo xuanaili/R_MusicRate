@@ -304,8 +304,32 @@ def create_user_playlist_table():
         print(f"❌ 创建user_playlist表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
-
-
+def create_user_recommend():
+    """创建用户推荐数据表，用于每日推荐"""
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+        
+CREATE TABLE IF NOT EXISTS `user_recommend` (
+  `id` INT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` INT NOT NULL COMMENT '用户ID，关联users表user_id',
+  `recommend_daily_id` INT NOT NULL COMMENT '今日推荐专辑ID，关联album_pool表id',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_user` (`user_id`) COMMENT '一个用户只存一条今日推荐数据',
+  KEY `fk_recommend_album` (`recommend_daily_id`),
+  CONSTRAINT `fk_recommend_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_recommend_album` FOREIGN KEY (`recommend_daily_id`) REFERENCES `album_pool` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户每日推荐专辑表';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ user_recommend 用户播放列表表 创建/检查成功！")
+    except Exception as e:
+        print(f"❌ 创建user_recommend表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
 # ========== 核心：初始化所有基础表 【✅已整合所有修复+无报错✅】 ==========
 def init_base_tables():
     """初始化基础表（album_pool/album_pool_history 同步修复my_score字段类型，删除默认值，解决1101错误）"""
@@ -520,6 +544,9 @@ def init_base_tables():
         # 初始化其他关联表
         create_user_album_intro_table()
         create_user_playlist_table()
+
+        create_user_recommend()
+
 
         print("✅ MySQL基础表初始化成功！彻底解决 1265截断错误 + 1101默认值错误，所有功能正常！")
         init_default_admin()
