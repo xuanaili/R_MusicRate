@@ -54,7 +54,10 @@ const router = new VueRouter({
       name: 'EditPoolAlbum',
       component: EditPoolAlbum,
       meta: { requiresAuth: true }
-    }
+    },
+    // ========== 新增WebHome主页路由【核心】 ==========
+    { path: '/webhome', name: 'WebHome', component: () => import('@/views/WebHome.vue') }
+
   ]
 })
 

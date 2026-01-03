@@ -1,10 +1,6 @@
 <template>
   <div class="container">
-    <h1>我的专辑列表（{{ username }}）</h1>
     <div class="header-actions">
-      <button @click="goToAlbumPool" class="add-btn">添加新专辑</button>
-      <button @click="logout">退出登录</button>
-
       <!-- 排序功能 + 每页条数 这一排保持不变 -->
       <div class="sort-container">
         <label>排序方式：</label>

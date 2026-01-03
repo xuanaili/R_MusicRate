@@ -281,9 +281,10 @@ export default {
     goEditAlbum() {
       this.$router.push(`/album/pool/edit/${this.$route.params.poolId}`);
     },
-    goBack() {
-      this.$router.push('/album-pool');
-    }
+goBack() {
+  window.targetTab = 'searchmusic'          // ① 告诉 WebHome 要去搜索音乐
+  this.$router.push({ path: '/webhome' })   // ② 先跳过去
+}
   }
 };
 </script>

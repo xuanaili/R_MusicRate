@@ -363,7 +363,7 @@ def register_album_pool_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"搜索失败：{str(e)}", "data": {}}), 200
 
-    # ✅✅✅ 拆分接口2：【标签 专属搜索】- 新增排序功能+保留分页
+    # ✅✅✅ 拆分接口2：【标签 专属搜索】- 修复分页逻辑+排序功能+精准统计总数
     @app.route('/api/album/pool/search/tags', methods=['GET', 'OPTIONS'])
     @login_required
     def search_album_pool_by_tags():
@@ -374,7 +374,6 @@ def register_album_pool_routes(app):
             tag_keyword_lower = tag_keyword.lower()
             page = int(request.args.get('page', DEFAULT_PAGE))
             page_size = int(request.args.get('page_size', DEFAULT_PAGE_SIZE))
-            # ✅ 新增：接收排序参数
             sort_field = request.args.get('sort_field', 'create_time')
             sort_order = request.args.get('sort_order', 'desc')
 
@@ -394,7 +393,7 @@ def register_album_pool_routes(app):
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # ✅ 核心修改：拼接排序SQL，标签搜索先排序再过滤，体验更佳
+            # ✅ 修复核心1：先查询所有专辑，获取全量数据
             order_by_sql = get_order_by_sql(sort_field, sort_order)
             query = f"""
                 SELECT ap.*, u.username as create_user_name 
@@ -403,55 +402,55 @@ def register_album_pool_routes(app):
                 {order_by_sql}
             """
             cursor.execute(query)
-            album_list = cursor.fetchall()
-            total = len(album_list)
+            all_album_list = cursor.fetchall()
 
-            # 分页切片处理
-            offset = (page - 1) * page_size
-            album_list = album_list[offset:offset + page_size]
-
-            # 最终返回的结果集
-            result_list = []
-            # 遍历每一条专辑数据，纯标签匹配逻辑
-            for album in album_list:
-                create_user_name = album.get('create_user_name') or "未知用户"
-                # 第一步：为当前专辑，计算出【前端展示的完整聚合标签】
+            # ✅ 修复核心2：先过滤标签匹配的专辑，再分页，总数是真实匹配数
+            match_album_list = []
+            for album in all_album_list:
                 album_tag_stats = get_album_tag_stats(album['id'], cursor)
-                # 提取聚合标签的纯文本列表（转小写去重）
                 album_all_tags = [item['tag'].lower() for item in album_tag_stats]
-                # 提取专辑原始标签的纯文本列表（兼容数据库里的JSON原始标签）
                 album_origin_tags = safe_json_loads(album.get('tags')) or []
                 album_origin_tags = [tag.lower().strip() for tag in album_origin_tags if tag and tag.strip()]
-                # 合并：原始标签+聚合标签 = 所有可能的标签，去重
                 all_match_tags = list(set(album_all_tags + album_origin_tags))
 
-                # 核心判断【标签关键词是否匹配】精准匹配+包含匹配
                 tag_match = False
                 if tag_keyword_lower:
                     tag_match = tag_keyword_lower in all_match_tags or any(
                         [tag_keyword_lower in tag for tag in all_match_tags])
-
-                # 符合标签匹配条件的专辑，才加入最终结果集
                 if tag_match:
-                    result_list.append({
-                        "id": album['id'],
-                        "album_name": album['album_name'],
-                        "cover_img": album['cover_img'],
-                        "singer": album['singer'],
-                        "release_year": album['release_year'],
-                        "main_type": safe_json_loads(album.get('main_type')) or [],
-                        "tags": safe_json_loads(album.get('tags')) or [],
-                        "tracks": safe_json_loads(album.get('tracks')) or [],
-                        "album_intro": album.get('album_intro', '') or '',
-                        "duration_type": album.get('duration_type', 'LP') or 'LP',
-                        "my_score": album['my_score'],
-                        "create_user": album['create_user'],
-                        "create_user_name": create_user_name,
-                        "create_time": album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album.get(
-                            'create_time') else '',
-                        "tag_statistics": album_tag_stats,  # 前端展示的标签，原样返回
-                    })
+                    match_album_list.append(album)
 
+            # ✅ 真实总数 = 匹配标签的专辑数
+            total = len(match_album_list)
+            offset = (page - 1) * page_size
+            # ✅ 对匹配后的列表做分页切片
+            paginated_albums = match_album_list[offset:offset + page_size]
+
+            # 组装返回结果
+            result_list = []
+            for album in paginated_albums:
+                create_user_name = album.get('create_user_name') or "未知用户"
+                album_tag_stats = get_album_tag_stats(album['id'], cursor)
+                result_list.append({
+                    "id": album['id'],
+                    "album_name": album['album_name'],
+                    "cover_img": album['cover_img'],
+                    "singer": album['singer'],
+                    "release_year": album['release_year'],
+                    "main_type": safe_json_loads(album.get('main_type')) or [],
+                    "tags": safe_json_loads(album.get('tags')) or [],
+                    "tracks": safe_json_loads(album.get('tracks')) or [],
+                    "album_intro": album.get('album_intro', '') or '',
+                    "duration_type": album.get('duration_type', 'LP') or 'LP',
+                    "my_score": album['my_score'],
+                    "create_user": album['create_user'],
+                    "create_user_name": create_user_name,
+                    "create_time": album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album.get(
+                        'create_time') else '',
+                    "tag_statistics": album_tag_stats,
+                })
+
+            # ✅ 真实的分页数据
             total_pages = (total + page_size - 1) // page_size
             pagination = {
                 "total": total,
@@ -461,7 +460,6 @@ def register_album_pool_routes(app):
             }
 
             cursor.close()
-
             return jsonify({
                 "code": 200,
                 "msg": "按标签搜索专辑池成功",

@@ -66,7 +66,7 @@ export default {
             // 存一下用户id
             localStorage.setItem("user_id", res.data.data.user_id.toString());
             // 跳转到音乐评分页面
-            this.$router.push("/albumDetail");
+            this.$router.push("/webhome");
           } else {
             // 后端返回非200的业务错误（如参数错误）
             this.errorMsg = res.data?.msg || "登录失败，请重试！";

@@ -424,12 +424,19 @@ export default {
     this.currentUserId = localStorage.getItem('user_id');
     this.isAdmin = localStorage.getItem('is_admin') === '1';
 
-    const albumId = this.$route.params.id || this.$route.query.id;
-    if (!albumId) {
-      alert('未找到专辑ID！');
-      this.$router.push('/albumDetail');
-      return;
+const albumId = this.$route.params.id || this.$route.query.id;
+if (!albumId) {
+  alert('未找到专辑ID！');
+  // 核心修改：跳转WebHome主页 + 强制激活【我的音乐】Tab
+  this.$router.push({ path: '/webhome' }).then(() => {
+    // 跳转后主动修改WebHome的Tab激活状态为我的音乐
+    const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
+    if (webHomeVm) {
+      webHomeVm.activeMainTab = 'mymusic'
     }
+  })
+  return;
+}
 
     await this.getUserPlaylistData();
     await this.getAlbumDetail(Number(albumId));
@@ -1264,14 +1271,26 @@ export default {
                 resolve();
               } else {
                 alert(res.data.msg);
-                this.$router.push('/albumDetail');
+                // ======== 【修改点2/4】替换跳转逻辑 ========
+                this.$router.push({ path: '/webhome' }).then(() => {
+                  const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
+                  if (webHomeVm) {
+                    webHomeVm.activeMainTab = 'mymusic'
+                  }
+                })
                 reject(res.data.msg);
               }
             })
             .catch(() => {
               console.error('获取详情失败：');
               alert('获取专辑详情失败！');
-              this.$router.push('/albumDetail');
+              // ======== 【修改点3/4】替换跳转逻辑 ========
+              this.$router.push({ path: '/webhome' }).then(() => {
+                const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
+                if (webHomeVm) {
+                  webHomeVm.activeMainTab = 'mymusic'
+                }
+              })
               reject();
             })
             .finally(() => {
@@ -1446,10 +1465,14 @@ export default {
       this.albumPoolId = '';
       this.albumLoading = true;
     },
-
-    goBack() {
-      this.$router.push('/albumDetail');
-    },
+    // ======== 【修改点4/4】核心修改：返回按钮的跳转逻辑 ========
+goBack() {
+  console.log(111)
+  // 核心：定义一个Vue全局变量，存要切换的tab值
+  window.targetTab = 'mymusic'
+  // 正常跳转/webhome即可，不用加任何meta
+  this.$router.push({ path: '/webhome' })
+},
 
     getPublicComments() {
       if (!this.albumPoolId) return;
@@ -1939,7 +1962,7 @@ h4 {
   bottom: 18px;
   right: 0;
   background: #fff;
-  padding: 6px;
+	padding: 6px;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -2041,7 +2064,7 @@ h4 {
   top: 0;
   right: 0;
   width: 360px;
-  height: 100vh;
+	height: 100vh;
   background: white;
   z-index: 999;
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
@@ -2092,13 +2115,13 @@ h4 {
 }
 
 .file-input {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
+  position:absolute;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  opacity:0;
+  cursor:pointer;
 }
 
 .upload-tips {
@@ -2112,17 +2135,17 @@ h4 {
 }
 
 .file-name {
-  font-size: 14px;
-  color: #333;
-  margin-bottom: 10px;
+  font-size:14px;
+  color:#333;
+  margin-bottom:10px;
   word-break: break-all;
 }
 
 .upload-status {
-  font-size: 14px;
-  padding: 8px;
-  border-radius: 4px;
-  text-align: center;
+  font-size:14px;
+  padding:8px;
+  border-radius:4px;
+  text-align:center;
 }
 
 .upload-status.success {
@@ -2137,12 +2160,12 @@ h4 {
 
 .mask {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.3);
-  z-index: 998;
+  top:0;
+  left:0;
+  right:0;
+  bottom:0;
+  background: rgba(0,0,0,0.3);
+  z-index:998;
 }
 
 /* ✅✅✅ 核心修改：小球动画容器层级提升，和Album_TrackList同层，置顶不被遮挡 */
@@ -2160,3 +2183,5 @@ h4 {
   pointer-events: none !important;
 }
 </style>
+
+
