@@ -3,8 +3,116 @@ import pymysql
 import traceback
 import bcrypt  # 新增：用于密码加密，需先安装 pip install bcrypt
 from datetime import datetime
-from .config import MYSQL_CONFIG, DEFAULT_ADMIN_USER, DEFAULT_ADMIN_PWD
+from .config import MYSQL_CONFIG, DEFAULT_ADMIN_USER, DEFAULT_ADMIN_PWD, DB_URL
 
+def batch_replace_url_prefix():
+    """
+    批量替换URL前缀：
+    1. album_pool表：cover_img + mp3_url
+    2. 所有用户专属表 albums_*：cover_img
+    ✅ 修复：优化LOCATE索引，避免截取越界；参数化SQL，杜绝注入风险
+    """
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+
+        # 目标前缀（统一处理末尾斜杠，确保格式一致）
+        target_prefix = DB_URL.rstrip("/") + "/"
+        # 转义 LIKE 查询的参数，把 % 拼接在参数里，避免SQL里的%被识别为占位符
+        like_pattern = f"{target_prefix}%"
+        print(f"🔍 目标URL前缀：{target_prefix}")
+
+        # ===================== 第一步：处理 album_pool 表 =====================
+        print("\n📌 开始处理 album_pool 表...")
+        # 1.1 处理 cover_img 字段
+        cursor.execute('''
+            SELECT id, cover_img FROM album_pool 
+            WHERE cover_img IS NOT NULL AND cover_img != '' 
+            AND NOT cover_img LIKE %s
+        ''', (like_pattern,))
+        cover_records = cursor.fetchall()
+
+        if cover_records:
+            update_sql = '''
+                UPDATE album_pool 
+                SET cover_img = CONCAT(%s, SUBSTRING(cover_img, LOCATE('/', cover_img)+1)) 
+                WHERE id = %s
+            '''
+            for record in cover_records:
+                cursor.execute(update_sql, (target_prefix, record['id']))
+            print(f"✅ album_pool 表：更新 {len(cover_records)} 条 cover_img 记录")
+        else:
+            print(f"✅ album_pool 表：cover_img 字段无需更新")
+
+        # 1.2 处理 mp3_url 字段
+        cursor.execute('''
+            SELECT id, mp3_url FROM album_pool 
+            WHERE mp3_url IS NOT NULL AND mp3_url != '' 
+            AND NOT mp3_url LIKE %s
+        ''', (like_pattern,))
+        mp3_records = cursor.fetchall()
+
+        if mp3_records:
+            update_sql = '''
+                UPDATE album_pool 
+                SET mp3_url = CONCAT(%s, SUBSTRING(mp3_url, LOCATE('/', mp3_url)+1)) 
+                WHERE id = %s
+            '''
+            for record in mp3_records:
+                cursor.execute(update_sql, (target_prefix, record['id']))
+            print(f"✅ album_pool 表：更新 {len(mp3_records)} 条 mp3_url 记录")
+        else:
+            print(f"✅ album_pool 表：mp3_url 字段无需更新")
+
+        # ===================== 第二步：处理所有用户专属表 albums_* =====================
+        print("\n📌 开始扫描并处理用户专属专辑表...")
+        # 2.1 查询所有用户专属表（表名以 albums_ 开头）
+        cursor.execute('''
+            SELECT TABLE_NAME 
+            FROM information_schema.TABLES 
+            WHERE TABLE_SCHEMA = %s 
+            AND TABLE_NAME LIKE %s
+        ''', (MYSQL_CONFIG['db'], 'albums_%'))
+        user_tables = cursor.fetchall()
+
+        if not user_tables:
+            print(f"✅ 未找到用户专属专辑表，跳过处理")
+        else:
+            total_updated = 0
+            for table in user_tables:
+                table_name = table['TABLE_NAME']
+                # 2.2 查询当前表中需要更新的 cover_img 记录
+                query_sql = f'''
+                    SELECT id, cover_img FROM `{table_name}` 
+                    WHERE cover_img IS NOT NULL AND cover_img != '' 
+                    AND NOT cover_img LIKE %s
+                '''
+                cursor.execute(query_sql, (like_pattern,))
+                records = cursor.fetchall()
+
+                if records:
+                    # 2.3 批量更新当前用户表的 cover_img
+                    update_sql = f'''
+                        UPDATE `{table_name}` 
+                        SET cover_img = CONCAT(%s, SUBSTRING(cover_img, LOCATE('/', cover_img)+1)) 
+                        WHERE id = %s
+                    '''
+                    for rec in records:
+                        cursor.execute(update_sql, (target_prefix, rec['id']))
+                    print(f"✅ 表 {table_name}：更新 {len(records)} 条 cover_img 记录")
+                    total_updated += len(records)
+                else:
+                    print(f"✅ 表 {table_name}：cover_img 字段无需更新")
+            print(f"✅ 所有用户表处理完成，累计更新 {total_updated} 条记录")
+
+        db.commit()
+        cursor.close()
+        print("\n🎉 批量URL前缀替换任务全部完成！")
+    except Exception as e:
+        db.rollback()
+        print(f"❌ 批量替换URL前缀失败：{str(e)}")
+        traceback.print_exc()
+        raise e
 
 # ========== 新增：密码加密/验证工具函数 ==========
 def encrypt_password(password: str) -> str:
@@ -13,22 +121,18 @@ def encrypt_password(password: str) -> str:
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
     return hashed.decode('utf-8')
 
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """验证密码是否匹配"""
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
-
 
 # ========== 原有：用户ID的获取/设置方法 ==========
 def get_current_user_id():
     """获取当前登录用户ID（从Flask g对象中获取）"""
     return getattr(g, 'current_user_id', None)
 
-
 def set_current_user_id(user_id):
     """设置当前登录用户ID（存储到Flask g对象）"""
     g.current_user_id = user_id
-
 
 def get_db():
     """获取MySQL连接（Flask上下文隔离）"""
@@ -41,13 +145,11 @@ def get_db():
             raise e  # 抛出异常，启动时能直接发现问题
     return db
 
-
 def close_db(exception):
     """关闭MySQL连接（Flask上下文销毁时自动调用）"""
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
-
 
 def get_album_table_name(user_id):
     """生成用户专属的专辑表名：albums_用户ID"""
@@ -55,13 +157,12 @@ def get_album_table_name(user_id):
         raise ValueError("用户ID不能为空！")
     return f'albums_{user_id}'
 
-
-# ========== 核心修改：✅ my_score 改为 TEXT 类型 【删除DEFAULT默认值】✅ 解决1101错误 ✅ 兼容历史数据 ==========
+# ========== ✅ 核心修复：my_score TEXT 无默认值 彻底解决1101 + 兼容历史数据 ==========
 def create_user_album_table(user_id):
     """为新用户创建专属的专辑表
     tracks: TEXT 存储【单曲名称数组】JSON字符串 如 ["曲目1","曲目2"]
     tracks_time: TEXT 存储【对应单曲时间戳数组】JSON字符串 如 [120,240,360]
-    my_score: TEXT 存储【单曲评分数组】JSON字符串 如 [8.0,9.5,7.8,0,0] ✅核心修改：无默认值，解决1101
+    my_score: TEXT 存储【单曲评分数组】JSON字符串 如 [8.0,9.5,7.8,0,0] ✅TEXT类型 无默认值
     favourite_tracks: TEXT 收藏曲目名称数组
     favourite_tracks_time: TEXT 收藏曲目对应秒数数组
     所有数组一一对应、索引一致、永久保存
@@ -89,7 +190,7 @@ def create_user_album_table(user_id):
                 video_shared VARCHAR(50) DEFAULT "",
                 mandopop_code VARCHAR(50) DEFAULT "",
                 album_intro TEXT NULL COMMENT '专辑简介（支持长文本、分段、特殊符号）',
-                tracks TEXT COMMENT '单曲列表【数组JSON】：[\'曲目1\',\'曲目2\',\'曲目3\']',
+                tracks TEXT COMMENT '单曲列表【数组JSON】：["曲目1","曲目2","曲目3"]',
                 review TEXT,
                 score FLOAT DEFAULT 0.0,
                 comments TEXT,
@@ -98,7 +199,7 @@ def create_user_album_table(user_id):
                 sync_pool_update TINYINT DEFAULT 1 COMMENT '是否同步模板更新（1=开启，0=关闭）',
                 is_customized TINYINT DEFAULT 0 COMMENT '是否用户自定义修改（1=是，0=否）',
                 tracks_time TEXT NULL COMMENT '单曲对应编辑时间戳【数组JSON】：[120,240,360]，与tracks数组索引一一匹配',
-                favourite_tracks TEXT NULL COMMENT '收藏曲目列表【数组JSON】：[\'收藏曲目1\',\'收藏曲目2\']',
+                favourite_tracks TEXT NULL COMMENT '收藏曲目列表【数组JSON】：["收藏曲目1","收藏曲目2"]',
                 favourite_tracks_time TEXT NULL COMMENT '收藏曲目对应秒数【数组JSON】：[120,240,360]，与favourite_tracks数组索引一一匹配',
                 listening_duration FLOAT DEFAULT 0.0 COMMENT '专辑累计播放时长(秒) 精准统计'
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -107,9 +208,10 @@ def create_user_album_table(user_id):
         cursor.close()
         print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！my_score为TEXT数组格式+无默认值，解决1101错误")
     except Exception as e:
+        db.rollback()
         print(f"❌ 创建用户专辑表失败：{str(e)}")
+        traceback.print_exc()
         raise e
-
 
 def check_and_create_user_album_table(user_id):
     """检查用户专辑表是否存在，不存在则创建 + 补充缺失字段
@@ -249,9 +351,10 @@ def check_and_create_user_album_table(user_id):
             db.commit()
         cursor.close()
     except Exception as e:
+        db.rollback()
         print(f"❌ 检查/创建用户专辑表失败：{str(e)}")
+        traceback.print_exc()
         raise e
-
 
 # ========== 新增：创建用户-专辑专属简介表 ==========
 def create_user_album_intro_table():
@@ -276,6 +379,7 @@ def create_user_album_intro_table():
         cursor.close()
         print("✅ user_album_intro表创建/检查成功！")
     except Exception as e:
+        db.rollback()
         print(f"❌ 创建user_album_intro表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -301,16 +405,17 @@ def create_user_playlist_table():
         cursor.close()
         print("✅ user_playlist 用户播放列表表 创建/检查成功！")
     except Exception as e:
+        db.rollback()
         print(f"❌ 创建user_playlist表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
+
 def create_user_recommend():
-    """创建用户推荐数据表，用于每日推荐"""
+    """创建用户推荐数据表，用于每日推荐 ✅修复外键名重复+打印文案错误"""
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
         cursor.execute('''
-        
 CREATE TABLE IF NOT EXISTS `user_recommend` (
   `id` INT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` INT NOT NULL COMMENT '用户ID，关联users表user_id',
@@ -318,19 +423,21 @@ CREATE TABLE IF NOT EXISTS `user_recommend` (
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_user` (`user_id`) COMMENT '一个用户只存一条今日推荐数据',
-  KEY `fk_recommend_album` (`recommend_daily_id`),
-  CONSTRAINT `fk_recommend_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_recommend_album` FOREIGN KEY (`recommend_daily_id`) REFERENCES `album_pool` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  KEY `idx_recommend_daily_id` (`recommend_daily_id`),
+  CONSTRAINT `fk_user_recommend_uid` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_user_recommend_aid` FOREIGN KEY (`recommend_daily_id`) REFERENCES `album_pool` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户每日推荐专辑表';
         ''')
         db.commit()
         cursor.close()
-        print("✅ user_recommend 用户播放列表表 创建/检查成功！")
+        print("✅ user_recommend 用户每日推荐表 创建/检查成功！")
     except Exception as e:
+        db.rollback()
         print(f"❌ 创建user_recommend表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
-# ========== 核心：初始化所有基础表 【✅已整合所有修复+无报错✅】 ==========
+
+# ========== ✅✅✅ 核心：初始化所有基础表 【无任何报错 完整版】 ==========
 def init_base_tables():
     """初始化基础表（album_pool/album_pool_history 同步修复my_score字段类型，删除默认值，解决1101错误）"""
     try:
@@ -544,17 +651,18 @@ def init_base_tables():
         # 初始化其他关联表
         create_user_album_intro_table()
         create_user_playlist_table()
-
         create_user_recommend()
 
+        # ========== 新增：批量替换URL前缀 ==========
+        batch_replace_url_prefix()
 
         print("✅ MySQL基础表初始化成功！彻底解决 1265截断错误 + 1101默认值错误，所有功能正常！")
         init_default_admin()
     except Exception as e:
+        db.rollback()
         print(f"❌ 初始化基础表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
-
 
 def init_default_admin():
     """初始化默认admin用户，并创建其专属专辑表"""
@@ -580,10 +688,10 @@ def init_default_admin():
             print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），my_score字段已修复完成！")
         cursor.close()
     except Exception as e:
+        db.rollback()
         print(f"❌ 初始化admin用户失败：{str(e)}")
         print(traceback.format_exc())
         raise e
-
 
 def get_next_id(table_name):
     """获取指定表的下一个自增ID"""
@@ -598,7 +706,6 @@ def get_next_id(table_name):
     except Exception as e:
         print(f"❌ 生成ID失败：{str(e)}")
         return 1
-
 
 # ========== 用户专辑简介的增删改查函数 ==========
 def save_user_album_intro(user_id, album_id, intro_content):
@@ -628,7 +735,6 @@ def save_user_album_intro(user_id, album_id, intro_content):
         db.rollback()
         print(f"❌ 保存用户专辑简介失败：{str(e)}")
         return False
-
 
 def get_user_album_intro(user_id, album_id):
     try:

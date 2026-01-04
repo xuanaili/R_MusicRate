@@ -20,7 +20,7 @@ def register_album_routes(app):
         return get_album_list()
 
     # 2. 获取专辑列表 ✅核心修改：新增独立的类型搜索参数 tag_keyword
-    @app.route('/api/music', methods=['GET', 'OPTIONS'])
+    @app.route('/api/album/list', methods=['GET', 'OPTIONS'])
     @login_required
     def get_album_list():
         try:
@@ -37,6 +37,8 @@ def register_album_routes(app):
             # ✅ 新增：独立的类型搜索关键词 → 只搜【tags标签数组】
             tag_keyword = request.args.get('tag_keyword', '').strip()
 
+            # ✅ ✅ ✅ 核心修改：放行 listening_duration 为合法排序字段
+            VALID_SORT_FIELDS = ['album_name', 'release_year', 'singer', 'my_score', 'created_at', 'listening_duration']
             if sort_by not in VALID_SORT_FIELDS:
                 sort_by = 'album_name'
             if sort_order not in ['asc', 'desc']:

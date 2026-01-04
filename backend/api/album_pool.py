@@ -843,7 +843,7 @@ def register_album_pool_routes(app):
             singer = pool_album['singer'].strip()
             release_year = pool_album['release_year']
 
-            # 校验1：当前用户【私有库】是否已存在 → 专辑名+歌手+发行年份 重复
+            # 校验1：当前用户【私有库】是否已存在 → 专辑名+歌手+发行年份 重复 【重中之重，核心返回重复ID】
             cursor.execute(f'''
                 SELECT id FROM `{table_name}` 
                 WHERE TRIM(album_name) = %s AND TRIM(singer) = %s AND release_year = %s
@@ -851,10 +851,11 @@ def register_album_pool_routes(app):
             duplicate_private_album = cursor.fetchone()
             if duplicate_private_album:
                 cursor.close()
+                # ✅✅✅ 【核心修改】返回的 data 直接是 重复专辑的ID值，不是对象，前端直接取值即可
                 return jsonify({
                     "code": 409,
-                    "msg": f"✅ 你的私有专辑列表中已存在【{album_name} - {singer} ({release_year})】，无需重复复制！",
-                    "data": {"duplicate_album_id": duplicate_private_album['id']}
+                    "msg": f"已存在",
+                    "data": duplicate_private_album['id']
                 }), 200
 
             # 校验2：公共专辑池是否重复（兜底校验）
@@ -867,11 +868,11 @@ def register_album_pool_routes(app):
                 cursor.close()
                 return jsonify({
                     "code": 409,
-                    "msg": f"✅ 公共专辑搜索池中已存在相同专辑【{album_name} - {singer} ({release_year})】，请勿重复添加！",
-                    "data": {"duplicate_pool_id": duplicate_pool_album['id']}
+                    "msg": f"公共专辑搜索池中已存在相同专辑【{album_name} - {singer} ({release_year})】，请勿重复添加！",
+                    "data": duplicate_pool_album['id']
                 }), 200
 
-            # ===== ✅✅✅ 【新增修复1】处理 tracks 曲目名称 + tracks_time 曲目时长 字段 =====
+            # ===== ✅✅✅ 【原有修复保留】处理 tracks 曲目名称 + tracks_time 曲目时长 字段 =====
             pool_tracks = safe_json_loads(pool_album.get('tracks')) or []
             pool_tracks = [track.strip() for track in pool_tracks if track and track.strip()]
             tracks_json = json.dumps(pool_tracks) if pool_tracks else json.dumps([])
@@ -881,7 +882,7 @@ def register_album_pool_routes(app):
             pool_tracks_time = [int(sec) for sec in pool_tracks_time if isinstance(sec, (int, float)) and sec >= 0]
             tracks_time_json = json.dumps(pool_tracks_time) if pool_tracks_time else json.dumps([])
 
-            # ===== ✅✅✅ 【新增修复2】组装数据时，添加 tracks_time 键值对 =====
+            # ===== ✅✅✅ 【原有修复保留】组装数据时，添加 tracks_time 键值对 =====
             copy_album_data = {
                 "album_name": pool_album['album_name'],
                 "cover_img": pool_album['cover_img'],
@@ -916,7 +917,7 @@ def register_album_pool_routes(app):
                 "is_customized": 0
             }
 
-            # ===== ✅✅✅ 【新增修复3】INSERT SQL 字段列表 + 值列表 都添加 tracks_time =====
+            # ===== ✅✅✅ 【原有修复保留】INSERT SQL 字段列表 + 值列表 都添加 tracks_time =====
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
@@ -967,7 +968,7 @@ def register_album_pool_routes(app):
             db.commit()
             cursor.close()
 
-            # ===== ✅✅✅ 【新增修复4】返回数据中补全 tracks_time，前端可以按需使用 =====
+            # ===== ✅✅✅ 【原有修复保留】返回数据中补全 tracks_time，前端可以按需使用 =====
             return jsonify({
                 "code": 200,
                 "msg": "复制成功！该专辑已添加到你的私有专辑列表中",

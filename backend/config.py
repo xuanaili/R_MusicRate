@@ -18,6 +18,10 @@ MYSQL_CONFIG = {
     'cursorclass': pymysql.cursors.DictCursor  # 默认返回字典格式
 }
 
+DB_URL='http://192.168.0.105:5000/'
+
+
+
 # ================= 本地图床配置 - 专辑封面 =================
 # 图片保存路径（自动创建文件夹）
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend/data/album_covers")

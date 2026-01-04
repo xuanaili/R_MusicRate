@@ -268,7 +268,7 @@ export default {
           .then(res => {
             if (res.data.code === 200) {
               alert('复制成功！跳转到我的专辑列表');
-              this.$router.push('/albumDetail');
+              this.$router.push('/webhome');
             } else {
               alert('复制失败：' + res.data.msg);
             }

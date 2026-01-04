@@ -80,7 +80,9 @@ router.beforeEach((to, from, next) => {
 // 原地址：axios.defaults.baseURL = 'http://127.0.0.1:5000' → 手机永远访问不到
 // 修改为：你的【电脑连手机热点后的内网IP】+ 后端端口5000
 // ✅ 正确配置
-axios.defaults.baseURL = 'http://localhost:5000'
+
+axios.defaults.baseURL = 'http://192.168.0.105:5000'
+// axios.defaults.baseURL = 'http://localhost:5000'
 axios.defaults.timeout = 10000
 axios.defaults.withCredentials = true // ✅ 保留，后端需要这个接收token
 axios.defaults.crossDomain = true; // ✅✅✅ 新增这一行，解决手机端跨域请求拦截问题

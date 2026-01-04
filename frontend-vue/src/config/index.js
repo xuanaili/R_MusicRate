@@ -5,6 +5,7 @@
 const tagBallConfigList = [
   // ===== A 开头 =====
   { tag: 'Abstract HipHop【抽象嘻哈】', minSize: 65, maxSize: 110, minRate: 90, maxRate: 220, numWeight: 2 },
+      { tag: 'Adult Contemporary【成人现代】', minSize: 65, maxSize: 110, minRate: 90, maxRate: 220, numWeight: 2 },
   { tag: 'African Music【非洲音乐】', minSize: 40, maxSize: 80, minRate: 200, maxRate: 400, numWeight: 1 },
   { tag: 'Afro Jazz【非洲爵士乐】', minSize: 50, maxSize: 90, minRate: 160, maxRate: 320, numWeight: 1.3 },
    { tag: 'Alt Pop【另类流行】', minSize: 55, maxSize: 95, minRate: 140, maxRate: 280, numWeight: 1.4 },

@@ -1425,7 +1425,6 @@ togglePlayPause() {
         data: {tags}
       }).then(res => {
         if (res.data.code === 200) {
-          alert('我的分类标签保存成功！');
           this.album.tags = [...tags];
           if (this.albumPoolId) {
             this.$refs.albumBaseInfo?.getAllUsersTagStatistics(this.albumPoolId);

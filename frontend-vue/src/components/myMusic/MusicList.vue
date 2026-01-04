@@ -214,13 +214,14 @@ export default {
       // 排序参数 默认添加时间+降序
       sortBy: 'created_at',
       sortOrder: 'desc',
-      // 排序映射
+      // ✅ ✅ ✅ 核心新增：添加 听取时间 排序选项
       sortByMap: {
         album_name: '专辑名称',
         release_year: '发行年份',
         singer: '歌手',
         my_score: '我的评分',
-        created_at: '添加时间'
+        created_at: '添加时间',
+        listening_duration: '听取时间'
       },
       // 下拉框显示状态
       dropdownShow: {

@@ -176,10 +176,12 @@
               <button class="reset-rate-btn" @click="resetRating">重置评分</button>
             </div>
             <div class="rate-circle-area">
+              <!-- ★ 修改1：新增@click事件，实现点击定位评分 -->
               <div class="outer-circle"
-                   @mousedown="startRating"
-                   @mouseup="stopRating"
-                   @mouseleave="stopRating"
+                   @mouseenter="enterRatingArea"
+                   @mouseleave="leaveRatingArea"
+                   @wheel.prevent="handleRatingWheel"
+                   @click="handleRatingClick"
               >
                 <div class="inner-circle" :style="{ width: `${score}%`, height: `${score}%` }"></div>
               </div>
@@ -286,8 +288,6 @@ export default {
       trackList: [],
       favouriteTrackList: [],
       score: 0,
-      isRating: false,
-      ratingTimer: null,
       isTrackScoring: false,
       currentTrackIdx: -1,
       currentSliderDom: null,
@@ -295,10 +295,10 @@ export default {
       showParseModal: false,
       isBallPlay: false,
       currentBallConfig: globalConfig.ballConfig.default,
-      // 小球拖动核心变量
       isBallConfigDragging: false,
       currentConfigKey: '',
-      autoBallTimer: null
+      autoBallTimer: null,
+      isHoverRatingArea: false
     };
   },
   watch: {
@@ -353,13 +353,11 @@ export default {
     this.stopAutoBallGenerate();
   },
   beforeDestroy() {
-    clearInterval(this.ratingTimer);
     clearInterval(this.autoBallTimer);
     this.isTrackScoring = false;
     this.currentTrackIdx = -1;
     this.currentSliderDom = null;
     document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
-    // 移除小球参数拖动的事件监听 防止内存泄漏
     document.removeEventListener('mousemove', this.handleBallConfigMouseMove);
     document.removeEventListener('mouseup', this.stopBallConfigDrag);
     this.saveAllScore();
@@ -557,25 +555,38 @@ export default {
     handleFavouriteTrackClick(idx) {
       !this.isFavouriteEditMode && this.$emit('track-jump', this.favouriteTrackList[idx].sec || 0);
     },
-    startRating() {
-      this.isRating = true;
-      this.isScalingUp = true;
-      clearInterval(this.ratingTimer);
-      this.ratingTimer = setInterval(() => {
-        this.isScalingUp ? (this.score < 100 && (this.score += 0.5)) : (this.score > 0 && (this.score -= 0.5));
-        this.score >= 100 && (this.isScalingUp = false);
-        this.score <= 0 && (this.isScalingUp = true);
-      }, 20);
-    },
-    stopRating() {
-      this.isRating = false;
-      clearInterval(this.ratingTimer);
-    },
     resetRating() {
       this.score = 0;
-      this.isRating = false;
-      this.isScalingUp = true;
-      clearInterval(this.ratingTimer);
+    },
+    enterRatingArea() {
+      this.isHoverRatingArea = true;
+    },
+    leaveRatingArea() {
+      this.isHoverRatingArea = false;
+    },
+    handleRatingWheel(e) {
+      if (!this.isHoverRatingArea) return;
+      const delta = e.deltaY < 0 ? 0.5 : -0.5;
+      this.score = Math.max(0, Math.min(100, this.score + delta));
+    },
+    // ★ 修改2：新增点击评分核心方法
+    handleRatingClick(e) {
+      // 获取外圆的DOM信息
+      const outerCircle = e.currentTarget;
+      const rect = outerCircle.getBoundingClientRect();
+      // 计算外圆的圆心坐标
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      // 计算点击位置到圆心的距离
+      const clickX = e.clientX;
+      const clickY = e.clientY;
+      const distance = Math.sqrt(Math.pow(clickX - centerX, 2) + Math.pow(clickY - centerY, 2));
+      // 计算距离占外圆半径的比例 → 对应分数（0-100）
+      const radius = rect.width / 2;
+      let percent = (distance / radius) * 100;
+      // 限制分数区间 0-100，并保留1位小数（和滚轮步长一致）
+      percent = Math.max(0, Math.min(100, Math.round(percent * 2) / 2));
+      this.score = percent;
     },
     startTrackScore(e, idx) {
       this.isTrackScoring = true;
@@ -615,7 +626,6 @@ export default {
     toggleBallPlay() {
       this.isBallPlay = !this.isBallPlay;
     },
-    // 核心修改：最新参数范围配置
     getPercent(key) {
       const config = this.currentBallConfig;
       let val = config[key];
@@ -631,7 +641,6 @@ export default {
       const percent = ((val - min) / (max - min)) * 100;
       return Math.max(0, Math.min(100, percent));
     },
-    // 开始拖动小球参数进度条
     startBallConfigDrag(e, key) {
       this.isBallConfigDragging = true;
       this.currentConfigKey = key;
@@ -641,20 +650,17 @@ export default {
       e.stopPropagation();
       e.preventDefault();
     },
-    // 拖动中实时计算参数值
     handleBallConfigMouseMove(e) {
       if (this.isBallConfigDragging && this.currentConfigKey) {
         this.calcBallConfigValueByMouse(e, this.currentConfigKey);
       }
     },
-    // 停止拖动小球参数进度条
     stopBallConfigDrag() {
       this.isBallConfigDragging = false;
       this.currentConfigKey = '';
       document.removeEventListener('mousemove', this.handleBallConfigMouseMove);
       document.removeEventListener('mouseup', this.stopBallConfigDrag);
     },
-    // 根据鼠标位置计算参数值
     calcBallConfigValueByMouse(e, key) {
       const progressDom = e.currentTarget.querySelector('.progress-inner').parentNode;
       const rect = progressDom.getBoundingClientRect();
@@ -662,7 +668,6 @@ export default {
       percent = Math.max(0, Math.min(100, percent));
       this.setBallConfigValueByPercent(key, percent);
     },
-    // 核心修改：最新参数步长+取整规则 全部配置完成
     setBallConfigValueByPercent(key, percent) {
       let min, max, step = 1;
       switch(key) {
@@ -679,7 +684,6 @@ export default {
       this.currentBallConfig[key] = realValue;
       this.$emit('update-ball-config', { ...this.currentBallConfig });
     },
-    // 点击进度条直接设置参数值
     setBallConfigByClick(e, key) {
       this.currentConfigKey = key;
       this.calcBallConfigValueByMouse(e, key);
@@ -689,7 +693,6 @@ export default {
       const {minRate, maxRate, numWeight} = this.currentBallConfig;
       this.autoBallTimer = setInterval(() => {
         if (!this.isBallPlay || !this.isMusicPlaying) return;
-        // 根据数量权重生成对应个数的小球，同步给父组件
         for (let i = 0; i < numWeight; i++) {
           const size = Math.floor(Math.random() * (this.currentBallConfig.maxSize - this.currentBallConfig.minSize)) + this.currentBallConfig.minSize;
           this.$emit('generate-rhythm-ball', { size });
@@ -762,13 +765,13 @@ export default {
 .track-tab-nav {
   display: flex;
   gap: 10px;
-	padding-bottom: 0;
-	margin-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: 0;
   width: auto;
   box-sizing: border-box;
   text-align: left;
   position: relative;
-	border-bottom: none !important;
+  border-bottom: none !important;
 }
 
 .tab-item {
@@ -804,7 +807,7 @@ export default {
   align-items: center;
   margin-bottom: 0;
   padding-bottom: 0;
-	border-bottom: none;
+  border-bottom: none;
   display: flex;
   background: transparent !important;
   height: 36px;
@@ -838,8 +841,8 @@ export default {
   width: 100%;
   background: transparent !important;
   border-radius: 8px;
-	padding: 20px;
-	box-shadow: none !important;
+  padding: 20px;
+  box-shadow: none !important;
   flex-shrink: 0;
 }
 
@@ -869,7 +872,7 @@ export default {
   box-sizing: border-box;
   text-align: left;
   position: relative;
-	border-bottom: none !important;
+  border-bottom: none !important;
 }
 
 .rate-text-area h3::after {
@@ -921,6 +924,10 @@ export default {
   cursor: pointer;
   background: transparent !important;
   transition: all 0.2s;
+  &:hover {
+    border-color: v-bind(mainColorWhite);
+    transform: scale(1.02);
+  }
 }
 
 .inner-circle {
@@ -934,8 +941,8 @@ export default {
   width: 100%;
   background: transparent !important;
   border-radius: 8px;
-	padding: 20px;
-	box-shadow: none;
+  padding: 20px;
+  box-shadow: none;
   box-sizing: border-box;
   flex: 1;
   min-height: 350px;
@@ -967,7 +974,7 @@ export default {
   color: v-bind(mainColorDarkDouble);
   font-weight: 600;
   padding-bottom: 8px;
-	border-bottom: 4px solid v-bind(mainColorDark);
+  border-bottom:4px solid v-bind(mainColorDark);
 }
 
 .ball-toggle-switch {
@@ -1009,7 +1016,7 @@ export default {
 }
 
 .config-value {
-  font-size: 13px;
+  font-size:13px;
   color: v-bind(mainColorDark);
   font-weight: bold;
 }
@@ -1049,14 +1056,14 @@ export default {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: none !important;
-  margin-bottom: 20px;
+  margin-bottom:20px;
 }
 
 .track-item {
-  display: flex;
-  align-items: center;
-	padding: 15px 15px;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display:flex;
+  align-items:center;
+  padding:15px 15px;
+  border-bottom:1px solid rgba(255,255,255,0.1);
   transition: background-color 0.2s;
   background: transparent !important;
   box-sizing: border-box;
@@ -1067,15 +1074,15 @@ export default {
 }
 
 .track-index {
-  width: 40px;
-  font-size: 16px;
-  font-weight: 700;
+  width:40px;
+  font-size:16px;
+  font-weight:700;
   color: v-bind(mainColorDarkDouble);
-  text-align: center;
-  margin-right: 12px;
-  position: relative;
-  padding-bottom: 0;
-  flex-shrink: 0;
+  text-align:center;
+  margin-right:12px;
+  position:relative;
+  padding-bottom:0;
+  flex-shrink:0;
   z-index:99;
 }
 
@@ -1089,34 +1096,34 @@ export default {
 }
 
 .track-name-wrap {
-  width: 260px;
-  flex-shrink: 0;
-  position: relative;
-  padding-bottom: 8px;
+  width:260px;
+  flex-shrink:0;
+  position:relative;
+  padding-bottom:8px;
   margin-right:0;
   cursor: pointer;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow:hidden;
 }
 
 .track-name-line {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
+  position:absolute;
+  left:0;
+  bottom:0;
+  width:100%;
+  height:4px;
+  border-radius:2px;
   background-color: v-bind(mainColorDark) !important;
-  opacity: 1 !important;
+  opacity:1 !important;
   z-index:2;
 }
 
 .track-name-text {
-  font-size: 16px;
+  font-size:16px;
   font-weight:700;
   color: v-bind(mainColorDarkDouble);
   white-space: nowrap;
-  position: relative;
+  position:relative;
   z-index:3;
   width: fit-content;
   transform: translateX(0);
@@ -1142,7 +1149,7 @@ export default {
 }
 
 .track-duration {
-  font-size: 16px;
+  font-size:16px;
   font-weight:700;
   color: v-bind(mainColorDarkDouble);
   white-space: nowrap;
@@ -1165,34 +1172,34 @@ export default {
 .track-name-input {
   flex: 1;
   padding: 6px 10px;
-  border: 1px solid v-bind(mainColorDarkDouble);
-  border-radius: 4px;
+  border:1px solid v-bind(mainColorDarkDouble);
+  border-radius:4px;
   font-size:14px;
   color: v-bind(mainColorDarkDouble);
-  outline: none;
+  outline:none;
   background: rgba(255,255,255,0.03) !important;
 }
 
 .track-name-input:focus {
   border-color: v-bind(mainColorDark);
-  box-shadow: 0 0 0 2px rgba(47, 148, 101, 0.2);
+  box-shadow:0 0 0 2px rgba(47, 148, 101, 0.2);
 }
 
 .track-duration-input {
-  width: 110px;
-  padding: 6px 10px;
-  border: 1px solid v-bind(mainColorDarkDouble);
-  border-radius: 4px;
+  width:110px;
+  padding:6px 10px;
+  border:1px solid v-bind(mainColorDarkDouble);
+  border-radius:4px;
   font-size:14px;
   color: v-bind(mainColorDarkDouble);
   text-align:center;
-  outline: none;
+  outline:none;
   background: rgba(255,255,255,0.03) !important;
 }
 
 .track-duration-input:focus {
   border-color: v-bind(mainColorDark);
-  box-shadow: 0 0 0 2px rgba(47, 148, 101, 0.2);
+  box-shadow:0 0 0 2px rgba(47, 148, 101, 0.2);
 }
 
 .track-del-btn {
@@ -1202,8 +1209,8 @@ export default {
 .track-del-btn button {
   background: transparent;
   border: none;
-  font-size: 18px;
-  color: #dc2626;
+  font-size:18px;
+  color:#dc2626;
   cursor: pointer;
   width:24px;
   height:24px;
@@ -1215,16 +1222,16 @@ export default {
 }
 
 .add-track-btn-box {
-  text-align: right;
+  text-align:right;
   background: transparent !important;
 }
 
 .add-track-btn {
   background: v-bind(mainColorDark);
-  color: #fff;
-  border: none;
-	padding: 8px 16px;
-	border-radius:6px;
+  color:#fff;
+  border:none;
+  padding:8px 16px;
+  border-radius:6px;
   cursor: pointer;
   font-size:14px;
   transition: all 0.2s;
@@ -1232,10 +1239,10 @@ export default {
 
 .edit-btn {
   background: v-bind(mainColorDark);
-  color: #fff;
-  border: none;
-	padding: 6px 14px;
-	border-radius:6px;
+  color:#fff;
+  border:none;
+  padding:6px 14px;
+  border-radius:6px;
   cursor: pointer;
   font-size:14px;
   transition: all 0.2s;
@@ -1247,10 +1254,10 @@ export default {
 
 .mode-btn {
   background: v-bind(mainColorDarkDouble);
-  color: #fff;
-  border: none;
-	padding: 6px 14px;
-	border-radius:6px;
+  color:#fff;
+  border:none;
+  padding:6px 14px;
+  border-radius:6px;
   cursor: pointer;
   font-size:14px;
   transition: all 0.2s;

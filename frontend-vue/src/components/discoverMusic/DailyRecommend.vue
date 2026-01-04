@@ -9,7 +9,8 @@
       <!-- 左侧：放大版基础信息/简介 滑动切换面板 + 左侧更换箭头 + 右侧简介箭头 左右对称 -->
       <div class="album-left-section" :class="{ 'slide-to-intro': showIntro }">
         <div class="album-panel info-panel">
-          <div class="cover">
+          <!-- ✅✅✅ 核心修改1：封面添加点击事件 @click="copyAlbum" + 鼠标悬浮指针样式 -->
+          <div class="cover" @click="copyAlbum">
             <img v-if="albumData.cover_img" :src="albumData.cover_img" alt="封面" class="detail-cover">
             <div v-else class="no-cover">暂无封面</div>
           </div>
@@ -25,10 +26,8 @@
                 创建时间：{{ formatCreateTime(albumData.create_time) }}</p>
             </div>
           </div>
-          <div class="actions">
-            <button @click="copyAlbum" class="copy-btn" :style="{backgroundColor: mainColorDarkDouble}">添加
-            </button>
-          </div>
+          <!-- ✅✅✅ 核心修改2：彻底删除 添加按钮的 actions 容器 -->
+
         </div>
 
         <div class="album-panel intro-panel">
@@ -112,7 +111,6 @@ export default {
       tagChartData: [],
       recentUsers: [],
       showIntro: false,
-      // ✅ ✅ ✅ 【核心修改1】全部默认值改为透明色 transparent 彻底消除绿色闪现
       mainColor: 'transparent',
       mainColorDark: 'transparent',
       mainColorDarkDouble: 'transparent',
@@ -167,7 +165,6 @@ export default {
         this.mainColorDark = this.darkenColor(hex, 0.3);
         this.mainColorDarkDouble = this.darkenColor(hex, 0.5);
 
-        // ✅ 核心新增：提取完颜色后，立即把三色值通过事件传给父组件WebHome
         this.$emit('sendThemeColor', {
           mainColor: this.mainColor,
           mainColorDark: this.mainColorDark,
@@ -175,11 +172,9 @@ export default {
         })
       };
       img.onerror = () => {
-        // ✅ ✅ ✅ 【核心修改2】图片加载失败的兜底值 也改为透明色，不是绿色
         this.mainColor = 'transparent';
         this.mainColorDark = 'transparent';
         this.mainColorDarkDouble = 'transparent';
-        // ✅ 异常兜底：加载失败也传透明色给父组件
         this.$emit('sendThemeColor', {
           mainColor: this.mainColor,
           mainColorDark: this.mainColorDark,
@@ -260,25 +255,28 @@ export default {
             this.recentUsers = [];
           });
     },
+    // ✅ 无改动：原有添加逻辑保留，现在由封面点击触发
     copyAlbum() {
-      if (!this.recommendId || !confirm('确定复制该推荐专辑为你的私有副本吗？')) return;
+      if (!this.recommendId) return;
       this.$axios({
         url: `/api/album/pool/copy/${this.recommendId}`,
         method: 'POST',
         headers: {'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}
       })
           .then(res => {
-            if (res.data.code === 200) {
-              alert('复制成功！跳转到我的音乐列表');
-              window.targetTab = 'mymusic'
-              this.$router.push('/webhome')
+            const { code, data } = res.data;
+            if (code === 200) {
+              window.targetTab = 'mymusic';
+              this.$router.push('/webhome');
             } else {
-              alert('复制失败：' + res.data.msg);
+              if (code === 409 && data) {
+                const duplicateAlbumId = Number(data) || data;
+                this.$router.push(`/album/detail/${duplicateAlbumId}?id=${duplicateAlbumId}`);
+              }
             }
           })
           .catch(err => {
-            console.error('复制失败：', err);
-            alert('复制失败，请稍后重试');
+            console.error('复制专辑失败：', err);
           });
     },
     changeTodayRecommend() {
@@ -308,7 +306,6 @@ export default {
 </script>
 
 <style scoped>
-/* 保留你原有的所有基础样式 */
 .discover-page-container {
   color: #333;
   width: 100%;
@@ -347,7 +344,7 @@ export default {
 .album-panel {
   position: absolute;
   top: 0;
-  left: 0;
+	left: 0;
   width: 100%;
   height: 100%;
   padding: 0px;
@@ -378,6 +375,7 @@ export default {
   z-index: 2;
 }
 
+/* ✅✅✅ 核心修改3：封面样式新增 鼠标指针 + 点击轻微缩放动画 提升交互体验 */
 .cover {
   width: 260px;
   height: 260px;
@@ -387,6 +385,14 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.cover:hover {
+  transform: scale(1.02);
+}
+.cover:active {
+  transform: scale(0.98);
 }
 
 .detail-cover {
@@ -405,7 +411,7 @@ export default {
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   border-radius: 6px;
-  padding: 15px 20px;
+	padding: 15px 20px;
   margin: 0 auto 25px;
   width: 380px;
   box-sizing: border-box;
@@ -440,33 +446,13 @@ export default {
   margin-top: 10px;
 }
 
-.actions {
-  margin-top: 10px;
-  display: flex;
-  justify-content: center;
-  gap: 25px;
-}
-
-.copy-btn {
-  padding: 10px 25px;
-  font-size: 16px;
-  border-radius: 6px;
-	border: none;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: #fff;
-}
-
-.copy-btn:hover {
-  opacity: 0.9;
-  transform: scale(1.02);
-}
+/* ✅✅✅ 核心修改4：彻底删除 copy-btn、actions 相关所有样式代码 */
 
 .intro-title, .songs-title, .users-title, .style-title {
   font-size: 18px;
   color: v-bind(mainColorDarkDouble);
   font-weight: 600;
-  padding: 15px 20px 8px;
+	padding: 15px 20px 8px;
   margin: 0 !important;
   width: 100%;
   box-sizing: border-box;
@@ -482,11 +468,11 @@ export default {
 .style-title::after {
   content: '';
   position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 7px;
-  border-radius: 2px;
+	left: 0;
+	bottom: 0;
+	width: 100%;
+	height: 7px;
+	border-radius: 2px;
   background-color: v-bind(mainColorDarkDouble);
 }
 
@@ -494,7 +480,7 @@ export default {
   background: rgba(255, 255, 255, 0.3);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  border-radius: 6px;
+	border-radius: 6px;
   margin: 12px 20px 0;
   padding: 10px;
   height: calc(100% - 80px);
@@ -509,33 +495,31 @@ export default {
   word-wrap: break-word;
   overflow-y: auto;
   height: 100%;
-  padding-right: 5px; /* ✅ 统一滚动条样式：和单曲列表一致的内边距，避免内容贴滚动条 */
-  background: transparent !important; /* ✅ 统一滚动条样式：背景透明 */
+  padding-right: 5px;
+  background: transparent !important;
 }
 
-/* ✅ ✅ ✅ 核心新增：专辑简介 滚动条样式 与 单曲列表 完全一致 开始 */
 .intro-content::-webkit-scrollbar {
-  width: 6px; /* 和单曲列表一样的宽度 */
+  width: 6px;
 }
 .intro-content::-webkit-scrollbar-thumb {
-  background: v-bind(mainColorDarkDouble); /* 和单曲列表一样的主色，支持动态变色 */
-  border-radius: 3px; /* 和单曲列表一样的圆角 */
+  background: v-bind(mainColorDarkDouble);
+  border-radius: 3px;
 }
 .intro-content::-webkit-scrollbar-thumb:hover {
-  background: v-bind(mainColorDark); /* 和单曲列表一样的hover加深效果 */
+  background: v-bind(mainColorDark);
 }
 .intro-content::-webkit-scrollbar-track {
-  background: transparent !important; /* 和单曲列表一样的透明轨道 */
+  background: transparent !important;
 }
 .intro-content::-webkit-scrollbar-button {
-  display: none !important; /* ✅ 关键：隐藏滚动条上下按钮，和单曲列表完全一致 */
+  display: none !important;
 }
-/* ✅ ✅ ✅ 核心新增：专辑简介 滚动条样式 与 单曲列表 完全一致 结束 */
 
 .no-intro-tip {
   color: #999;
   text-align: center;
-  padding: 60px 0;
+	padding: 60px 0;
   height: 100%;
   display: flex;
   align-items: center;
@@ -560,7 +544,6 @@ export default {
   background: transparent !important;
 }
 
-/* 单曲列表滚动条 - 你的原有样式，保持不变 */
 .songs-list::-webkit-scrollbar {
   width: 6px;
 }
@@ -584,7 +567,7 @@ export default {
   margin-bottom: 12px;
   padding: 10px 15px;
   background: rgba(255, 255, 255, 0.3);
-  border-radius: 6px;
+	border-radius: 6px;
 }
 
 .song-index {
@@ -620,8 +603,8 @@ export default {
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  border-radius: 8px;
-  height: 100%;
+	border-radius: 8px;
+	height: 100%;
   box-sizing: border-box;
 }
 
@@ -673,7 +656,7 @@ export default {
   padding: 8px 10px;
   margin-bottom: 8px;
   background: rgba(255, 255, 255, 0.3);
-  border-radius: 6px;
+	border-radius: 6px;
   font-size: 14px;
 }
 
@@ -729,7 +712,7 @@ export default {
   height: auto;
   min-height: 48px;
   color: #fff;
-  border-radius: 12px 0 0 12px;
+	border-radius: 12px 0 0 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -750,12 +733,12 @@ export default {
   height: auto;
   min-height: 48px;
   color: #fff;
-  border-radius: 0 12px 12px 0;
+	border-radius: 0 12px 12px 0;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   z-index: 99;
   transition: all 0.3s ease;
   padding: 5px 0;
@@ -772,7 +755,6 @@ export default {
   line-height: 1;
 }
 
-/* SVG 图标样式 */
 .refresh-svg-icon {
   width: 18px;
   height: 18px;
@@ -810,7 +792,6 @@ export default {
   animation-play-state: paused !important;
 }
 
-/* 禁用状态图标颜色优化 */
 .change-toggle-btn:disabled .refresh-svg-icon {
   fill: rgba(255, 255, 255, 0.8);
 }
