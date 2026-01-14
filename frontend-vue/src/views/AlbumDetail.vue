@@ -54,7 +54,7 @@
         :main-color-white="albumMainColorWhite"
         :main-color-white-double="albumMainColorWhiteDouble"
         @update-album-score="handleUpdateAlbumScore"
-
+        @score-list-change="handleScoreList"
       />
 
       <AlbumReviewEditor
@@ -66,6 +66,7 @@
           @add-review="addSingleReview"
           @delete-single="deleteSingleReview"
           @delete-all="deleteAllReview"
+          @prepare-score="prepareScore"
       />
 
       <AlbumCommentSection
@@ -521,6 +522,22 @@ export default {
     handleToggleBallPlay(val) {
       this.isBallPlay = val;
     },
+
+
+// 父组件的 handleScoreList 方法修改
+handleScoreList(scoreList) {
+  console.log('🚀 父组件接收到scoreList：', scoreList);
+  console.log('🚀 数据类型：', Array.isArray(scoreList) ? '数组' : '非数组');
+  this.parentScoreList = scoreList;
+
+  // ✅ 核心：把最新的scoreList同步到album.my_score
+  if (Array.isArray(scoreList)) {
+    // 深拷贝，确保响应式更新且不影响原数据
+    this.album.my_score = JSON.parse(JSON.stringify(scoreList));
+    console.log('✅ 父组件已同步scoreList到album.my_score：', this.album.my_score);
+  }
+},
+
     // 核心新增：音量平滑渐变淡出方法 (通用，所有暂停/切歌都调用这个)
 async fadeOutVolume(callback) {
   const audio = this.$refs.audioRef;
@@ -1073,13 +1090,11 @@ togglePlayPause() {
       this.album = {...this.album, ...updatedData};
     },
 
-    // 接收子组件传递的最新评分，更新父组件的album数据
-// 接收子组件传递的最新评分，更新父组件的album数据 (增加浅拷贝)
 handleUpdateAlbumScore(scoreList) {
   if (Array.isArray(scoreList) && scoreList.length > 0) {
-    // ✅ 浅拷贝数组，切断和子组件的内存引用
-    this.album.my_score = [...scoreList];
-    console.log('✅ 父组件已同步最新评分(浅拷贝)：', this.album.my_score);
+    // 深拷贝，确保响应式更新
+    this.album.my_score = JSON.parse(JSON.stringify(scoreList));
+    console.log('✅ 父组件已同步最新评分(深拷贝)：', this.album.my_score);
   }
 },
 
@@ -1392,67 +1407,46 @@ handleUpdateAlbumScore(scoreList) {
       });
     },
 
-// 【核心改造】点击新增听后感 - 先读取最新评分 → 再提交数据
-// 【核心改造】点击新增听后感 - 先读取最新评分 → 再提交数据 (完整修复版)
-async addSingleReview(content) {
+// 3. 修改addSingleReview方法，移除重复的异步操作，直接使用子组件传递的评分
+async addSingleReview(content, finalScore) {
   if (!content.trim()) {
     alert('听后感内容不能为空！');
     return;
   }
 
-  // ✅✅✅ 修复核心1：强制等待「评分保存+评分读取」两个异步操作全部完成，缺一不可
-  // triggerSaveScore：把曲目评分保存到后端
-  if(this.$refs.albumTrackListRef) {
-    await this.$refs.albumTrackListRef.triggerSaveScore();
-    // triggerGetScore：从后端拉取最新的评分数组，同步到 this.album.my_score
-    await this.$refs.albumTrackListRef.triggerGetScore();
-  }
-
   const now = new Date();
   const createTime = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
-  // ✅✅✅ 修复核心2：读取评分数组时，做浅拷贝，切断引用关系，杜绝内存污染
-  let scoreList = [];
-  if (this.album.my_score) {
-    if (typeof this.album.my_score === 'string') {
-      try {
-        scoreList = JSON.parse(this.album.my_score);
-      } catch (err) {
-        scoreList = [];
-      }
-    } else if (Array.isArray(this.album.my_score)) {
-      scoreList = [...this.album.my_score]; // 浅拷贝，核心修复引用类型问题
-    }
-  }
-
-  const finalScore = calculateAlbumTotalScore(scoreList);
-  console.log('✅ 父组件最终提交的评分数组：', scoreList);
+  // 直接使用子组件计算好的最终评分，避免重复计算导致的不一致
   console.log('✅ 父组件最终提交的综合评分：', finalScore);
 
-  this.$axios({
-    url: `/api/album/review/add/${this.album.id}`,
-    method: 'POST',
-    headers: {
-      'Authorization': localStorage.getItem('token') || '',
-      'Content-Type': 'application/json;charset=utf-8'
-    },
-    data: {
-      content: content.trim(),
-      create_time: createTime,
-      listening_duration: Math.floor(this.album.listening_duration),
-      my_score: finalScore,
-    }
-  })
-  .then((res) => {
+  try {
+    const res = await this.$axios({
+      url: `/api/album/review/add/${this.album.id}`,
+      method: 'POST',
+      headers: {
+        'Authorization': localStorage.getItem('token') || '',
+        'Content-Type': 'application/json;charset=utf-8'
+      },
+      data: {
+        content: content.trim(),
+        create_time: createTime,
+        listening_duration: Math.floor(this.album.listening_duration),
+        my_score: finalScore, // 使用子组件传递的评分
+      }
+    });
+
     if (res.data.code === 200) {
-      this.getAlbumDetail(this.album.id); // 重新加载专辑数据，同步最新状态
+      // 重新加载专辑数据，确保UI同步
+      await this.getAlbumDetail(this.album.id);
+      this.$message?.success('听后感添加成功！');
     } else {
-      alert(res.data.msg);
+      this.$message?.error(res.data.msg);
     }
-  })
-  .catch(() => {
-    alert('添加听后感失败！');
-  });
+  } catch (err) {
+    console.error('添加听后感失败：', err);
+    this.$message?.error('添加听后感失败！');
+  }
 },
     deleteSingleReview(feelingId) {
       this.$axios({
@@ -1622,6 +1616,18 @@ async addSingleReview(content) {
         alert(`发布失败：服务器异常`);
       }
     },
+
+    // 2. 新增prepareScore方法，专门处理评分的保存和读取
+// 父组件的 prepareScore 方法（已存在，确认逻辑）
+async prepareScore() {
+  // 等待子组件（AlbumTrackList）保存评分并获取最新值
+  if(this.$refs.albumTrackListRef) {
+    await this.$refs.albumTrackListRef.triggerSaveScore();
+    await this.$refs.albumTrackListRef.triggerGetScore();
+  }
+  // 强制更新album数据，确保子组件能拿到最新的scoreList
+  this.album = {...this.album};
+},
 
     likePublicComment(commentId) {
       this.$axios({

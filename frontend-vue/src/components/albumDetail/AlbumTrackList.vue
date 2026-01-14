@@ -366,20 +366,25 @@ export default {
     this.stopAutoBallGenerate();
   },
   methods: {
-    async saveAllScore() {
-      try {
-        const albumId = this.album.id;
-        if (!albumId) return;
-        let scoreList = [this.score];
-        this.trackList.forEach(item => scoreList.push(item.score || 0));
-        await this.$axios.put(`/api/album/score/save/${albumId}`, {score_list: scoreList}, {
-          headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
-        });
-        console.log('✅ 评分保存成功：', albumId, scoreList);
-      } catch (err) {
-        console.error('保存评分失败：', err);
-      }
-    },
+// AlbumTrackList 的 saveAllScore 方法
+async saveAllScore() {
+  try {
+    const albumId = this.album.id;
+    if (!albumId) return;
+    let scoreList = [this.score];
+    this.trackList.forEach(item => scoreList.push(item.score || 0));
+
+    console.log('📤 AlbumTrackList 发射的scoreList：', scoreList);
+    this.$emit('score-list-change', scoreList); // 发射给父组件
+
+    await this.$axios.put(`/api/album/score/save/${albumId}`, {score_list: scoreList}, {
+      headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
+    });
+    console.log('✅ 评分保存成功：', albumId, scoreList);
+  } catch (err) {
+    console.error('保存评分失败：', err);
+  }
+},
     async getAllScore() {
       try {
         const albumId = this.album.id;

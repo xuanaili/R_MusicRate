@@ -31,7 +31,7 @@
         <input
           type="file"
           ref="fileInput"
-          accept=".mp3,.ogg,.flac,.wav,.m4a,.mp4"
+          accept=".mp3,.ogg,.flac,.ncm,.kgg,.kwm"
           multiple
           style="display: none"
           @change="handleFileChange">
@@ -108,7 +108,7 @@ export default {
       const audioTypes = ['audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/wav', 'audio/mp4', 'audio/x-m4a'];
       const files = Array.from(e.dataTransfer.files).filter(file =>
         audioTypes.includes(file.type) ||
-        ['.mp3', '.ogg', '.flac', '.wav', '.m4a', '.mp4'].some(ext => file.name.endsWith(ext))
+        ['.mp3', '.ogg', '.flac', '.ncm', '.kgg', '.kwm'].some(ext => file.name.endsWith(ext))
       );
 
       if (files.length) {

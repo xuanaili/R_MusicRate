@@ -364,43 +364,42 @@ getDayDetailList() {
       this.tooltipVisible = false;
       this.tooltipText = '';
     },
+// AlbumReviewEditor.vue 中 handleAddReview 方法（已优化）
 async handleAddReview() {
   if (!this.newFeelingContent.trim()) {
     this.$message?.warning('听后感内容不能为空！');
     return;
   }
 
-  // ======== 核心修复开始 ========
-  // 1. nextTick 等待Vue异步更新完成，读取最新的 album.my_score (Vue响应式异步更新必加)
-  await this.$nextTick();
+  // 1. 通知父组件保存并获取最新评分（确保scoreList已同步到album.my_score）
+  await this.$emit('prepare-score');
 
+  // 2. 读取父组件同步后的 album.my_score（就是最新的scoreList）
   let scoreList = [];
-  console.log('✅ 子组件读取的最新album.my_score：', this.album?.my_score);
-
-  // 2. 严谨的非空+类型校验，兼容所有边界情况
-  if (this.album && this.album.my_score) {
+  if (this.album.my_score) {
     if (typeof this.album.my_score === 'string') {
       try {
         scoreList = JSON.parse(this.album.my_score);
       } catch (err) {
-        console.error('评分数组字符串解析失败：', err);
         scoreList = [];
       }
     } else if (Array.isArray(this.album.my_score)) {
-      // 3. 浅拷贝数组，切断引用关系，解决内存污染问题 ✅ 重中之重
-      scoreList = [...this.album.my_score];
+      // 深拷贝，避免引用问题
+      scoreList = JSON.parse(JSON.stringify(this.album.my_score));
     }
   }
-  // ======== 核心修复结束 ========
 
-  // 计算最终综合评分
-  const finalScore = calculateAlbumTotalScore(scoreList || []);
-  console.log('✅ 子组件计算的综合评分：', finalScore);
+  console.log('🎯 子组件使用的最新scoreList（来自album.my_score）：', scoreList);
+  const finalScore = calculateAlbumTotalScore(scoreList);
+  console.log('🎯 计算出的综合评分：', finalScore);
 
-  // 上传数据到父组件
+  // 3. 提交听后感，传递最新计算的评分
   await this.$emit('add-review', this.newFeelingContent, finalScore);
+
+  // 4. 重置和刷新
   this.newFeelingContent = '';
   this.fetchCalendarReviewData();
+  this.$forceUpdate();
 },
     async handleDeleteSingle(feelingId) {
       await this.$emit('delete-single', feelingId);
