@@ -18,7 +18,8 @@ MYSQL_CONFIG = {
     'cursorclass': pymysql.cursors.DictCursor  # 默认返回字典格式
 }
 
-DB_URL='http://192.168.0.105:5000/'
+DB_URL='http://localhost:5000/tracks/'
+    # 'http://192.168.0.105:5000/'
 
 
 

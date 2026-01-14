@@ -1,5 +1,10 @@
 # MusicRate\backend\run.py 项目启动入口 - 替代原app.py的启动逻辑
-from backend import create_app  # 从backend包导入create_app
+import sys
+import os
+
+# 添加这一行：自动设置正确的导入路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend import create_app
 from backend.db_utils import init_base_tables
 
 # 创建Flask应用实例

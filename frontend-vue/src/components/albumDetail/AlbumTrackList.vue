@@ -96,7 +96,10 @@
                     <div class="track-name-text">{{ track.name || '未知曲目' }}</div>
                     <div class="track-name-line"></div>
                   </div>
-                  <div class="track-score-slider-wrap" @click.stop @mousedown.stop @mouseup.stop @mouseleave.stop>
+                  <!-- ✨ 新增：添加滚轮事件监听 -->
+                  <div class="track-score-slider-wrap"
+                       @click.stop @mousedown.stop @mouseup.stop @mouseleave.stop
+                       @wheel.prevent="handleTrackScoreWheel($event, idx)">
                     <div
                       class="track-score-slider"
                       ref="scoreSlider"
@@ -176,7 +179,6 @@
               <button class="reset-rate-btn" @click="resetRating">重置评分</button>
             </div>
             <div class="rate-circle-area">
-              <!-- ★ 修改1：新增@click事件，实现点击定位评分 -->
               <div class="outer-circle"
                    @mouseenter="enterRatingArea"
                    @mouseleave="leaveRatingArea"
@@ -569,22 +571,16 @@ export default {
       const delta = e.deltaY < 0 ? 0.5 : -0.5;
       this.score = Math.max(0, Math.min(100, this.score + delta));
     },
-    // ★ 修改2：新增点击评分核心方法
     handleRatingClick(e) {
-      // 获取外圆的DOM信息
       const outerCircle = e.currentTarget;
       const rect = outerCircle.getBoundingClientRect();
-      // 计算外圆的圆心坐标
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
-      // 计算点击位置到圆心的距离
       const clickX = e.clientX;
       const clickY = e.clientY;
       const distance = Math.sqrt(Math.pow(clickX - centerX, 2) + Math.pow(clickY - centerY, 2));
-      // 计算距离占外圆半径的比例 → 对应分数（0-100）
       const radius = rect.width / 2;
       let percent = (distance / radius) * 100;
-      // 限制分数区间 0-100，并保留1位小数（和滚轮步长一致）
       percent = Math.max(0, Math.min(100, Math.round(percent * 2) / 2));
       this.score = percent;
     },
@@ -616,6 +612,17 @@ export default {
       this.currentSliderDom = e.currentTarget;
       this.calcTrackScore(e);
     },
+    // ✨ 新增：单曲评分滚轮微调方法
+    handleTrackScoreWheel(e, idx) {
+      // 滚轮向上（deltaY < 0）分数+1，向下（deltaY > 0）分数-1
+      const step = e.deltaY < 0 ? 1 : -1;
+      // 获取当前曲目分数
+      let currentScore = this.trackList[idx].score || 0;
+      // 计算新分数，限制在0-100范围内
+      let newScore = Math.max(0, Math.min(100, currentScore + step));
+      // 更新分数
+      this.trackList[idx].score = newScore;
+    },
     getBallConfigByTag(tags) {
       if (!tags || !Array.isArray(tags) || tags.length === 0) {
         return globalConfig.ballConfig.default;
@@ -630,13 +637,29 @@ export default {
       const config = this.currentBallConfig;
       let val = config[key];
       let max, min;
-      switch(key) {
-        case 'minSize': min=0; max=1000; break;
-        case 'maxSize': min=0; max=1000; break;
-        case 'minRate': min=10; max=4000; break;
-        case 'maxRate': min=10; max=4000; break;
-        case 'numWeight': min=0; max=10; break;
-        default: return 0;
+      switch (key) {
+        case 'minSize':
+          min = 0;
+          max = 1000;
+          break;
+        case 'maxSize':
+          min = 0;
+          max = 1000;
+          break;
+        case 'minRate':
+          min = 10;
+          max = 4000;
+          break;
+        case 'maxRate':
+          min = 10;
+          max = 4000;
+          break;
+        case 'numWeight':
+          min = 0;
+          max = 10;
+          break;
+        default:
+          return 0;
       }
       const percent = ((val - min) / (max - min)) * 100;
       return Math.max(0, Math.min(100, percent));
@@ -670,19 +693,40 @@ export default {
     },
     setBallConfigValueByPercent(key, percent) {
       let min, max, step = 1;
-      switch(key) {
-        case 'minSize': min=0; max=1000; step = 1; break;
-        case 'maxSize': min=0; max=1000; step = 1; break;
-        case 'minRate': min=10; max=4000; step = 10; break;
-        case 'maxRate': min=10; max=4000; step = 10; break;
-        case 'numWeight': min=0; max=10; step = 1; break;
-        default: return;
+      switch (key) {
+        case 'minSize':
+          min = 0;
+          max = 1000;
+          step = 1;
+          break;
+        case 'maxSize':
+          min = 0;
+          max = 1000;
+          step = 1;
+          break;
+        case 'minRate':
+          min = 10;
+          max = 4000;
+          step = 10;
+          break;
+        case 'maxRate':
+          min = 10;
+          max = 4000;
+          step = 10;
+          break;
+        case 'numWeight':
+          min = 0;
+          max = 10;
+          step = 1;
+          break;
+        default:
+          return;
       }
       let realValue = ((max - min) * (percent / 100)) + min;
       realValue = Math.round(realValue / step) * step;
       realValue = Math.max(min, Math.min(max, realValue));
       this.currentBallConfig[key] = realValue;
-      this.$emit('update-ball-config', { ...this.currentBallConfig });
+      this.$emit('update-ball-config', {...this.currentBallConfig});
     },
     setBallConfigByClick(e, key) {
       this.currentConfigKey = key;
@@ -695,7 +739,7 @@ export default {
         if (!this.isBallPlay || !this.isMusicPlaying) return;
         for (let i = 0; i < numWeight; i++) {
           const size = Math.floor(Math.random() * (this.currentBallConfig.maxSize - this.currentBallConfig.minSize)) + this.currentBallConfig.minSize;
-          this.$emit('generate-rhythm-ball', { size });
+          this.$emit('generate-rhythm-ball', {size});
         }
       }, Math.floor(Math.random() * (maxRate - minRate)) + minRate);
     },
@@ -924,6 +968,7 @@ export default {
   cursor: pointer;
   background: transparent !important;
   transition: all 0.2s;
+
   &:hover {
     border-color: v-bind(mainColorWhite);
     transform: scale(1.02);
@@ -974,7 +1019,7 @@ export default {
   color: v-bind(mainColorDarkDouble);
   font-weight: 600;
   padding-bottom: 8px;
-  border-bottom:4px solid v-bind(mainColorDark);
+  border-bottom: 4px solid v-bind(mainColorDark);
 }
 
 .ball-toggle-switch {
@@ -1016,7 +1061,7 @@ export default {
 }
 
 .config-value {
-  font-size:13px;
+  font-size: 13px;
   color: v-bind(mainColorDark);
   font-weight: bold;
 }
@@ -1056,14 +1101,14 @@ export default {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: none !important;
-  margin-bottom:20px;
+  margin-bottom: 20px;
 }
 
 .track-item {
-  display:flex;
-  align-items:center;
-  padding:15px 15px;
-  border-bottom:1px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  padding: 15px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   transition: background-color 0.2s;
   background: transparent !important;
   box-sizing: border-box;
@@ -1074,16 +1119,16 @@ export default {
 }
 
 .track-index {
-  width:40px;
-  font-size:16px;
-  font-weight:700;
+  width: 40px;
+  font-size: 16px;
+  font-weight: 700;
   color: v-bind(mainColorDarkDouble);
-  text-align:center;
-  margin-right:12px;
-  position:relative;
-  padding-bottom:0;
-  flex-shrink:0;
-  z-index:99;
+  text-align: center;
+  margin-right: 12px;
+  position: relative;
+  padding-bottom: 0;
+  flex-shrink: 0;
+  z-index: 99;
 }
 
 .track-show-content {
@@ -1096,35 +1141,35 @@ export default {
 }
 
 .track-name-wrap {
-  width:260px;
-  flex-shrink:0;
-  position:relative;
-  padding-bottom:8px;
-  margin-right:0;
+  width: 260px;
+  flex-shrink: 0;
+  position: relative;
+  padding-bottom: 8px;
+  margin-right: 0;
   cursor: pointer;
   box-sizing: border-box;
-  overflow:hidden;
+  overflow: hidden;
 }
 
 .track-name-line {
-  position:absolute;
-  left:0;
-  bottom:0;
-  width:100%;
-  height:4px;
-  border-radius:2px;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
-  opacity:1 !important;
-  z-index:2;
+  opacity: 1 !important;
+  z-index: 2;
 }
 
 .track-name-text {
-  font-size:16px;
-  font-weight:700;
+  font-size: 16px;
+  font-weight: 700;
   color: v-bind(mainColorDarkDouble);
   white-space: nowrap;
-  position:relative;
-  z-index:3;
+  position: relative;
+  z-index: 3;
   width: fit-content;
   transform: translateX(0);
 }
@@ -1149,14 +1194,14 @@ export default {
 }
 
 .track-duration {
-  font-size:16px;
-  font-weight:700;
+  font-size: 16px;
+  font-weight: 700;
   color: v-bind(mainColorDarkDouble);
   white-space: nowrap;
-  margin-left:10px;
-  flex-shrink:0;
-  width:90px;
-  text-align:right;
+  margin-left: 10px;
+  flex-shrink: 0;
+  width: 90px;
+  text-align: right;
   cursor: pointer;
 }
 
@@ -1172,79 +1217,79 @@ export default {
 .track-name-input {
   flex: 1;
   padding: 6px 10px;
-  border:1px solid v-bind(mainColorDarkDouble);
-  border-radius:4px;
-  font-size:14px;
+  border: 1px solid v-bind(mainColorDarkDouble);
+  border-radius: 4px;
+  font-size: 14px;
   color: v-bind(mainColorDarkDouble);
-  outline:none;
-  background: rgba(255,255,255,0.03) !important;
+  outline: none;
+  background: rgba(255, 255, 255, 0.03) !important;
 }
 
 .track-name-input:focus {
   border-color: v-bind(mainColorDark);
-  box-shadow:0 0 0 2px rgba(47, 148, 101, 0.2);
+  box-shadow: 0 0 0 2px rgba(47, 148, 101, 0.2);
 }
 
 .track-duration-input {
-  width:110px;
-  padding:6px 10px;
-  border:1px solid v-bind(mainColorDarkDouble);
-  border-radius:4px;
-  font-size:14px;
+  width: 110px;
+  padding: 6px 10px;
+  border: 1px solid v-bind(mainColorDarkDouble);
+  border-radius: 4px;
+  font-size: 14px;
   color: v-bind(mainColorDarkDouble);
-  text-align:center;
-  outline:none;
-  background: rgba(255,255,255,0.03) !important;
+  text-align: center;
+  outline: none;
+  background: rgba(255, 255, 255, 0.03) !important;
 }
 
 .track-duration-input:focus {
   border-color: v-bind(mainColorDark);
-  box-shadow:0 0 0 2px rgba(47, 148, 101, 0.2);
+  box-shadow: 0 0 0 2px rgba(47, 148, 101, 0.2);
 }
 
 .track-del-btn {
-  margin-left:10px;
+  margin-left: 10px;
 }
 
 .track-del-btn button {
   background: transparent;
   border: none;
-  font-size:18px;
-  color:#dc2626;
+  font-size: 18px;
+  color: #dc2626;
   cursor: pointer;
-  width:24px;
-  height:24px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border-radius:50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
   transition: background 0.2s;
 }
 
 .add-track-btn-box {
-  text-align:right;
+  text-align: right;
   background: transparent !important;
 }
 
 .add-track-btn {
   background: v-bind(mainColorDark);
-  color:#fff;
-  border:none;
-  padding:8px 16px;
-  border-radius:6px;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size:14px;
+  font-size: 14px;
   transition: all 0.2s;
 }
 
 .edit-btn {
   background: v-bind(mainColorDark);
-  color:#fff;
-  border:none;
-  padding:6px 14px;
-  border-radius:6px;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size:14px;
+  font-size: 14px;
   transition: all 0.2s;
 }
 
@@ -1254,14 +1299,14 @@ export default {
 
 .mode-btn {
   background: v-bind(mainColorDarkDouble);
-  color:#fff;
-  border:none;
-  padding:6px 14px;
-  border-radius:6px;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size:14px;
+  font-size: 14px;
   transition: all 0.2s;
-  margin-left:8px;
+  margin-left: 8px;
 }
 
 .mode-btn.active {
@@ -1269,37 +1314,37 @@ export default {
 }
 
 .track-score-slider-wrap {
-  flex:1;
-  display:flex;
-  align-items:center;
-  gap:8px;
-  min-width:180px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 180px;
 }
 
 .track-score-slider {
-  width:100%;
-  height:20px;
-  background: rgba(255,255,255,0.05);
-  border-radius:6px;
+  width: 100%;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
   cursor: pointer;
   position: relative;
   transition: background 0.2s;
 }
 
 .track-score-progress {
-  height:100%;
+  height: 100%;
   background: v-bind(mainColorDark);
-  border-radius:6px;
+  border-radius: 6px;
   transition: width 0.05s linear;
 }
 
 .track-score-text {
-  font-size:16px;
-  font-weight:700;
+  font-size: 16px;
+  font-weight: 700;
   color: v-bind(mainColorDarkDouble);
   white-space: nowrap;
-  width:50px;
-  text-align:center;
-  flex-shrink:0;
+  width: 50px;
+  text-align: center;
+  flex-shrink: 0;
 }
 </style>

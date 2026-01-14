@@ -1,11 +1,9 @@
 <template>
   <div class="container">
-    <!-- ✅ 已删除：专辑搜索池提示文案模块 -->
-
     <!-- ✅ 顶部操作区：和MusicList完全一致的一行式布局+毛玻璃蒙版 -->
     <div class="all-actions-wrapper">
-      <!-- ✅ 核心修改：新增按钮添加 v-if="isAdmin" 仅管理员可见 -->
-      <button v-if="isAdmin" @click="goAddOriginalAlbum" class="add-original-btn"><strong>新增</strong></button>
+      <!-- ✅✅✅ 核心修改1：修改新增按钮事件 → 打开侧边栏，不是跳转路由 -->
+      <button v-if="isAdmin" @click="showAddAlbumSidebar = true" class="add-original-btn"><strong>新增</strong></button>
 
       <!-- 排序方式：下拉按钮(透明) + 下拉列表(0.25蒙版) 完全和MusicList一致 -->
       <div class="dropdown-btn-container">
@@ -95,8 +93,6 @@
 
     </div>
 
-    <!-- ✅ 已删除：独立的 action-btns 重置按钮容器 -->
-
     <!-- 搜索结果列表 -->
     <div v-if="loading" class="loading-tip">加载中...</div>
     <div v-else-if="searchResult.length === 0" class="empty-tip">
@@ -157,16 +153,26 @@
         <button @click="jumpToPage()" class="jump-btn">跳转</button>
       </div>
     </div>
+
+    <!-- ✅✅✅ 核心修改2：引入AddAlbum左侧侧边栏子组件 -->
+    <AddAlbum
+      :visible="showAddAlbumSidebar"
+      :mainColor="mainColor"
+      :mainColorDark="mainColorDark"
+      :mainColorDarkDouble="mainColorDarkDouble"
+      @close="showAddAlbumSidebar = false"
+    />
   </div>
 </template>
 
 <script>
-// 引入子组件
+// ✅✅✅ 核心修改3：引入AddAlbum组件
 import AlbumPoolItem from '@/components/item/AlbumPoolItem.vue'
+import AddAlbum from '@/components/sidebar/AddAlbum.vue' // 你的AddAlbum路径，按需微调
 
 export default {
   name: 'SearchAlbumPool',
-  components: { AlbumPoolItem },
+  components: { AlbumPoolItem, AddAlbum }, // ✅ 注册组件
   props: {
     mainColor: {
       type: String,
@@ -183,23 +189,23 @@ export default {
   },
   data() {
     return {
-      nameSingerKeyword: '',  // 专辑名/歌手 搜索关键词
-      tagKeyword: '',         // 标签 搜索关键词
-      searchResult: [],       // 搜索结果
-      loading: false,         // 加载状态
-      page: 1,                // 当前页
-      pageSize: 5,            // 每页条数 【和MusicList默认值一致】
-      pageSizeOptions: [5, 10, 20, 50], // 每页条数选项 和MusicList一致
-      pagination: {           // 分页信息 核心：字段和后端+MusicList完全一致
+      nameSingerKeyword: '',
+      tagKeyword: '',
+      searchResult: [],
+      loading: false,
+      page: 1,
+      pageSize: 10,
+      pageSizeOptions: [5, 10, 20, 50],
+      pagination: {
         total: 0,
         page: 1,
         page_size: 5,
         total_pages: 0
       },
-      isAdmin: false,         // 是否为管理员
-      sortBy: 'created_at',   // 排序字段 【和MusicList一致改为created_at】
-      sortOrder: 'desc',      // 排序方式
-      jumpPageNum: 1,         // 跳转页码输入值
+      isAdmin: false,
+      sortBy: 'created_at',
+      sortOrder: 'desc',
+      jumpPageNum: 1,
       sortByMap: {
         album_name: '专辑名称',
         release_year: '发行年份',
@@ -209,24 +215,22 @@ export default {
       dropdownShow: {
         sortBy: false,
         pageSize: false
-      }
+      },
+      // ✅✅✅ 核心修改4：新增侧边栏显示隐藏的状态变量
+      showAddAlbumSidebar: false
     }
   },
   computed: {
-    // 判断是否有输入搜索关键词，用于空数据提示
     hasSearchKeyword() {
       return this.nameSingerKeyword.trim() || this.tagKeyword.trim()
     }
   },
   created() {
-    // 检查登录状态
     if (!localStorage.getItem('token')) {
       this.$router.push('/login');
       return;
     }
-    // 获取用户是否为管理员
     this.isAdmin = localStorage.getItem('is_admin') === '1';
-    // 初始化加载数据
     this.getSearchResult();
   },
   methods: {
@@ -247,192 +251,78 @@ export default {
       this.pageSize = pageSize
       this.resetPageAndGetResult()
     },
-
-    // 统一请求数据入口方法，判断走哪个搜索接口
     getSearchResult() {
       this.tagKeyword.trim() ? this.searchByTag() : this.searchByNameSinger();
     },
-
-    // 核心方法1：按【专辑名/歌手】搜索
     searchByNameSinger() {
       this.loading = true;
       this.$axios({
         url: '/api/album/pool/search/name-singer',
         method: 'GET',
-        headers: {
-          'Authorization': localStorage.getItem('token') || '',
-        },
-        params: {
-          keyword: this.nameSingerKeyword.trim(),
-          page: this.page,
-          page_size: this.pageSize,
-          sort_field: this.sortBy,
-          sort_order: this.sortOrder
-        }
-      })
-          .then(res => {
-            this.loading = false;
-            if (res.data.code === 200) {
-              this.searchResult = res.data.data.list || [];
-              this.pagination = res.data.data.pagination || {
-                total: 0,
-                page: 1,
-                page_size: this.pageSize,
-                total_pages: 0
-              };
-              this.jumpPageNum = this.pagination.page; // 同步跳转框页码
-            } else {
-              this.searchResult = [];
-            }
-          })
-          .catch(err => {
-            this.loading = false;
-            console.error('专辑/歌手搜索失败：', err);
-          });
+        headers: { 'Authorization': localStorage.getItem('token') || '', },
+        params: { keyword: this.nameSingerKeyword.trim(), page: this.page, page_size: this.pageSize, sort_field: this.sortBy, sort_order: this.sortOrder }
+      }).then(res => {
+        this.loading = false;
+        if (res.data.code === 200) {
+          this.searchResult = res.data.data.list || [];
+          this.pagination = res.data.data.pagination || { total: 0, page: 1, page_size: this.pageSize, total_pages: 0 };
+          this.jumpPageNum = this.pagination.page;
+        } else { this.searchResult = []; }
+      }).catch(err => { this.loading = false; console.error('专辑/歌手搜索失败：', err); });
     },
-
-    // 核心方法2：按【标签】搜索
     searchByTag() {
       this.loading = true;
       this.$axios({
         url: '/api/album/pool/search/tags',
         method: 'GET',
-        headers: {
-          'Authorization': localStorage.getItem('token') || '',
-        },
-        params: {
-          tag: this.tagKeyword.trim(),
-          page: this.page,
-          page_size: this.pageSize,
-          sort_field: this.sortBy,
-          sort_order: this.sortOrder
-        }
-      })
-          .then(res => {
-            this.loading = false;
-            if (res.data.code === 200) {
-              this.searchResult = res.data.data.list || [];
-              this.pagination = res.data.data.pagination || {
-                total: 0,
-                page: 1,
-                page_size: this.pageSize,
-                total_pages: 0
-              };
-              this.jumpPageNum = this.pagination.page; // 同步跳转框页码
-            } else {
-              this.searchResult = [];
-            }
-          })
-          .catch(err => {
-            this.loading = false;
-            console.error('标签搜索失败：', err);
-          });
+        headers: { 'Authorization': localStorage.getItem('token') || '', },
+        params: { tag: this.tagKeyword.trim(), page: this.page, page_size: this.pageSize, sort_field: this.sortBy, sort_order: this.sortOrder }
+      }).then(res => {
+        this.loading = false;
+        if (res.data.code === 200) {
+          this.searchResult = res.data.data.list || [];
+          this.pagination = res.data.data.pagination || { total: 0, page: 1, page_size: this.pageSize, total_pages: 0 };
+          this.jumpPageNum = this.pagination.page;
+        } else { this.searchResult = []; }
+      }).catch(err => { this.loading = false; console.error('标签搜索失败：', err); });
     },
-    // 清空专辑名/歌手搜索
-    clearNameSingerSearch() {
-      this.nameSingerKeyword = '';
-      this.page = 1;
-      this.getSearchResult();
-    },
-
-    // 清空标签搜索
-    clearTagSearch() {
-      this.tagKeyword = '';
-      this.page = 1;
-      this.getSearchResult();
-    },
-
-    // 重置所有搜索条件
-    resetSearch() {
-      this.nameSingerKeyword = '';
-      this.tagKeyword = '';
-      this.page = 1;
-      this.sortBy = 'created_at';
-      this.sortOrder = 'desc';
-      this.getSearchResult();
-    },
-
-    // 切换每页条数时重置页码为1
-    resetPageAndGetResult() {
-      this.page = 1;
-      this.getSearchResult();
-    },
-
-    // 切换页码
-    changePage(newPage) {
-      if (newPage < 1 || newPage > this.pagination.total_pages || newPage === this.page) return;
-      this.page = newPage;
-      this.getSearchResult();
-    },
-
-    // 跳转指定页码 完整功能
+    clearNameSingerSearch() { this.nameSingerKeyword = ''; this.page = 1; this.getSearchResult(); },
+    clearTagSearch() { this.tagKeyword = ''; this.page = 1; this.getSearchResult(); },
+    resetSearch() { this.nameSingerKeyword = ''; this.tagKeyword = ''; this.page = 1; this.sortBy = 'created_at'; this.sortOrder = 'desc'; this.getSearchResult(); },
+    resetPageAndGetResult() { this.page = 1; this.getSearchResult(); },
+    changePage(newPage) { if (newPage < 1 || newPage > this.pagination.total_pages || newPage === this.page) return; this.page = newPage; this.getSearchResult(); },
     jumpToPage() {
       const num = parseInt(this.jumpPageNum);
-      if (isNaN(num) || num < 1 || num > this.pagination.total_pages) {
-        this.jumpPageNum = this.pagination.page;
-        return;
-      }
+      if (isNaN(num) || num < 1 || num > this.pagination.total_pages) { this.jumpPageNum = this.pagination.page; return; }
       this.changePage(num);
     },
-
-    // ✅✅✅ 核心修改：复制专辑 - 删除所有弹窗 + 重复时跳转专辑详情页
     copyAlbum(albumId) {
       if (!albumId) return;
-      this.$axios({
-        url: `/api/album/pool/copy/${albumId}`,
-        method: 'POST',
-        headers: {'Authorization': localStorage.getItem('token') || ''}
-      })
-          .then(res => {
-            const {code, data} = res.data;
-            // 复制成功 → 静默跳转到webhome并激活我的音乐tab
-            if (code === 200) {
-              this.$router.push(`/webhome`).then(() => {
-                const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
-                if (webHomeVm) {
-                  webHomeVm.activeMainTab = 'mymusic'
-                }
-              })
-            }
-            // 409重复状态码 → 静默跳转到对应的专辑详情页 /album/detail/ID?id=ID
-            else if (code === 409 && data) {
-              const duplicateAlbumId = Number(data) || data;
-              this.$router.push(`/album/detail/${duplicateAlbumId}?id=${duplicateAlbumId}`);
-            }
+      this.$axios({ url: `/api/album/pool/copy/${albumId}`, method: 'POST', headers: {'Authorization': localStorage.getItem('token') || ''} })
+      .then(res => {
+        const {code, data} = res.data;
+        if (code === 200) {
+          this.$router.push(`/webhome`).then(() => {
+            const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
+            if (webHomeVm) webHomeVm.activeMainTab = 'mymusic'
           })
-          .catch(err => {
-            console.error('复制专辑失败：', err);
-          });
+        } else if (code === 409 && data) {
+          const duplicateAlbumId = Number(data) || data;
+          this.$router.push(`/album/detail/${duplicateAlbumId}?id=${duplicateAlbumId}`);
+        }
+      }).catch(err => { console.error('复制专辑失败：', err); });
     },
-
-    // 查看详情
-    viewAlbumDetail(poolId) {
-      this.$router.push(`/album/pool/detail/${poolId}`);
-    },
-
-    // ✅✅✅ 删除专辑 - 仅管理员，删除确认弹窗保留（高危操作建议保留）
+    viewAlbumDetail(poolId) { this.$router.push(`/album/pool/detail/${poolId}`); },
     deletePoolAlbum(poolId) {
       if (!this.isAdmin) return;
       if (!confirm('确定要删除该专辑吗？删除后不可恢复！')) return;
-      this.$axios({
-        url: `/api/album/pool/delete/${poolId}`,
-        method: 'DELETE',
-        headers: {'Authorization': localStorage.getItem('token') || ''}
-      })
-          .then(res => {
-            if (res.data.code === 200) {
-              this.getSearchResult();
-            }
-          })
-          .catch(err => {
-            console.error('删除专辑失败：', err);
-          });
+      this.$axios({ url: `/api/album/pool/delete/${poolId}`, method: 'DELETE', headers: {'Authorization': localStorage.getItem('token') || ''} })
+      .then(res => { if (res.data.code === 200) this.getSearchResult();
+      }).catch(err => {
+        console.error('删除专辑失败：', err);
+      });
     },
-
-    // 新增原创专辑
-    goAddOriginalAlbum() {
-      this.$router.push('/add-album');
-    }
+    // ✅✅✅ 核心修改5：删除原跳转方法，不需要了
   }
 };
 </script>
@@ -503,7 +393,7 @@ body {
   bottom: 0;
   width: 100%;
   height: 4px;
-  border-radius: 2px;
+	border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
@@ -517,40 +407,38 @@ body {
   transform: rotate(180deg);
 }
 
+/* ✅✅✅ 核心修改 - 下拉列表样式统一修改 去掉蒙版+毛玻璃、背景mainColorDark、字体纯白色 */
 .dropdown-options {
   position: absolute;
   top: 100%;
   left: 0;
   right: 0;
   margin-top: 4px;
-  padding: 8px 0;
+	padding: 8px 0;
   list-style: none;
-  border-radius: 6px;
+	border-radius: 6px;
   z-index: 99999;
-  background: rgba(255, 255, 255, 0.25) !important;
-  backdrop-filter: blur(2px);
+  background: v-bind(mainColorDark) !important;
+  backdrop-filter: none !important;
   border: none;
   overflow: visible;
 }
-
 .dropdown-options li {
   padding: 8px 16px;
   font-size: 14px;
-  color: v-bind(mainColorDark);
+  color: #ffffff !important;
   cursor: pointer;
   transition: all 0.2s;
   font-weight: 500;
 }
-
 .dropdown-options li:hover {
-  background: rgba(255, 255, 255, 0.35);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+	border-radius: 4px;
 }
-
 .dropdown-options li.active {
-  color: v-bind(mainColorDark);
+  color: #ffffff !important;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255,255,255,0.3);
 }
 
 .sort-options {
@@ -558,22 +446,22 @@ body {
   gap: 10px;
   background: transparent !important;
   backdrop-filter: none !important;
-  border-radius: 4px;
-  border: none !important;
+	border-radius: 4px;
+	border: none !important;
   width: fit-content;
   box-sizing: border-box;
 }
 
 .tab-item {
   padding: 8px 16px;
-  border-radius: 6px;
+	border-radius: 6px;
   cursor: pointer;
   font-size: 15px;
   color: v-bind(mainColorDark);
   transition: all 0.2s;
   font-weight: 600;
   position: relative;
-  border: none;
+	border: none;
   background: transparent;
 }
 
@@ -585,11 +473,11 @@ body {
 .tab-item::after {
   content: '';
   position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
+	left: 0;
+	bottom: 0;
+	width: 100%;
+	height: 4px;
+	border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
@@ -609,9 +497,9 @@ body {
 .album-item-wrapper {
   position: relative;
   margin-bottom: 2px;
-  padding: 3px 20px;
-  border: none;
-  border-radius: 8px;
+	padding: 3px 20px;
+	border: none;
+	border-radius: 8px;
   background: transparent;
   z-index: 2;
 }
@@ -626,7 +514,7 @@ body {
   width: 100%;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(4px);
-  border-radius: 8px;
+	border-radius: 8px;
   box-sizing: border-box;
   justify-content: flex-start;
 }
@@ -639,18 +527,18 @@ body {
 
 .page-info {
   color: v-bind(mainColorDark);
-  font-size: 14px;
+	font-size: 14px;
   line-height: 1.5;
 }
 
 .page-info-wrapper::after {
   content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	width: 100%;
+	height: 4px;
+	border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
@@ -665,8 +553,8 @@ body {
 .page-btn {
   padding: 6px 12px;
   border: v-bind(mainColorDark);
-  border-radius: 4px;
-  color: #ffffff;
+	border-radius: 4px;
+  color:#ffffff;
   background: v-bind(mainColorDark);
   cursor: pointer;
 }
@@ -679,8 +567,8 @@ body {
 
 .page-input {
   width: 60px;
-  padding: 6px 8px;
-  border-radius: 4px;
+	padding: 6px 8px;
+	border-radius: 4px;
   background: transparent !important;
   border: none !important;
   color: #ffffff;
@@ -696,9 +584,9 @@ body {
   padding: 6px 12px;
   background: v-bind(mainColorDark);
   color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
 }
 
 .search-container {
@@ -709,9 +597,9 @@ body {
 
 .search-input {
   padding: 6px 10px;
-  width: 200px;
-  border-radius: 4px;
-  font-size: 14px;
+	width: 200px;
+	border-radius: 4px;
+	font-size: 14px;
   background: transparent !important;
   border: none !important;
   color: v-bind(mainColorDark) !important;
@@ -725,22 +613,22 @@ body {
 
 .search-btn {
   padding: 6px 12px;
-  background: v-bind(mainColorDark);
+	background: v-bind(mainColorDark);
   color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 14px;
 }
 
 .clear-btn {
   padding: 6px 12px;
   background: #999;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
+	color: white;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 14px;
 }
 
 .clear-btn:hover {
@@ -755,15 +643,14 @@ body {
   background: v-bind(mainColorDarkDouble);
 }
 
-/* ✅ 关键样式：重置按钮 与 搜类型按钮 样式完全一致+hover效果一致 */
 .reset-btn {
   padding: 6px 12px;
   background: v-bind(mainColorDark);
   color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 14px;
 }
 
 .reset-btn:hover {

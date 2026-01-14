@@ -203,7 +203,7 @@ export default {
       loading: false,
       // 分页参数
       page: 1,
-      pageSize: 5,
+      pageSize: 10,
       pageSizeOptions: [5, 10, 20, 50],
       pagination: {
         total: 0,
@@ -368,7 +368,6 @@ export default {
       try {
         const res = await this.$axios.delete(`/api/album/delete/${albumId}`);
         if (res.data.code === 200) {
-          alert('删除成功！');
           this.getMusicList();
         } else {
           alert(res.data.msg || '删除失败');
@@ -437,7 +436,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-	margin-bottom: 20px;
+  margin-bottom: 20px;
   flex-wrap: wrap;
   width: 100%;
   background: rgba(255, 255, 255, 0.25);
@@ -454,29 +453,31 @@ body {
   position: relative;
   z-index: 9999;
 }
+
 .dropdown-btn {
   padding: 8px 16px;
   border: none;
-	border-radius: 6px;
+  border-radius: 6px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-	display: flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   transition: all 0.2s;
   background: v-bind(mainColorDark);
-  color:#fafafa;
+  color: #fafafa;
   position: relative;
 }
+
 .dropdown-btn::after {
   content: '';
   position: absolute;
   left: 0;
   bottom: 0;
-	width: 100%;
-	height: 4px;
-	border-radius: 2px;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
@@ -485,40 +486,46 @@ body {
   font-size: 12px;
   transition: transform 0.2s;
 }
+
 .arrow-icon.active {
   transform: rotate(180deg);
 }
+
+/* ✅✅✅ 核心修改 - 下拉列表样式：移除蒙版/毛玻璃、背景改为mainColorDark、字体白色 */
 .dropdown-options {
   position: absolute;
   top: 100%;
   left: 0;
   right: 0;
   margin-top: 4px;
-	padding: 8px 0;
+  padding: 8px 0;
   list-style: none;
-	border-radius: 6px;
+  border-radius: 6px;
   z-index: 99999;
-  background: rgba(255, 255, 255, 0.25) !important;
-  backdrop-filter: blur(2px);
+  background: v-bind(mainColorDark) !important;
+  backdrop-filter: none !important;
   border: none;
   overflow: visible;
 }
+
 .dropdown-options li {
   padding: 8px 16px;
   font-size: 14px;
-  color: v-bind(mainColorDark);
+  color: #ffffff !important;
   cursor: pointer;
   transition: all 0.2s;
   font-weight: 500;
 }
+
 .dropdown-options li:hover {
-  background: rgba(255, 255, 255, 0.35);
-	border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
 }
+
 .dropdown-options li.active {
-  color: v-bind(mainColorDark);
+  color: #ffffff !important;
   font-weight: 600;
-  background: rgba(255,255,255,0.4);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* 升序/降序 按钮组 完全保留原版 一丝未改 */
@@ -527,60 +534,66 @@ body {
   gap: 10px;
   background: transparent !important;
   backdrop-filter: none !important;
-	border-radius: 4px;
-	border: none !important;
+  border-radius: 4px;
+  border: none !important;
   width: fit-content;
   box-sizing: border-box;
 }
+
 .tab-item {
   padding: 8px 16px;
-	border-radius: 6px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 15px;
   color: v-bind(mainColorDark);
   transition: all 0.2s;
   font-weight: 600;
   position: relative;
-	border: none;
+  border: none;
   background: transparent;
 }
+
 .tab-item.active {
   background: v-bind(mainColorDark);
   color: #fff;
 }
+
 .tab-item::after {
   content: '';
   position: absolute;
-	left: 0;
-	bottom: 0;
-	width: 100%;
-	height: 4px;
-	border-radius: 2px;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
 
 .empty-tip {
   text-align: center;
-	color: #999;
-	padding: 50px 0;
+  color: #999;
+  padding: 50px 0;
 }
+
 .loading-tip {
   text-align: center;
-	color: #666;
-	padding: 30px 0;
+  color: #666;
+  padding: 30px 0;
 }
+
 .album-list {
   margin-top: 20px;
   position: relative;
   z-index: 1;
 }
+
 .album-item-wrapper {
   position: relative;
   margin-bottom: 2px;
   padding: 3px 20px;
-	border: none;
-	border-radius: 8px;
+  border: none;
+  border-radius: 8px;
   background: transparent;
   z-index: 2;
 }
@@ -588,20 +601,21 @@ body {
 /* ✅✅✅ 核心修改2：删除专辑按钮 纯×号样式 无边框无背景 统一风格 */
 .delete-album-btn {
   position: absolute;
-	top: -6px;
-	right: 30px;
+  top: -6px;
+  right: 30px;
   padding: 0;
-	border: none;
+  border: none;
   background: transparent;
-	color: v-bind(mainColorDarkDouble);
-	cursor: pointer;
-	font-size: 60px;
+  color: v-bind(mainColorDarkDouble);
+  cursor: pointer;
+  font-size: 60px;
   font-weight: 200;
-	white-space: nowrap;
+  white-space: nowrap;
   line-height: 1;
   flex-shrink: 0;
   transform: translateY(-1px);
 }
+
 .delete-album-btn:hover {
   background: transparent;
   color: v-bind(mainColorDarkDouble);
@@ -622,41 +636,47 @@ body {
   box-sizing: border-box;
   justify-content: flex-start;
 }
+
 .page-info-wrapper {
   position: relative;
   padding: 4px 0;
   display: inline-block;
 }
+
 .page-info {
   color: v-bind(mainColorDark);
-	font-size: 14px;
+  font-size: 14px;
   line-height: 1.5;
 }
+
 .page-info-wrapper::after {
   content: '';
-	position: absolute;
-	left: 0;
-	bottom: 0;
-	width: 100%;
-	height: 4px;
-	border-radius: 2px;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
 }
+
 .jump-page {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-left: auto;
 }
+
 .page-btn {
   padding: 6px 12px;
   border: v-bind(mainColorDark);
-	border-radius: 4px;
-  color:#ffffff;
+  border-radius: 4px;
+  color: #ffffff;
   background: v-bind(mainColorDark);
   cursor: pointer;
 }
+
 .page-btn:disabled {
   background: v-bind(mainColorDark);
   color: #ffffff;
@@ -665,13 +685,14 @@ body {
 
 .page-input {
   width: 60px;
-	padding: 6px 8px;
-	border-radius: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
   background: transparent !important;
   border: none !important;
   color: #ffffff;
   outline: none;
 }
+
 .page-input::placeholder {
   color: #ffffff;
   opacity: 1;
@@ -686,20 +707,22 @@ body {
   padding: 6px 12px;
   background: v-bind(mainColorDark);
   color: white;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
+
 .search-container {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+
 .search-input {
   padding: 6px 10px;
-	width: 200px;
-	border-radius: 4px;
-	font-size: 14px;
+  width: 200px;
+  border-radius: 4px;
+  font-size: 14px;
   background: transparent !important;
   border: none !important;
   color: v-bind(mainColorDark) !important;
@@ -715,30 +738,35 @@ body {
   cursor: not-allowed;
   background: transparent !important;
 }
+
 .search-btn {
   padding: 6px 12px;
-	background: v-bind(mainColorDark);
+  background: v-bind(mainColorDark);
   color: white;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
-	font-size: 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
 }
+
 .clear-btn {
   padding: 6px 12px;
   background: #999;
-	color: white;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
-	font-size: 14px;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
 }
+
 .clear-btn:hover {
   background: #666;
 }
+
 .tag-search-container .search-btn {
   background: v-bind(mainColorDark);
 }
+
 .tag-search-container .search-btn:hover {
   background: v-bind(mainColorDarkDouble);
 }

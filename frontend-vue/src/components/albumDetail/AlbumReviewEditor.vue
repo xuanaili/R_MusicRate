@@ -134,6 +134,8 @@
 </template>
 
 <script>
+import {calculateAlbumTotalScore} from "@/utils/scoreCalc";
+
 export default {
   name: 'AlbumReviewEditor',
   props: {
@@ -187,6 +189,10 @@ export default {
           this.mainColorDark = '#2f9465';
           this.mainColorDarkDouble = '#257d51';
         }
+
+       if (newVal.my_score) {
+        console.log('AlbumReviewEditor: album.my_score 更新为', newVal.my_score);
+      }
       }
     },
     currentYear: { immediate: true, handler() { this.initCalendar() } },
@@ -358,11 +364,44 @@ getDayDetailList() {
       this.tooltipVisible = false;
       this.tooltipText = '';
     },
-    async handleAddReview() {
-      await this.$emit('add-review', this.newFeelingContent);
-      this.newFeelingContent = '';
-      this.fetchCalendarReviewData();
-    },
+async handleAddReview() {
+  if (!this.newFeelingContent.trim()) {
+    this.$message?.warning('听后感内容不能为空！');
+    return;
+  }
+
+  // ======== 核心修复开始 ========
+  // 1. nextTick 等待Vue异步更新完成，读取最新的 album.my_score (Vue响应式异步更新必加)
+  await this.$nextTick();
+
+  let scoreList = [];
+  console.log('✅ 子组件读取的最新album.my_score：', this.album?.my_score);
+
+  // 2. 严谨的非空+类型校验，兼容所有边界情况
+  if (this.album && this.album.my_score) {
+    if (typeof this.album.my_score === 'string') {
+      try {
+        scoreList = JSON.parse(this.album.my_score);
+      } catch (err) {
+        console.error('评分数组字符串解析失败：', err);
+        scoreList = [];
+      }
+    } else if (Array.isArray(this.album.my_score)) {
+      // 3. 浅拷贝数组，切断引用关系，解决内存污染问题 ✅ 重中之重
+      scoreList = [...this.album.my_score];
+    }
+  }
+  // ======== 核心修复结束 ========
+
+  // 计算最终综合评分
+  const finalScore = calculateAlbumTotalScore(scoreList || []);
+  console.log('✅ 子组件计算的综合评分：', finalScore);
+
+  // 上传数据到父组件
+  await this.$emit('add-review', this.newFeelingContent, finalScore);
+  this.newFeelingContent = '';
+  this.fetchCalendarReviewData();
+},
     async handleDeleteSingle(feelingId) {
       await this.$emit('delete-single', feelingId);
       this.fetchCalendarReviewData();

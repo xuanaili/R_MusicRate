@@ -7,11 +7,11 @@ import VueRouter from 'vue-router'
 import LoginPage from '@/views/LoginPage.vue'
 import MusicList from '@/components/myMusic/MusicList.vue'
 import RegisterPage from '@/views/RegisterPage.vue'
-import AddAlbum from '@/views/AddAlbum.vue'
+import AddAlbum from '@/components/sidebar/AddAlbum.vue'
 import AlbumDetail from '@/views/AlbumDetail.vue'
 import SearchAlbumPool from '@/components/searchMusic/SearchAlbumPool.vue'
 // ========== 核心新增：导入编辑页组件 ==========
-import EditPoolAlbum from '@/views/EditPoolAlbum.vue'
+import EditPoolAlbum from '@/components/sidebar/EditPoolAlbum.vue'
 // ========== 新增结束 ==========
 
 // 安装插件
@@ -81,8 +81,8 @@ router.beforeEach((to, from, next) => {
 // 修改为：你的【电脑连手机热点后的内网IP】+ 后端端口5000
 // ✅ 正确配置
 
-axios.defaults.baseURL = 'http://192.168.0.105:5000'
-// axios.defaults.baseURL = 'http://localhost:5000'
+// axios.defaults.baseURL = 'http://192.168.0.105:5000'
+axios.defaults.baseURL = 'http://localhost:5000'
 axios.defaults.timeout = 10000
 axios.defaults.withCredentials = true // ✅ 保留，后端需要这个接收token
 axios.defaults.crossDomain = true; // ✅✅✅ 新增这一行，解决手机端跨域请求拦截问题

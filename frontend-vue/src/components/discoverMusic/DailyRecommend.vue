@@ -9,7 +9,7 @@
       <!-- 左侧：放大版基础信息/简介 滑动切换面板 + 左侧更换箭头 + 右侧简介箭头 左右对称 -->
       <div class="album-left-section" :class="{ 'slide-to-intro': showIntro }">
         <div class="album-panel info-panel">
-          <!-- ✅✅✅ 核心修改1：封面添加点击事件 @click="copyAlbum" + 鼠标悬浮指针样式 -->
+          <!-- ✅ 原有：封面添加点击事件 @click="copyAlbum" + 鼠标悬浮指针样式 -->
           <div class="cover" @click="copyAlbum">
             <img v-if="albumData.cover_img" :src="albumData.cover_img" alt="封面" class="detail-cover">
             <div v-else class="no-cover">暂无封面</div>
@@ -26,7 +26,7 @@
                 创建时间：{{ formatCreateTime(albumData.create_time) }}</p>
             </div>
           </div>
-          <!-- ✅✅✅ 核心修改2：彻底删除 添加按钮的 actions 容器 -->
+          <!-- ✅ 原有：彻底删除 添加按钮的 actions 容器 -->
 
         </div>
 
@@ -56,7 +56,8 @@
 
       <!-- 中间：收窄版单曲列表 -->
       <div class="album-center-section">
-        <div class="album-songs-list">
+        <!-- ✅✅✅ 核心修改1：给整个单曲列表容器绑定 copyAlbum 点击事件 -->
+        <div class="album-songs-list" @click="copyAlbum">
           <h4 class="songs-title" :style="{borderBottomColor: mainColor}">单曲列表</h4>
           <div v-if="!albumData.tracks || albumData.tracks.length === 0" class="no-songs-tip">暂无单曲信息</div>
           <ul class="songs-list" v-else>
@@ -255,7 +256,7 @@ export default {
             this.recentUsers = [];
           });
     },
-    // ✅ 无改动：原有添加逻辑保留，现在由封面点击触发
+    // ✅ 无改动：原有添加逻辑保留，现在封面+整块单曲列表 都触发这个方法
     copyAlbum() {
       if (!this.recommendId) return;
       this.$axios({
@@ -375,7 +376,7 @@ export default {
   z-index: 2;
 }
 
-/* ✅✅✅ 核心修改3：封面样式新增 鼠标指针 + 点击轻微缩放动画 提升交互体验 */
+/* ✅ 原有：封面样式 鼠标指针 + 点击轻微缩放动画 提升交互体验 */
 .cover {
   width: 260px;
   height: 260px;
@@ -446,12 +447,12 @@ export default {
   margin-top: 10px;
 }
 
-/* ✅✅✅ 核心修改4：彻底删除 copy-btn、actions 相关所有样式代码 */
+/* ✅ 原有：彻底删除 copy-btn、actions 相关所有样式代码 */
 
 .intro-title, .songs-title, .users-title, .style-title {
   font-size: 18px;
   color: v-bind(mainColorDarkDouble);
-  font-weight: 600;
+	font-weight: 600;
 	padding: 15px 20px 8px;
   margin: 0 !important;
   width: 100%;
@@ -524,7 +525,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+	font-size: 16px;
   margin: 0;
 }
 
@@ -580,6 +581,7 @@ export default {
   font-size: 14px;
   border-radius: 3px;
   margin-right: 18px;
+  flex-shrink: 0;
 }
 
 .song-name {
@@ -598,6 +600,7 @@ export default {
   height: 720px;
 }
 
+/* ✅✅✅ 核心样式修改2：给整块单曲列表容器加鼠标小手+点击反馈动画 */
 .album-songs-list {
   padding: 0 !important;
   background: rgba(255, 255, 255, 0.25);
@@ -606,13 +609,22 @@ export default {
 	border-radius: 8px;
 	height: 100%;
   box-sizing: border-box;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.album-songs-list:hover {
+  background: rgba(255, 255, 255, 0.35);
+  transform: scale(1.005);
+}
+.album-songs-list:active {
+  transform: scale(0.995);
 }
 
 .album-right-section {
   flex: 0.8;
   min-width: 220px;
   max-width: 500px;
-  height: 720px;
+	height: 720px;
   display: flex;
   flex-direction: column;
   gap: 20px;

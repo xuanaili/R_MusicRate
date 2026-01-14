@@ -5,7 +5,7 @@
 
     <!-- 管理员修改按钮 -->
     <div v-if="isAdmin" class="edit-btn-container">
-      <button @click="goEditAlbum" class="edit-btn" :style="{backgroundColor: mainColorDark}">修改专辑信息</button>
+      <button @click="showEditAlbumSidebar = true" class="edit-btn" :style="{backgroundColor: mainColorDark}">修改专辑信息</button>
     </div>
 
     <div v-if="loading" class="loading-tip">加载中...</div>
@@ -99,15 +99,27 @@
         </div>
       </div>
     </div>
+
+    <!-- ✅✅✅ 修改专辑 左侧独立侧边栏组件 -->
+    <EditPoolAlbum
+      :visible="showEditAlbumSidebar"
+      :album-id="currentAlbumId"
+      :mainColor="mainColor"
+      :mainColorDark="mainColorDark"
+      :mainColorDarkDouble="mainColorDarkDouble"
+      @close="handleEditClose"
+    />
   </div>
 </template>
 
 <script>
 import TagBubbleChart from '@/components/TagBubbleChart.vue'
+// ✅ 引入修改专辑侧边栏组件
+import EditPoolAlbum from '@/components/sidebar/EditPoolAlbum.vue'
 
 export default {
   name: 'AlbumPoolDetail',
-  components: {TagBubbleChart},
+  components: {TagBubbleChart, EditPoolAlbum}, // ✅ 注册组件
   data() {
     return {
       albumData: null,
@@ -120,7 +132,10 @@ export default {
       bgStyle: {},
       mainColor: 'transparent',
       mainColorDark: 'transparent',
-      mainColorDarkDouble: 'transparent'
+      mainColorDarkDouble: 'transparent',
+      // ✅ 控制修改专辑侧边栏显隐 + 当前专辑ID
+      showEditAlbumSidebar: false,
+      currentAlbumId: ''
     }
   },
   created() {
@@ -129,10 +144,11 @@ export default {
       return;
     }
     this.isAdmin = localStorage.getItem('is_admin') === '1';
-    const poolId = this.$route.params.poolId;
-    this.getPoolAlbumDetail(poolId);
-    this.getAlbumTagStats(poolId);
-    this.getAlbumPoolUsers(poolId);
+    // 获取当前专辑ID并赋值
+    this.currentAlbumId = this.$route.params.poolId;
+    this.getPoolAlbumDetail(this.currentAlbumId);
+    this.getAlbumTagStats(this.currentAlbumId);
+    this.getAlbumPoolUsers(this.currentAlbumId);
   },
   methods: {
     formatCreateTime(timeStr) {
@@ -213,7 +229,7 @@ export default {
                 this.albumData.tracks = [];
               }
               this.setFullPageBg(this.albumData.cover_img);
-              if(this.albumData.cover_img) this.extractAlbumMainColor(this.albumData.cover_img);
+              if (this.albumData.cover_img) this.extractAlbumMainColor(this.albumData.cover_img);
             } else {
               alert('获取详情失败：' + res.data.msg);
             }
@@ -261,7 +277,7 @@ export default {
     copyAlbum() {
       if (!confirm('确定复制该公共专辑为你的私有副本吗？')) return;
       this.$axios({
-        url: `/api/album/pool/copy/${this.$route.params.poolId}`,
+        url: `/api/album/pool/copy/${this.currentAlbumId}`,
         method: 'POST',
         headers: {'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}
       })
@@ -278,13 +294,20 @@ export default {
             alert('复制失败！');
           });
     },
-    goEditAlbum() {
-      this.$router.push(`/album/pool/edit/${this.$route.params.poolId}`);
+    // ✅ 关闭编辑侧边栏回调，修改成功则刷新当前页面数据
+    handleEditClose(isSuccess) {
+      this.showEditAlbumSidebar = false;
+      // 修改成功后自动刷新详情页，无需手动刷新
+      if (isSuccess) {
+        this.getPoolAlbumDetail(this.currentAlbumId);
+        this.getAlbumTagStats(this.currentAlbumId);
+        this.getAlbumPoolUsers(this.currentAlbumId);
+      }
     },
-goBack() {
-  window.targetTab = 'searchmusic'          // ① 告诉 WebHome 要去搜索音乐
-  this.$router.push({ path: '/webhome' })   // ② 先跳过去
-}
+    goBack() {
+      window.targetTab = 'searchmusic'
+      this.$router.push({path: '/webhome'})
+    }
   }
 };
 </script>
@@ -303,8 +326,8 @@ goBack() {
   position: absolute;
   top: 0;
   left: 0;
-	width: 100%;
-	height: 100%;
+  width: 100%;
+  height: 100%;
   z-index: -1;
   filter: blur(25px) brightness(1.2);
   -webkit-filter: blur(25px) brightness(1.2);
@@ -320,11 +343,12 @@ goBack() {
 .edit-btn {
   padding: 8px 20px;
   color: white;
-	border: none;
+  border: none;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
 }
+
 .edit-btn:hover {
   opacity: 0.9;
   transform: scale(1.02);
@@ -341,7 +365,7 @@ goBack() {
   display: flex;
   align-items: flex-start;
   gap: 25px;
-	width: 100%;
+  width: 100%;
   align-items: stretch;
 }
 
@@ -361,13 +385,13 @@ goBack() {
 
 .album-panel {
   position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	padding: 0px;
-	box-sizing: border-box;
-	transition: all 0.5s ease;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0px;
+  box-sizing: border-box;
+  transition: all 0.5s ease;
 }
 
 .info-panel {
@@ -405,8 +429,8 @@ goBack() {
 }
 
 .detail-cover {
-	width: 100%;
-	height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 
@@ -425,11 +449,13 @@ goBack() {
   width: 380px;
   box-sizing: border-box;
 }
+
 .info {
   text-align: center;
-	width: 100%;
+  width: 100%;
   box-sizing: border-box;
 }
+
 .info h3 {
   font-size: 24px;
   color: #333;
@@ -438,13 +464,15 @@ goBack() {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
-	font-weight: 600;
+  font-weight: 600;
 }
+
 .info p {
   margin: 12px 0;
   font-size: 17px;
   font-weight: 500;
 }
+
 .info .create-time {
   font-size: 15px;
   display: block;
@@ -452,7 +480,7 @@ goBack() {
 }
 
 .actions {
-  margin-top: 10px;
+  marginTop: 10px;
   display: flex;
   justify-content: center;
   gap: 25px;
@@ -462,14 +490,16 @@ goBack() {
   padding: 10px 25px;
   font-size: 16px;
   border-radius: 6px;
-	border: none;
+  border: none;
   cursor: pointer;
   transition: all 0.2s;
   color: #fff;
 }
+
 .back-btn {
   background: #999;
 }
+
 .copy-btn:hover, .back-btn:hover {
   opacity: 0.9;
   transform: scale(1.02);
@@ -478,16 +508,17 @@ goBack() {
 .intro-title, .songs-title, .users-title, .style-title {
   font-size: 18px;
   font-weight: 600;
-  color:v-bind(mainColorDarkDouble);
-	padding: 15px 20px 8px;
+  color: v-bind(mainColorDarkDouble);
+  padding: 15px 20px 8px;
   margin: 0 !important;
-	width: 100%;
+  width: 100%;
   box-sizing: border-box;
   text-align: left;
   width: calc(100% - 40px);
   margin: 0 auto !important;
   position: relative;
 }
+
 .intro-title::after,
 .songs-title::after,
 .users-title::after,
@@ -498,7 +529,7 @@ goBack() {
   bottom: 0;
   width: 100%;
   height: 7px;
-	border-radius: 2px;
+  border-radius: 2px;
   background-color: v-bind(mainColorDarkDouble);
 }
 
@@ -509,57 +540,90 @@ goBack() {
   border-radius: 6px;
   margin: 12px 20px 0;
   padding: 10px;
-	height: calc(100% - 80px);
+  height: calc(100% - 80px);
   box-sizing: border-box;
 }
+
 .no-intro-tip {
   color: #999;
   text-align: center;
-	padding: 60px 0;
-	height: 100%;
+  padding: 60px 0;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
-  margin:0;
+  margin: 0;
 }
 
 .no-songs-tip {
   color: #999;
   text-align: center;
-	padding: 12px 20px 20px;
+  padding: 12px 20px 20px;
   marginTop: 0;
 }
 
 /** 1. 单曲列表滚动容器 - 核心样式 */
 .songs-list {
   list-style: none;
-	padding: 12px 20px 0;
+  padding: 12px 20px 0;
   margin: 0;
   max-height: calc(100% - 60px);
   overflow-y: auto;
   padding-right: 5px;
   background: transparent !important;
 }
-.songs-list::-webkit-scrollbar { width: 6px; }
-.songs-list::-webkit-scrollbar-thumb { background: v-bind(mainColorDarkDouble); border-radius: 3px; }
-.songs-list::-webkit-scrollbar-thumb:hover { background: v-bind(mainColorDark); }
-.songs-list::-webkit-scrollbar-track { background: transparent !important; }
-.songs-list::-webkit-scrollbar-button { display: none !important; }
+
+.songs-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.songs-list::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDarkDouble);
+  border-radius: 3px;
+}
+
+.songs-list::-webkit-scrollbar-thumb:hover {
+  background: v-bind(mainColorDark);
+}
+
+.songs-list::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.songs-list::-webkit-scrollbar-button {
+  display: none !important;
+}
 
 /** 2. 最近收听用户滚动容器 - 统一相同样式 */
 .users-scroll-wrapper {
-	height: calc(100% - 50px);
+  height: calc(100% - 50px);
   overflow-y: auto;
   padding: 12px 20px 0;
   padding-right: 5px;
   background: transparent !important;
 }
-.users-scroll-wrapper::-webkit-scrollbar { width: 6px; }
-.users-scroll-wrapper::-webkit-scrollbar-thumb { background: v-bind(mainColorDarkDouble); border-radius: 3px; }
-.users-scroll-wrapper::-webkit-scrollbar-thumb:hover { background: v-bind(mainColorDark); }
-.users-scroll-wrapper::-webkit-scrollbar-track { background: transparent !important; }
-.users-scroll-wrapper::-webkit-scrollbar-button { display: none !important; }
+
+.users-scroll-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.users-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDarkDouble);
+  border-radius: 3px;
+}
+
+.users-scroll-wrapper::-webkit-scrollbar-thumb:hover {
+  background: v-bind(mainColorDark);
+}
+
+.users-scroll-wrapper::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.users-scroll-wrapper::-webkit-scrollbar-button {
+  display: none !important;
+}
 
 /** 3. 专辑简介滚动容器 - 统一相同样式 */
 .intro-content {
@@ -568,38 +632,56 @@ goBack() {
   line-height: 1.8;
   white-space: pre-wrap;
   word-wrap: break-word;
-	padding: 10px 15px;
-	height: 100%;
+  padding: 10px 15px;
+  height: 100%;
   overflow-y: auto;
   margin-top: 0;
   padding-right: 5px;
   background: transparent !important;
 }
-.intro-content::-webkit-scrollbar { width: 6px; }
-.intro-content::-webkit-scrollbar-thumb { background: v-bind(mainColorDarkDouble); border-radius: 3px; }
-.intro-content::-webkit-scrollbar-thumb:hover { background: v-bind(mainColorDark); }
-.intro-content::-webkit-scrollbar-track { background: transparent !important; }
-.intro-content::-webkit-scrollbar-button { display: none !important; }
+
+.intro-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.intro-content::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDarkDouble);
+  border-radius: 3px;
+}
+
+.intro-content::-webkit-scrollbar-thumb:hover {
+  background: v-bind(mainColorDark);
+}
+
+.intro-content::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.intro-content::-webkit-scrollbar-button {
+  display: none !important;
+}
 
 .song-item {
   display: flex;
   align-items: center;
   margin-bottom: 12px;
-	padding: 10px 15px;
-  background: rgba(255,255,255,0.3);
-	border-radius: 6px;
+  padding: 10px 15px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
 }
+
 .song-index {
   display: inline-block;
   width: 26px;
-	height: 26px;
+  height: 26px;
   line-height: 26px;
   text-align: center;
   color: white;
   font-size: 14px;
-	border-radius: 3px;
+  border-radius: 3px;
   margin-right: 18px;
 }
+
 .song-name {
   font-size: 16px;
   color: #333;
@@ -615,13 +697,14 @@ goBack() {
   max-width: 350px;
   height: 720px;
 }
+
 .album-songs-list {
   padding: 0 !important;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-	border-radius: 8px;
-	height: 100%;
+  border-radius: 8px;
+  height: 100%;
   box-sizing: border-box;
 }
 
@@ -629,101 +712,110 @@ goBack() {
   flex: 0.8;
   min-width: 220px;
   max-width: 500px;
-	height: 720px;
+  height: 720px;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
+
 .album-recent-users {
   padding: 0 !important;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-	border-radius: 8px;
-	height: 250px;
+  border-radius: 8px;
+  height: 250px;
   box-sizing: border-box;
 }
+
 .users-list {
   list-style: none;
   padding: 0;
   margin: 0;
 }
+
 .user-item {
-  display:flex;
-  align-items:center;
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-	padding:8px 10px;
-  margin-bottom:8px;
-  background:rgba(255,255,255,0.3);
-	border-radius:6px;
-	font-size:14px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  font-size: 14px;
 }
+
 .user-avatar {
-  width:26px;
-	height:26px;
-	border-radius:50%;
-	color:#fff;
-	display:flex;
-	align-items:center;
-	justify-content:center;
-	font-size:13px;
-	margin-right:8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  margin-right: 8px;
 }
+
 .user-name {
-  flex:1;
-	font-size:14px;
-	color:#333;
+  flex: 1;
+  font-size: 14px;
+  color: #333;
 }
+
 .user-time {
-	font-size:12px;
+  font-size: 12px;
 }
 
 .album-style-chart {
-  padding:0 !important;
+  padding: 0 !important;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-	border-radius:8px;
-  flex:1;
-  min-height:320px;
+  border-radius: 8px;
+  flex: 1;
+  min-height: 320px;
   box-sizing: border-box;
   position: relative;
   overflow: hidden;
 }
+
 .album-style-chart >>> .tag-bubble-chart-container {
-  padding:12px 20px 20px !important;
+  padding: 12px 20px 20px !important;
   box-sizing: border-box;
-	width:100%;
-	height: calc(100% - 55px) !important;
+  width: 100%;
+  height: calc(100% - 55px) !important;
   position: relative;
 }
 
 .slide-toggle-btn {
-  position:absolute;
-  top:50%;
-  right:0px;
+  position: absolute;
+  top: 50%;
+  right: 0px;
   transform: translateY(-50%);
-	width:24px;
-	height:auto;
-  min-height:48px;
-	color:#fff;
-	border-radius:12px 0 0 12px;
-	display:flex;
-	align-items:center;
-	justify-content:center;
-	cursor:pointer;
-	box-shadow:0 2px 8px rgba(0,0,0,0.15);
-	z-index:99;
-	transition:all 0.3s ease;
-	padding:5px 0;
+  width: 24px;
+  height: auto;
+  min-height: 48px;
+  color: #fff;
+  border-radius: 12px 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 99;
+  transition: all 0.3s ease;
+  padding: 5px 0;
 }
+
 .slide-toggle-btn:hover {
-  opacity:0.95;
+  opacity: 0.95;
 }
+
 .icon-arrow {
-  font-size:18px;
-	font-weight:bold;
-	line-height:1;
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 1;
 }
 
 @media (max-width: 1200px) {
@@ -731,33 +823,38 @@ goBack() {
     flex-wrap: wrap;
     align-items: flex-start;
   }
+
   .album-left-section {
-    max-width:100%;
-    flex:1 1 100%;
+    max-width: 100%;
+    flex: 1 1 100%;
   }
+
   .album-center-section {
-    flex:1 1 100%;
-    min-width:100%;
-    max-width:100%;
-    margin-top:20px;
-    height:auto;
+    flex: 1 1 100%;
+    min-width: 100%;
+    max-width: 100%;
+    margin-top: 20px;
+    height: auto;
   }
+
   .album-right-section {
-    flex:1 1 100%;
-    min-width:100%;
-    max-width:100%;
-    marginTop:20px;
-    height:auto;
-    flex-direction:row;
-    gap:20px;
+    flex: 1 1 100%;
+    min-width: 100%;
+    max-width: 100%;
+    marginTop: 20px;
+    height: auto;
+    flex-direction: row;
+    gap: 20px;
   }
+
   .album-recent-users {
-    flex:1;
-    height:300px;
+    flex: 1;
+    height: 300px;
   }
+
   .album-style-chart {
-    flex:1;
-    min-height:300px;
+    flex: 1;
+    min-height: 300px;
   }
 }
 
@@ -765,11 +862,13 @@ goBack() {
   .album-right-section {
     flex-direction: column;
   }
+
   .album-recent-users {
-    height:280px;
+    height: 280px;
   }
+
   .album-style-chart {
-    min-height:250px;
+    min-height: 250px;
   }
 }
 </style>

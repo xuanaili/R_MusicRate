@@ -1,12 +1,13 @@
 <template>
   <div class="music-item">
-    <div class="cover">
+    <div class="cover" @click="goToAlbumDetail">
       <img
         v-if="music.cover_img && music.cover_img.trim() !== ''"
         :src="music.cover_img"
         alt="专辑封面"
         width="80"
         height="80"
+        @click="goToAlbumDetail"
       >
       <div v-else class="no-cover">暂无封面</div>
     </div>
@@ -24,7 +25,7 @@
       <p class="singer"><strong>歌手：</strong>{{ music.singer || '未知' }}</p>
       <p class="year"><strong>发行年份：</strong>{{ music.release_year || '未知' }}</p>
       <p class="type"><strong>时长类型：</strong>{{ music.duration_type || '未知' }}</p>
-            <p class="duration"><strong>已听时长：</strong>{{ formatDuration(music.listening_duration || 0) }}</p>
+      <p class="duration"><strong>已听时长：</strong>{{ formatDuration(music.listening_duration || 0) }}</p>
       <!-- 标签：只显示英文、鼠标悬浮显示中文 -->
       <p class="tags">
         <strong>标签：</strong>
@@ -38,8 +39,6 @@
         </span>
         <span v-if="!music.tags || music.tags.length === 0">无</span>
       </p>
-      <!-- ✅ 已听时长：秒数转 xxxhxxmin 格式 -->
-
     </div>
   </div>
 </template>
@@ -76,7 +75,17 @@ export default {
   // 评分数据源改为 my_score + 处理字符串数组格式转换
   computed: {
     albumTotalScore() {
+
+      if (this.music.calculated_score !== undefined) {
+        return this.music.calculated_score;
+      }
+
+
       // 1. 获取原始的字符串格式评分数据
+
+
+
+
       const scoreStr = this.music.my_score || '';
       // 2. 格式化转换：字符串数组 → 真实的数字数组
       const scoreList = this.formatScoreStrToArray(scoreStr);
@@ -154,11 +163,11 @@ export default {
   display: flex;
   gap: 20px;
   padding: 20px;
-  border-radius: 10px;
-  margin-bottom: 20px;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(4px);
-  border: none;
+	border-radius: 10px;
+	margin-bottom: 20px;
+	background: rgba(255, 255, 255, 0.25);
+	backdrop-filter: blur(4px);
+	border: none;
 	box-sizing: border-box;
 	width: 100%;
 }
@@ -170,11 +179,13 @@ export default {
 	justify-content: center;
 	border-radius: 6px;
 	overflow: hidden;
+  cursor: pointer;
 }
 .cover img {
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
+  cursor: pointer;
 }
 .no-cover {
 	color: #999;
@@ -197,41 +208,41 @@ export default {
 }
 /* 专辑名字体样式 */
 .album-name {
-  margin: 0;
-  font-size: 18px;
-  transition: all 0.2s;
-  cursor: pointer;
-  color: v-bind(mainColorDark);
-  font-weight: normal;
+	margin: 0;
+	font-size: 18px;
+	transition: all 0.2s;
+	cursor: pointer;
+	color: v-bind(mainColorDark);
+	font-weight: normal;
 }
 .album-name:hover {
-  color: v-bind(mainColorDarkDouble);
-  text-decoration: underline;
+	color: v-bind(mainColorDarkDouble);
+	text-decoration: underline;
 }
 /* 右侧评分的样式 */
 .album-total-score {
-  font-size: 16px;
-  color: v-bind(mainColorDark);
-  font-weight: 600;
+	font-size: 16px;
+	color: v-bind(mainColorDark);
+	font-weight: 600;
 }
 /* ✅ 重中之重：和升序/降序 1:1 一致的横线样式 */
 .album-name-score-wrapper::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
+	content: '';
+	position: absolute;
+	left: 0;
+	bottom: 0;
 	width: 100%;
 	height: 4px;
 	border-radius: 2px;
-  background-color: v-bind(mainColorDark) !important;
-  opacity: 1 !important;
+	background-color: v-bind(mainColorDark) !important;
+	opacity: 1 !important;
 }
 /* ✅✅✅ 核心新增+修改 结束 */
 
 /* 歌手/年份/类型/标签/时长 统一样式 */
 .singer, .year, .type, .tags, .duration {
-  margin: 5px 0;
-  color: v-bind(mainColorDark);
+	margin: 5px 0;
+	color: v-bind(mainColorDark);
 	font-size: 14px;
 }
 .tag-item {

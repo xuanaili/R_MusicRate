@@ -1,5 +1,5 @@
 <template>
-  <div class="parse-sidebar-wrapper">   <!-- 唯一根元素 -->
+  <div class="parse-sidebar-wrapper">
     <!-- 遮罩层 -->
     <div
       v-show="visible"
@@ -13,34 +13,33 @@
         <h4>文本解析提取单曲名&时间戳</h4>
         <button class="parse-close-btn" @click="handleClose">×</button>
       </div>
-    <div class="parse-sidebar-content">
-      <textarea
-        v-model="parseText"
-        placeholder="请粘贴带格式的曲目文本，例如：
+      <div class="parse-sidebar-content">
+        <textarea
+          v-model="parseText"
+          placeholder="请粘贴带格式的曲目文本，例如：
 🖤🖤Introduction  0:00
 💛💙完全感覚Dreamer  5:18
+💛💛🧡🤍🤍The Golden Age 0:00
 0->>>1.One Small Step   0:00
 5->>>2.Life Signs   0:26
 支持 emoji+歌名+时间戳 / 数字前缀+序号+歌名+时间戳 任意格式"
-        class="parse-textarea"
-      ></textarea>
-      <div class="parse-tips">{{ parseTips }}</div>
-      <button class="parse-submit-btn" @click="handleParse">✅ 一键解析并填充</button>
+          class="parse-textarea"
+        ></textarea>
+        <div class="parse-tips">{{ parseTips }}</div>
+        <button class="parse-submit-btn" @click="handleParse">✅ 一键解析并填充</button>
+      </div>
     </div>
   </div>
-      </div>
 </template>
 
 <script>
 export default {
   name: 'TrackParse',
   props: {
-    // 控制侧边栏显隐（父组件传入）
     visible: {
       type: Boolean,
       default: false
     },
-    // 主色系（父组件传入，用于样式统一）
     mainColorDark: {
       type: String,
       required: true,
@@ -59,7 +58,6 @@ export default {
     }
   },
   watch: {
-    // 侧边栏打开时重置文本和提示
     visible(newVal) {
       if (newVal) {
         this.parseText = ''
@@ -68,11 +66,9 @@ export default {
     }
   },
   methods: {
-    // ✅ 修改点：Vue2 写法 只触发close事件即可，父组件自己控制显隐
     handleClose() {
       this.$emit('close')
     },
-    // 过滤时间戳输入内容 纯数字和冒号
     filterDurationInput(val) {
       if (!val) return '';
       let filterVal = val.replace(/[^0-9:]/g, '');
@@ -80,19 +76,23 @@ export default {
       if (colonCount > 2) filterVal = filterVal.substring(0, filterVal.lastIndexOf(':'));
       return filterVal;
     },
-    // 时间戳转秒数
     timeToSeconds(timeStr) {
       if (!timeStr || timeStr.length === 0) return 0;
       let timeArr = timeStr.split(':').map(item => Number(item)).filter(item => !isNaN(item));
       let hours = 0, minutes = 0, seconds = 0;
-      if (timeArr.length === 2) { minutes = timeArr[0]; seconds = timeArr[1]; }
-      else if (timeArr.length === 3) { hours = timeArr[0]; minutes = timeArr[1]; seconds = timeArr[2]; }
+      if (timeArr.length === 2) {
+        minutes = timeArr[0];
+        seconds = timeArr[1];
+      } else if (timeArr.length === 3) {
+        hours = timeArr[0];
+        minutes = timeArr[1];
+        seconds = timeArr[2];
+      }
       minutes = Math.min(Math.max(minutes, 0), 59);
       seconds = Math.min(Math.max(seconds, 0), 59);
       hours = Math.max(hours, 0);
       return hours * 3600 + minutes * 60 + seconds;
     },
-    // 秒数转标准时间戳格式 0:00:00
     secondsToTime(seconds) {
       if (!seconds || isNaN(seconds) || seconds < 0) return '0:00:00';
       const totalSeconds = Math.floor(seconds);
@@ -101,47 +101,57 @@ export default {
       const sec = Math.floor(totalSeconds % 60);
       return `${hours}:${minutes.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
     },
-    // 核心解析方法 - 解析完成向父组件传解析结果
-// 核心解析方法 - 解析完成向父组件传解析结果
-handleParse() {
-  if (!this.parseText.trim()) {
-    this.parseTips = '❌ 请粘贴需要解析的文本内容！';
-    return;
-  }
-  const lines = this.parseText.trim().split('\n').filter(line => line.trim());
-  // ✅ 终极万能兼容正则【完美适配你的格式，核心修复】
-  // 兼容：任意数量emoji + 可选的序号(1./2./3.) + 任意空格 + 任意中英文歌名(含符号/空格/括号) + 任意空格 + 时间戳(0:00 / 00:00 / 00:00:00)
-// 删掉原来的正则，替换成这个【完美兼容所有情况，核心修复】
-// 核心完美正则【彻底解决小数点+兼容所有新格式，就这一行】
-const reg = /^[\p{Emoji}\p{Emoji_Presentation}]*\s*(\d{1,2}\.)\s*([\s\S]+?)\s+(\d{1,3}(?::\d{1,2}){1,2})$/u;
-  const newTrackList = [];
+    // 新增：精准过滤所有 Emoji 字符
+    removeAllEmoji(str) {
+      // 覆盖所有常见 Emoji （彩色爱心、符号等），包含 Unicode 扩展区
+      const emojiRegex = /[\u{1F300}-\u{1F5FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{2B5F}\u{2300}-\u{23FF}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/gu;
 
-  lines.forEach((line) => {
-    const match = line.match(reg);
-    if (match && match.length >= 4) {
-      const trackName = match[2].trim();
-      const trackTime = match[3].trim();
-      const filterTime = this.filterDurationInput(trackTime);
-      const sec = this.timeToSeconds(filterTime);
-      const formatTime = this.secondsToTime(sec);
-      newTrackList.push({
-        name: trackName || `未知曲目${newTrackList.length + 1}`,
-        sec: sec,
-        duration: formatTime,
-        playDuration: '0:00:00',
-        score: 0
+      return str.replace(emojiRegex, '').trim() .replace(/[#]+/g, '').replace(/^\s*\d+\.\s*/,'');          // 井号、星号、各种横线、箭头;
+
+    },
+    handleParse() {
+      if (!this.parseText.trim()) {
+        this.parseTips = '❌ 请粘贴需要解析的文本内容！';
+        return;
+      }
+      const lines = this.parseText.trim().split('\n').filter(line => line.trim());
+      const newTrackList = [];
+
+      // 核心：匹配行尾的时间戳（格式固定，零误差）
+      const timeReg = /\s+(\d{1,3}:\d{1,2})\s*$/;
+
+      lines.forEach((line, index) => {
+        const timeMatch = line.match(timeReg);
+        if (!timeMatch) return;
+
+        // 步骤1：提取并处理时间戳
+        const trackTime = timeMatch[1].trim();
+        const filterTime = this.filterDurationInput(trackTime);
+        const sec = this.timeToSeconds(filterTime);
+        const formatTime = this.secondsToTime(sec);
+
+        // 步骤2：删除时间戳，得到 Emoji + 歌名 的原始字符串
+        const restStr = line.replace(timeReg, '').trim();
+
+        // 步骤3：调用工具函数，彻底过滤所有 Emoji，只保留歌名
+        const trackName = this.removeAllEmoji(restStr) || `未知曲目${index + 1}`;
+
+        newTrackList.push({
+          name: trackName,
+          sec: sec,
+          duration: formatTime,
+          playDuration: '0:00:00',
+          score: 0
+        });
       });
-    }
-  });
 
-  if (newTrackList.length === 0) {
-    this.parseTips = '❌ 未解析到有效曲目数据，请检查文本格式！';
-  } else {
-    this.parseTips = `✅ 解析成功！共提取到 ${newTrackList.length} 首曲目，已自动填充！`;
-    // 核心：解析成功，向父组件传递解析后的曲目列表
-    this.$emit('parse-success', newTrackList);
-  }
-}
+      if (newTrackList.length === 0) {
+        this.parseTips = '❌ 未解析到有效曲目数据，请检查文本格式！';
+      } else {
+        this.parseTips = `✅ 解析成功！共提取到 ${newTrackList.length} 首曲目，已自动填充！`;
+        this.$emit('parse-success', newTrackList);
+      }
+    }
   }
 }
 </script>
@@ -187,7 +197,7 @@ const reg = /^[\p{Emoji}\p{Emoji_Presentation}]*\s*(\d{1,2}\.)\s*([\s\S]+?)\s+(\
   display: flex;
   justify-content: space-between;
   align-items: center;
-	padding-bottom: 10px;
+  padding-bottom: 10px;
   border-bottom: 2px solid v-bind(mainColorDark);
   margin-bottom: 15px;
 }
@@ -201,18 +211,18 @@ const reg = /^[\p{Emoji}\p{Emoji_Presentation}]*\s*(\d{1,2}\.)\s*([\s\S]+?)\s+(\
 
 .parse-close-btn {
   background: transparent;
-	border: none;
-	font-size: 18px;
-	color: #999;
-	cursor: pointer;
-	width: auto;
-	height: auto;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	border-radius: 0;
-	transition: all 0.1s;
-  padding:0 6px;
+  border: none;
+  font-size: 18px;
+  color: #999;
+  cursor: pointer;
+  width: auto;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  transition: all 0.1s;
+  padding: 0 6px;
 }
 
 .parse-close-btn:hover {
@@ -232,9 +242,9 @@ const reg = /^[\p{Emoji}\p{Emoji_Presentation}]*\s*(\d{1,2}\.)\s*([\s\S]+?)\s+(\
   flex: 1;
   width: 100%;
   padding: 10px;
-	border-radius: 4px;
+  border-radius: 4px;
   border: none;
-	background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.3);
   backdrop-filter: blur(3px);
   color: v-bind(mainColorDarkDouble);
   outline: none;
@@ -253,21 +263,21 @@ const reg = /^[\p{Emoji}\p{Emoji_Presentation}]*\s*(\d{1,2}\.)\s*([\s\S]+?)\s+(\
   height: 20px;
   line-height: 20px;
   text-align: center;
-	font-size: 13px;
-	font-weight: 500;
-	color: v-bind(mainColorDark);
+  font-size: 13px;
+  font-weight: 500;
+  color: v-bind(mainColorDark);
 }
 
 .parse-submit-btn {
   background: v-bind(mainColorDark);
   color: #fff;
   border: none;
-	padding: 8px 0;
-	border-radius: 4px;
-	cursor: pointer;
-	font-size: 14px;
-	font-weight: 600;
-	transition: all 0.2s;
+  padding: 8px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s;
 }
 
 .parse-submit-btn:hover {
