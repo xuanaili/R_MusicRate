@@ -102,10 +102,11 @@
               ×
             </button>
           </div>
-          <!-- 添加单曲 + 文本解析 按钮并排 -->
+          <!-- 添加单曲 + 文本解析 + 音频解析 按钮并排 -->
           <div class="song-btn-group">
             <button @click="addSong" class="btn-add-song">+ 添加单曲</button>
             <button @click="showParseModal = true" class="btn-parse-song">📝 文本解析</button>
+            <button @click="showAutoParseModal = true" class="btn-unlock-song">🎵 音频解析</button>
           </div>
         </div>
 
@@ -119,7 +120,7 @@
       </div>
     </div>
 
-    <!-- ✅✅✅ 核心修改：文本解析 独立右侧全屏侧边栏 (新增) -->
+    <!-- ✅✅✅ 核心修改：文本解析 独立右侧全屏侧边栏 (原有) -->
     <div v-show="showParseModal" class="parse-sidebar-mask" @click="showParseModal = false"></div>
     <div class="track-parse-sidebar" :class="{show: showParseModal}">
       <TrackParse
@@ -130,16 +131,29 @@
         @parse-success="handleParseSuccess"
       />
     </div>
+
+    <!-- ✅✅✅ 新增：音频解析 独立右侧全屏侧边栏 -->
+    <div v-show="showAutoParseModal" class="parse-sidebar-mask" @click="showAutoParseModal = false"></div>
+    <div class="unlock-parse-sidebar" :class="{show: showAutoParseModal}">
+      <UnlockParse
+        :visible="showAutoParseModal"
+        :main-color-dark="mainColorDark"
+        :main-color-dark-double="mainColorDarkDouble"
+        @close="showAutoParseModal = false"
+        @parse-success="handleAutoParseSuccess"
+      />
+    </div>
   </div>
 </template>
 
 <script>
-// 这里的代码 完全不变 不用动
+// 导入文本解析和音频解析组件
 import TrackParse from '@/components/sidebar/TrackParse.vue'
+import UnlockParse from '@/components/sidebar/UnlockParse.vue'
 
 export default {
   name: 'AddAlbum',
-  components: { TrackParse },
+  components: { TrackParse, UnlockParse },
   props: {
     visible: {
       type: Boolean,
@@ -171,7 +185,8 @@ export default {
       },
       errorMsg: "",
       isUploading: false,
-      showParseModal: false
+      showParseModal: false,
+      showAutoParseModal: false // 新增：音频解析弹窗控制
     };
   },
   methods: {
@@ -280,11 +295,13 @@ export default {
         .filter(song => song.song_name.trim())
         .map(song => ({ name: song.song_name.trim(), time: this.timeToSeconds(song.track_time) }));
       if (validSongs.length === 0) { this.errorMsg = "至少填写1首单曲名！"; return; }
-
+      console.log(this.album)
       const submitData = {
         album_name: this.album.album_name.trim(),
         cover_img: this.album.cover_img.trim(),
         singer: this.album.album_singer.trim(),
+        mp3_duration: this.album.mp3_duration, // 关键：添加这个字段！
+        mp3_url: this.album.mp3_url || '',  // 新增
         release_year: Number(this.album.release_year),
         album_intro: this.album.album_intro.trim(),
         duration_type: this.album.duration_type,
@@ -333,7 +350,9 @@ export default {
       }
       this.errorMsg = ""
       this.showParseModal = false
+      this.showAutoParseModal = false // 重置音频解析弹窗
     },
+    // 文本解析成功回调
     handleParseSuccess(parseSongs) {
       this.showParseModal = false;
       this.errorMsg = '';
@@ -343,7 +362,30 @@ export default {
       }));
       this.album.songs = formatSongs;
       alert(`解析成功！共识别到 ${formatSongs.length} 首单曲，已自动填充 ✔️`);
-    }
+    },
+    // 新增：音频解析成功回调（直接使用后端返回的URL）
+// 新增：音频解析成功回调（直接使用后端返回的URL）
+handleAutoParseSuccess(parseResult) {
+  this.showAutoParseModal = false;
+  this.errorMsg = '';
+
+  // 直接赋值后端返回的所有数据（封面已是图床URL）
+  if (parseResult.album_name) this.album.album_name = parseResult.album_name;
+  if (parseResult.album_singer) this.album.album_singer = parseResult.album_singer;
+  if (parseResult.cover_img) this.album.cover_img = parseResult.cover_img;
+  // 新增：保存MP3 URL（提交专辑时一并保存）
+  this.album.mp3_url = parseResult.mp3_url || '';
+  this.album.mp3_duration = parseResult.mp3_duration || 0;
+
+  // 填充单曲列表
+  const formatSongs = parseResult.songs.map(item => ({
+    song_name: item.name ? item.name.trim() : '',
+    track_time: item.duration ? item.duration : '0:00:00'
+  }));
+  this.album.songs = formatSongs;
+
+  alert(`音频解析成功！共识别到 ${formatSongs.length} 首单曲，专辑信息已自动填充 ✔️${parseResult.mp3_url ? '\n已生成整轨MP3文件' : ''}`);
+}
   }
 };
 </script>
@@ -542,7 +584,7 @@ export default {
 }
 /* ✅ 所有非按钮字体统一用 mainColorDark 结束 */
 
-/* ✅ 所有按钮样式 完全保留不变 不做任何修改 */
+/* ✅ 所有按钮样式 新增音频解析按钮样式 */
 .close-btn {
   background: transparent;
   border: none;
@@ -606,6 +648,21 @@ export default {
 .btn-parse-song:hover {
   background: #1976d2;
 }
+.btn-unlock-song {
+  padding: 9px 16px;
+  background: #4caf50;
+  color: white;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 14px;
+  transition: background 0.2s;
+  flex: 1;
+  text-align: center;
+}
+.btn-unlock-song:hover {
+  background: #388e3c;
+}
 .btn-group {
   margin-top: 20px;
   display: flex;
@@ -646,7 +703,7 @@ export default {
   background: v-bind(mainColorDarkDouble);
 }
 
-/* ✅✅✅ 重点新增：文本解析 右侧独立侧边栏 全套样式 */
+/* ✅✅✅ 重点：文本解析 右侧独立侧边栏 全套样式 */
 .parse-sidebar-mask {
   position: fixed;
   top: 0;
@@ -674,6 +731,26 @@ export default {
   box-shadow: -2px 0 15px rgba(0,0,0,0.2);
 }
 .track-parse-sidebar.show {
+  transform: translateX(0);
+}
+
+/* ✅✅✅ 新增：音频解析 右侧独立侧边栏 样式 */
+.unlock-parse-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 560px;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(8px);
+  z-index: 99998;
+  transform: translateX(100%);
+  transition: transform 0.3s ease-in-out;
+  overflow-y: auto;
+  padding: 10px 0;
+  box-shadow: -2px 0 15px rgba(0,0,0,0.2);
+}
+.unlock-parse-sidebar.show {
   transform: translateX(0);
 }
 </style>

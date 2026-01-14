@@ -179,41 +179,26 @@
     </div>
 
     <!-- 上传/更新音频弹窗 原样保留 -->
-    <div class="upload-sidebar" v-show="showUploadSidebar">
-      <div class="sidebar-header">
-        <h4>{{ audioSrc ? '更新整轨MP3文件' : '上传整轨MP3文件' }}</h4>
-        <button class="close-btn" @click="showUploadSidebar = false">×</button>
-      </div>
-      <div
-          class="upload-area"
-          @dragover.prevent
-          @drop.prevent="handleDrop"
-      >
-        <input
-            type="file"
-            ref="fileInput"
-            accept=".mp3"
-            class="file-input"
-            @change="handleFileChange"
-        />
-        <div class="upload-tips">
-          <p>📂 点击上传 或 拖拽MP3文件到此处</p>
-          <p class="tip-text">仅支持 .mp3 格式音频文件</p>
-        </div>
-      </div>
-      <div v-if="fileName" class="file-name">{{ fileName }}</div>
-      <div class="upload-status" :class="{success: statusClass === 'success', error: statusClass === 'error'}">
-        {{ statusText }}
-      </div>
-    </div>
-    <div class="mask" v-show="showUploadSidebar" @click="showUploadSidebar = false"></div>
-
+<!-- 音频上传子组件 -->
+<AlbumAudioUpload
+  :visible="showUploadSidebar"
+  :is-update="!!audioSrc"
+  :source-pool-id="album.source_pool_id"
+  :old-mp3-url="oldMp3Url"
+  :main-color-dark="albumMainColorDark"
+  :main-color-dark-double="albumMainColorDarkDouble"
+  @close="showUploadSidebar = false"
+  @upload-success="handleUploadSuccess"
+/>
+<!-- 遮罩层 -->
+<div class="mask" v-show="showUploadSidebar" @click="showUploadSidebar = false"></div>
     <!-- 修复核心报错：audio标签补全闭合标签 解决编译失败 -->
     <audio ref="audioRef" :src="audioSrc" @timeupdate="handleTimeUpdate" @ended="handleEnded" :volume="volume"></audio>
   </div>
 </template>
 
 <script>
+import AlbumAudioUpload from '@/components/sidebar/AlbumAudioUpload.vue'
 import AlbumBaseInfo from '@/components/albumDetail/AlbumBaseInfo'
 import AlbumTrackList from '@/components/albumDetail/AlbumTrackList'
 import AlbumReviewEditor from '@/components/albumDetail/AlbumReviewEditor'
@@ -231,7 +216,8 @@ export default {
     AlbumTrackList,
     AlbumReviewEditor,
     AlbumCommentSection,
-    PlayerPlaylist
+    PlayerPlaylist,
+    AlbumAudioUpload
   },
   data() {
     return {
@@ -582,6 +568,21 @@ async fadeOutVolume(callback) {
     // 注意：不更新 this.volume，以免影响保存的值
   }, 30);
 },
+
+handleUploadSuccess(data) {
+  // 更新音频信息
+  this.audioSrc = data.mp3_url;
+  this.fileName = data.mp3_name;
+  this.duration = data.mp3_duration;
+  this.durationFormat = data.duration_format;
+  this.oldMp3Url = data.mp3_url;
+  this.currentTime = 0;
+  this.currentProgress = 0;
+
+  // 自动播放
+  this.autoPlayCurrentAlbumAudio();
+},
+
     // ✅ ✅ ✅ 核心重构：重置音量方法【完美修复核心问题】
 // ✅ ✅ ✅ 终极修复版 - 重置音量方法【完美修复核心问题+清空时机修正】
 resetVolume() {
@@ -865,67 +866,6 @@ async getAlbumAudioInfo() {
       }
     },
 
-    // 文件选择事件
-    handleFileChange(e) {
-      const file = e.target.files[0];
-      if (file) {
-        this.handleFile(file);
-        this.$refs.fileInput.value = ''
-      }
-    },
-
-    handleDrop(e) {
-      const file = e.target.files[0] || e.dataTransfer.files[0];
-      if (file) {
-        this.handleFile(file);
-      }
-    },
-
-    async handleFile(file) {
-      if (file.type !== 'audio/mpeg' && !file.name.toLowerCase().endsWith('.mp3')) {
-        this.statusText = '❌ 仅支持上传MP3格式！';
-        this.statusClass = 'error';
-        return;
-      }
-      if (!this.album.source_pool_id) {
-        this.statusText = '❌ 公共专辑ID不存在，无法上传！';
-        this.statusClass = 'error';
-        return;
-      }
-      this.statusText = this.audioSrc ? '⏳ 更新中，请稍候...' : '⏳ 上传中，请稍候...';
-      this.statusClass = '';
-      this.fadeOutVolume();
-      try {
-        const formData = new FormData()
-        formData.append('source_pool_id', this.album.source_pool_id)
-        formData.append('mp3_file', file)
-        formData.append('old_mp3_url', this.oldMp3Url || '')
-        const res = await this.$axios.post('/api/album/pool/audio/upload', formData)
-        if (res.data.code === 200) {
-          this.audioSrc = res.data.data.mp3_url
-          this.fileName = res.data.data.mp3_name
-          this.duration = res.data.data.mp3_duration
-          this.durationFormat = res.data.data.duration_format
-          this.oldMp3Url = res.data.data.mp3_url
-          this.statusText = this.audioSrc ? '✅ 更新成功' : '✅ 上传成功';
-          this.statusClass = 'success';
-          setTimeout(() => {
-            this.showUploadSidebar = false
-            this.statusText = ''
-            this.statusClass = ''
-          }, 2000)
-        } else {
-          this.statusText = `❌ ${res.data.msg}`;
-          this.statusClass = 'error';
-        }
-      } catch (err) {
-        console.error('音频操作失败：')
-        this.statusText = '❌ 操作失败，请重试！';
-        this.statusClass = 'error';
-      }
-      this.currentTime = 0;
-      this.currentProgress = 0;
-    },
 
     async handleDeleteAudio() {
       const confirmDel = confirm("确定要删除该音频资源吗？删除后无法恢复！");

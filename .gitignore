@@ -32,6 +32,11 @@ backend/*.db
 # 数据
 backend/data/album_covers
 backend/data/album_track
+
+
+# 工具类
+backend/tools/ffmpeg/*.exe
+backend/tools/unlock/*.exe
 # ===================== 通用忽略项 =====================
 # PyCharm配置
 .idea/

@@ -1,6 +1,8 @@
 from flask import request, jsonify
 import json
 import traceback
+
+from .unlock import format_duration
 from ..db_utils import (
     get_db, get_album_table_name, get_current_user_id,
     save_user_album_intro, get_user_album_intro
@@ -327,7 +329,14 @@ def register_album_routes(app):
             table_name = get_album_table_name(current_user_id)
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
-            cursor.execute(f'SELECT * FROM `{table_name}` WHERE id = %s', (album_id,))
+
+            # ✅ 关联查询 album_pool 获取 mp3_url
+            cursor.execute(f'''
+                SELECT u.*, p.mp3_url 
+                FROM `{table_name}` u
+                LEFT JOIN album_pool p ON u.source_pool_id = p.id
+                WHERE u.id = %s
+            ''', (album_id,))
             album = cursor.fetchone()
             cursor.close()
             if not album:
@@ -371,7 +380,9 @@ def register_album_routes(app):
                 "is_customized": album.get("is_customized", 0),
                 "tracks_time": safe_json_loads(album.get("tracks_time")),
                 "favourite_tracks_time": safe_json_loads(album.get("favourite_tracks_time")),
-            "listening_duration": album.get("listening_duration", 0) or 0
+                "listening_duration": album.get("listening_duration", 0) or 0,
+                "mp3_url": album.get("mp3_url", ""),  # 从关联查询中获取 mp3_url
+                "mp3_duration": album.get("mp3_duration", 0.0)  # 新增
             }
             return jsonify({"code": 200, "msg": "获取专辑详情成功！", "data": album_dict})
         except Exception as e:
@@ -389,6 +400,14 @@ def register_album_routes(app):
             if current_user_id is None:
                 return jsonify({"code": 401, "msg": "用户未登录！"}), 200
             data = request.get_json()
+            print("===== 前端传递的完整参数 =====")
+            print(f"原始数据: {data}")
+            print(f"mp3_duration 参数值: {data.get('mp3_duration')}")
+            print(f"mp3_duration 类型: {type(data.get('mp3_duration'))}")
+            # ========== 调试日志结束 ==========
+
+
+
             table_name = get_album_table_name(current_user_id)
             required_fields = ['album_name', 'singer', 'release_year']
             for field in required_fields:
@@ -437,27 +456,26 @@ def register_album_routes(app):
                 except:
                     return json.dumps([])
 
-            # ========== ✅✅✅ 核心修改 1：获取前端传递的 tracks_time 并格式化 ==========
-            # 获取前端的单曲名数组 + 时间戳秒数数组
+            # ========== 核心修改 1：获取前端传递的 tracks_time 并格式化 ==========
             tracks_list = data.get('tracks', [])
             tracks_time_list = data.get('tracks_time', [])
-            # 格式化处理：保证是数组、长度一致、空值填充0
             if not isinstance(tracks_list, list):
                 tracks_list = []
             if not isinstance(tracks_time_list, list):
                 tracks_time_list = []
-            # 过滤空的单曲名，保证数据干净
             tracks_list = [track.strip() for track in tracks_list if track.strip()]
-            # 补全时间戳数组：长度不一致时，缺的部分填充0
             if len(tracks_time_list) < len(tracks_list):
                 tracks_time_list += [0] * (len(tracks_list) - len(tracks_time_list))
             elif len(tracks_time_list) > len(tracks_list):
                 tracks_time_list = tracks_time_list[:len(tracks_list)]
-            # 转JSON字符串，存入数据库
             tracks_json = json.dumps(tracks_list, ensure_ascii=False)
             tracks_time_json = json.dumps(tracks_time_list, ensure_ascii=False)
-            track_count = len(tracks_list)  # 自动计算单曲数量
-            # ========== ✅✅✅ 核心修改 1 结束 ==========
+            track_count = len(tracks_list)
+            # ========== 核心修改 1 结束 ==========
+
+            # ========== 新增：获取mp3_url和mp3_duration ==========
+            mp3_url = data.get('mp3_url', '').strip()
+            mp3_duration = float(data.get('mp3_duration', 0.0))  # 接收音频总时长
 
             album_intro = data.get('album_intro', '').strip()
             new_album = {
@@ -466,8 +484,8 @@ def register_album_routes(app):
                 "singer": singer,
                 "release_year": release_year,
                 "start_time": data.get('start_time', ''),
-                "track_count": track_count,  # ✅ 修改：自动赋值单曲数量
-                "track_duration": data.get('track_duration', ''),
+                "track_count": track_count,
+                "track_duration": format_duration(mp3_duration) if mp3_duration > 0 else '',  # 格式化时长存入
                 "my_score": float(data.get('my_score', 0.0)),
                 "burn_class": data.get('burn_class', ''),
                 "duration_type": data.get('duration_type', ''),
@@ -477,7 +495,7 @@ def register_album_routes(app):
                 "video_shared": data.get('video_shared', ''),
                 "mandopop_code": data.get('mandopop_code', ''),
                 "album_intro": album_intro,
-                "tracks": tracks_json,  # ✅ 修改：赋值格式化后的单曲名JSON
+                "tracks": tracks_json,
                 "review": json.dumps({
                     "feelings": [],
                     "single_score": 0.0,
@@ -491,16 +509,19 @@ def register_album_routes(app):
                 "source_pool_id": 0,
                 "sync_pool_update": 1,
                 "is_customized": 0,
-                "tracks_time": tracks_time_json  # ✅ 修改：赋值格式化后的时间戳JSON
+                "tracks_time": tracks_time_json
             }
             main_type_str = json.dumps(data.get('main_type', [])) if data.get('main_type') else ""
 
-            # ========== ✅✅✅ 核心修改 2：修改 album_pool 插入SQL → 新增 tracks_time 字段 ==========
+            # ========== 核心修改 2：album_pool 插入SQL 新增mp3_duration ==========
+
+
             cursor.execute('''
                 INSERT INTO album_pool (
                     album_name, cover_img, singer, release_year, 
-                    main_type, tags, album_intro, tracks, tracks_time, my_score, create_user
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    main_type, tags, album_intro, tracks, tracks_time, my_score, create_user,
+                    mp3_url, mp3_duration  -- 新增mp3_duration字段
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 new_album['album_name'],
                 new_album['cover_img'],
@@ -510,16 +531,18 @@ def register_album_routes(app):
                 new_album['tags'],
                 new_album['album_intro'],
                 new_album['tracks'],
-                new_album['tracks_time'],  # ✅ 插入：公共池 存入 tracks_time
+                new_album['tracks_time'],
                 new_album['my_score'],
-                current_user_id
+                current_user_id,
+                mp3_url,
+                mp3_duration  # 存入时长
             ))
-            # ========== ✅✅✅ 核心修改 2 结束 ==========
+            # ========== 核心修改 2 结束 ==========
 
             new_pool_id = cursor.lastrowid
             new_album['source_pool_id'] = new_pool_id
 
-            # ========== ✅✅✅ 核心修改 3：用户表插入SQL 不变，tracks_time 已在new_album赋值好 ==========
+            # ========== 核心修改 3：用户表插入SQL ==========
             cursor.execute(f'''
                 INSERT INTO `{table_name}` (
                     album_name, cover_img, singer, release_year, start_time,
@@ -544,9 +567,9 @@ def register_album_routes(app):
                 new_album['source_pool_id'],
                 new_album['sync_pool_update'],
                 new_album['is_customized'],
-                new_album['tracks_time']  # ✅ 插入：用户表 存入 tracks_time
+                new_album['tracks_time']
             ))
-            # ========== ✅✅✅ 核心修改 3 结束 ==========
+            # ========== 核心修改 3 结束 ==========
 
             new_album_id = cursor.lastrowid
             if album_intro:
@@ -560,10 +583,12 @@ def register_album_routes(app):
             return_album['tracks'] = json.loads(return_album['tracks'])
             return_album['review'] = json.loads(return_album['review'])
             return_album['comments'] = json.loads(return_album['comments'])
-            return_album['tracks_time'] = json.loads(return_album['tracks_time'])  # ✅ 返回：时间戳数组
+            return_album['tracks_time'] = json.loads(return_album['tracks_time'])
+            return_album['mp3_url'] = mp3_url
+            return_album['mp3_duration'] = mp3_duration  # 返回时长给前端
             return jsonify({
                 "code": 200,
-                "msg": "专辑添加成功！单曲时间戳已同步保存",
+                "msg": "专辑添加成功！单曲时间戳和MP3地址已同步保存到公共池",
                 "data": return_album
             })
         except Exception as e:
