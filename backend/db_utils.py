@@ -728,7 +728,6 @@ def get_next_id(table_name):
         print(f"❌ 生成ID失败：{str(e)}")
         return 1
 
-# ========== 用户专辑简介的增删改查函数 ==========
 def save_user_album_intro(user_id, album_id, intro_content):
     try:
         db = get_db()
@@ -749,6 +748,25 @@ def save_user_album_intro(user_id, album_id, intro_content):
                 INSERT INTO user_album_intro (user_id, album_id, album_intro) 
                 VALUES (%s, %s, %s)
             ''', (user_id, album_id, intro_content))
+
+        # 第二步：同步更新 albums_用户ID 表中的 album_intro 字段
+        table_name = f"albums_{user_id}"
+        # 先检查表是否存在（避免表不存在报错）
+        cursor.execute('''
+            SELECT TABLE_NAME FROM information_schema.TABLES 
+            WHERE TABLE_NAME = %s AND TABLE_SCHEMA = DATABASE()
+        ''', (table_name,))
+        table_exist = cursor.fetchone()
+        if table_exist:
+            # 更新该用户表中对应专辑的简介
+            cursor.execute(f'''
+                UPDATE `{table_name}` 
+                SET album_intro = %s 
+                WHERE id = %s
+            ''', (intro_content, album_id))
+
+
+
         db.commit()
         cursor.close()
         return True

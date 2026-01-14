@@ -135,10 +135,12 @@ const tagBallConfigList = [
   { tag: 'Epic Music【史诗音乐】', minSize: 50, maxSize: 110, minRate: 120, maxRate: 270, numWeight: 1.8 },
   { tag: 'English Underground【英国地下音乐】', minSize: 55, maxSize: 110, minRate: 120, maxRate: 270, numWeight: 1.8 },
   { tag: 'Easy Listening【轻音乐】', minSize: 20, maxSize: 60, minRate: 330, maxRate: 530, numWeight: 0.7 },
+
+
+  { tag: 'Experimental【实验音乐】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
   { tag: 'Experimental Big Band【实验大乐队】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.2 },
   { tag: 'Experimental HipHop【实验嘻哈】', minSize: 55, maxSize: 110, minRate: 120, maxRate: 270, numWeight: 1.8 },
   { tag: 'Experimental Rock【实验摇滚】', minSize: 60, maxSize: 120, minRate: 100, maxRate: 250, numWeight: 2.0 },
-  { tag: 'Experimental【实验音乐】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
   // ===== F 开头 =====
   { tag: 'Film Score【电影配乐】', minSize: 35, maxSize: 90, minRate: 200, maxRate: 400, numWeight: 1.1 },
   { tag: 'Film Soundtrack【电影原声】', minSize: 30, maxSize: 85, minRate: 220, maxRate: 420, numWeight: 1.0 },
@@ -148,13 +150,17 @@ const tagBallConfigList = [
   { tag: 'Folk Rock【民谣摇滚】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.2 },
 
   { tag: 'Folktronica【民谣电子】', minSize: 25, maxSize: 70, minRate: 280, maxRate: 480, numWeight: 0.8 },
+
+      { tag: 'Footwork【碎步舞曲】', minSize: 65, maxSize: 125, minRate: 90, maxRate: 230, numWeight: 2.1 },
   { tag: 'Footwork Jungle【碎步丛林舞曲】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
-  { tag: 'Footwork【碎步舞曲】', minSize: 65, maxSize: 125, minRate: 90, maxRate: 230, numWeight: 2.1 },
+
   { tag: 'Free Improvisation【自由即兴】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
   { tag: 'Future Bass【未来贝斯】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
+
+     { tag: 'Funk【放克】', minSize: 50, maxSize: 100, minRate: 150, maxRate: 300, numWeight: 1.5 },
   { tag: 'Funk Brasileiro【巴西放克】', minSize: 50, maxSize: 100, minRate: 150, maxRate: 300, numWeight: 1.5 },
   { tag: 'Funk Rock【放克摇滚】', minSize: 55, maxSize: 110, minRate: 120, maxRate: 270, numWeight: 1.8 },
-  { tag: 'Funk【放克】', minSize: 50, maxSize: 100, minRate: 150, maxRate: 300, numWeight: 1.5 },
+
   // ===== G 开头 =====
   { tag: 'Garage Punk【车库朋克】', minSize: 60, maxSize: 115, minRate: 110, maxRate: 260, numWeight: 1.9 },
   { tag: 'Garage Rock Revival【车库摇滚复兴】', minSize: 55, maxSize: 110, minRate: 120, maxRate: 270, numWeight: 1.8 },
@@ -168,9 +174,11 @@ const tagBallConfigList = [
   { tag: 'Gothic Rock【哥特摇滚】', minSize: 75, maxSize: 135, minRate: 70, maxRate: 190, numWeight: 2.7 },
   { tag: 'Grindcore【碾核】', minSize: 90, maxSize: 155, minRate: 40, maxRate: 150, numWeight: 3.5 },
   { tag: 'Grunge【垃圾摇滚】', minSize: 60, maxSize: 120, minRate: 100, maxRate: 250, numWeight: 2.0 },
+
+  { tag: 'Glitch【故障音乐】', minSize: 40, maxSize: 90, minRate: 180, maxRate: 360, numWeight: 1.2 },
   { tag: 'Glitch Hop【故障嘻哈】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
   { tag: 'Glitch Pop【故障流行】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
-  { tag: 'Glitch【故障音乐】', minSize: 40, maxSize: 90, minRate: 180, maxRate: 360, numWeight: 1.2 },
+
   // ===== H 开头 =====
   { tag: 'Hardcore EDM【硬核电子舞曲】', minSize: 75, maxSize: 135, minRate: 70, maxRate: 190, numWeight: 2.7 },
   { tag: 'Hardcore HipHop【硬核嘻哈】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
@@ -178,8 +186,11 @@ const tagBallConfigList = [
   { tag: 'Hard Rock【硬摇滚】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
   { tag: 'Heavy Metal【重金属】', minSize: 85, maxSize: 150, minRate: 50, maxRate: 160, numWeight: 3.2 },
   { tag: 'Heavy Psych【重型迷幻】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
-  { tag: 'HipHop Soul【嘻哈灵乐】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
+
+
   { tag: 'HipHop【嘻哈】', minSize: 55, maxSize: 105, minRate: 130, maxRate: 280, numWeight: 1.7 },
+  { tag: 'HipHop Soul【嘻哈灵乐】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
+
   { tag: 'Hokkien Pop【闽南语流行】', minSize: 40, maxSize: 90, minRate: 200, maxRate: 400, numWeight: 1.1 },
   { tag: 'Honky Tonk【乡村酒吧音乐】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
   { tag: 'House【浩室音乐】', minSize: 40, maxSize: 90, minRate: 180, maxRate: 360, numWeight: 1.2 },
@@ -198,12 +209,14 @@ const tagBallConfigList = [
   { tag: 'Instrumental HipHop【器乐嘻哈】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
   // ===== J 开头 =====
   { tag: 'Jangle Pop【叮砰流行】', minSize: 40, maxSize: 90, minRate: 190, maxRate: 380, numWeight: 1.1 },
+
+      { tag: 'Jazz【爵士乐】', minSize: 30, maxSize: 80, minRate: 230, maxRate: 430, numWeight: 0.9 },
   { tag: 'Jazz Funk【爵士放克】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
       { tag: 'Jazz Fusion【爵士融合】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
       { tag: 'Jazz Pop【爵士流行】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
   { tag: 'Jazz Rap【爵士说唱】', minSize: 50, maxSize: 100, minRate: 150, maxRate: 300, numWeight: 1.5 },
   { tag: 'Jazz Rock【爵士摇滚】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
-  { tag: 'Jazz【爵士乐】', minSize: 30, maxSize: 80, minRate: 230, maxRate: 430, numWeight: 0.9 },
+
   { tag: 'J Pop【日本流行】', minSize: 40, maxSize: 95, minRate: 190, maxRate: 380, numWeight: 1.2 },
   { tag: 'J Rock【日本摇滚】', minSize: 65, maxSize: 110, minRate: 90, maxRate: 220, numWeight: 2 },
   { tag: 'Jerk【杰尔克舞曲】', minSize: 55, maxSize: 110, minRate: 120, maxRate: 270, numWeight: 1.8 },
@@ -248,11 +261,13 @@ const tagBallConfigList = [
 
   { tag: 'Plugg【Plugg】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
   { tag: 'Plunderphonics【掠夺音效】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
+
+  { tag: 'Pop【流行音乐】', minSize: 40, maxSize: 90, minRate: 200, maxRate: 400, numWeight: 1.1 },
   { tag: 'Pop Punk【流行朋克】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
   { tag: 'Pop Rap【流行说唱】', minSize: 50, maxSize: 100, minRate: 150, maxRate: 300, numWeight: 1.5 },
   { tag: 'Pop Rock【流行摇滚】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
   { tag: 'Pop Soul【流行灵魂乐】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
-  { tag: 'Pop【流行音乐】', minSize: 40, maxSize: 90, minRate: 200, maxRate: 400, numWeight: 1.1 },
+
   { tag: 'Post Hardcore【后硬核】', minSize: 80, maxSize: 150, minRate: 50, maxRate: 180, numWeight: 3 },
   { tag: 'Post Industrial【后工业音乐】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
   { tag: 'Post Metal【后金属】', minSize: 75, maxSize: 135, minRate: 70, maxRate: 190, numWeight: 2.7 },
@@ -268,13 +283,16 @@ const tagBallConfigList = [
   { tag: 'Progressive Pop【前卫流行】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
   { tag: 'Progressive Rock【前卫摇滚】', minSize: 65, maxSize: 125, minRate: 90, maxRate: 230, numWeight: 2.1 },
   { tag: 'Progressive Soul【前卫灵魂乐】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
+
+  { tag: 'Psychedelia【迷幻音乐】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
   { tag: 'Psychedelic Folk【迷幻民谣】', minSize: 40, maxSize: 90, minRate: 180, maxRate: 360, numWeight: 1.2 },
   { tag: 'Psychedelic Pop【迷幻流行】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
   { tag: 'Psychedelic Rock【迷幻摇滚】', minSize: 60, maxSize: 120, minRate: 100, maxRate: 250, numWeight: 2.0 },
   { tag: 'Psychedelic Soul【迷幻灵魂乐】', minSize: 60, maxSize: 120, minRate: 100, maxRate: 250, numWeight: 2.0 },
-  { tag: 'Psychedelia【迷幻音乐】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
-  { tag: 'Punk Rock【朋克摇滚】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
+
   { tag: 'Punk【朋克音乐】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
+  { tag: 'Punk Rock【朋克摇滚】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
+
   { tag: 'Political HipHop【政治嘻哈】', minSize: 55, maxSize: 105, minRate: 130, maxRate: 280, numWeight: 1.7 },
   // ===== R 开头 =====
   { tag: 'Rage【暴怒说唱】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
@@ -282,10 +300,12 @@ const tagBallConfigList = [
   { tag: 'Rap Rock【说唱摇滚】', minSize: 65, maxSize: 125, minRate: 90, maxRate: 230, numWeight: 2.1 },
       { tag: 'Reggae【雷鬼】', minSize: 65, maxSize: 125, minRate: 90, maxRate: 230, numWeight: 2.1 },
   { tag: 'Rhythm & Blues【节奏布鲁斯】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
+
+  { tag: 'Rock【摇滚音乐】', minSize: 60, maxSize: 120, minRate: 100, maxRate: 250, numWeight: 2.0 },
   { tag: 'Rock Opera【摇滚歌剧】', minSize: 50, maxSize: 110, minRate: 120, maxRate: 270, numWeight: 1.8 },
   { tag: 'Rock and Roll【摇滚乐】', minSize: 55, maxSize: 110, minRate: 120, maxRate: 270, numWeight: 1.8 },
   { tag: 'Rockabilly【山地摇滚】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
-  { tag: 'Rock【摇滚音乐】', minSize: 60, maxSize: 120, minRate: 100, maxRate: 250, numWeight: 2.0 },
+
   { tag: 'R&B【节奏布鲁斯】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
   // ===== S 开头 =====
   { tag: 'Samba【桑巴】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
@@ -312,8 +332,10 @@ const tagBallConfigList = [
   { tag: 'Space Rock【太空摇滚】', minSize: 60, maxSize: 120, minRate: 100, maxRate: 250, numWeight: 2.0 },
   { tag: 'Ska Punk【斯卡朋克】', minSize: 60, maxSize: 115, minRate: 110, maxRate: 260, numWeight: 1.9 },
   { tag: 'Sophisti Pop【精致流行】', minSize: 40, maxSize: 90, minRate: 190, maxRate: 380, numWeight: 1.1 },
-  { tag: 'Soul Jazz【灵魂爵士乐】', minSize: 40, maxSize: 90, minRate: 180, maxRate: 360, numWeight: 1.2 },
+
   { tag: 'Soul【灵魂乐】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
+  { tag: 'Soul Jazz【灵魂爵士乐】', minSize: 40, maxSize: 90, minRate: 180, maxRate: 360, numWeight: 1.2 },
+
   { tag: 'Spiritual Jazz【灵性爵士乐】', minSize: 30, maxSize: 80, minRate: 230, maxRate: 430, numWeight: 0.9 },
   { tag: 'Standards【标准曲】', minSize: 30, maxSize: 80, minRate: 230, maxRate: 430, numWeight: 0.9 },
   { tag: 'Stoner Rock【石人摇滚】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },

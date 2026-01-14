@@ -621,7 +621,6 @@ def register_album_pool_routes(app):
             return jsonify({"code": 500, "msg": f"获取用户列表失败：{str(e)}", "data": {}}), 200
 
     # 4. 修改公共专辑接口（核心修改：只同步专辑名/歌手/发行时间，保留用户所有自定义内容 + 重复友好提示）
-    # 4. 修改公共专辑接口（核心修改：新增 tracks_time 字段处理+只同步专辑名/歌手/发行时间，保留用户所有自定义内容 + 重复友好提示）
     @app.route('/api/album/pool/update/<int:pool_id>', methods=['PUT', 'OPTIONS'])
     @login_required
     def update_pool_album(pool_id):
@@ -658,6 +657,10 @@ def register_album_pool_routes(app):
             new_singer = data.get('singer', album['singer']).strip()
             new_release_year = int(data.get('release_year', album['release_year']))
             new_duration_type = data.get('duration_type', album.get('duration_type', 'LP')).strip()
+            # 获取新的专辑简介
+            new_album_intro = data.get('album_intro', album.get('album_intro', '')).strip()
+            # 获取公共专辑修改前的原始简介（用于后续用户侧对比）
+            original_album_intro = album.get('album_intro', '').strip()
 
             cursor.execute('''
                 SELECT id FROM album_pool 
@@ -674,7 +677,7 @@ def register_album_pool_routes(app):
 
             update_fields = []
             params = []
-            # ✅✅✅ 修复点1：allowed_fields 数组中 新增 tracks_time 字段，加入白名单
+            # 允许更新的字段白名单（包含tracks_time）
             allowed_fields = ['album_name', 'singer', 'release_year', 'cover_img', 'tags', 'main_type', 'my_score',
                               'tracks', 'tracks_time', 'album_intro', 'duration_type']
             update_log = []
@@ -686,7 +689,7 @@ def register_album_pool_routes(app):
                 new_pool_tracks = [track.strip() for track in new_pool_tracks if track and track.strip()]
             sync_tracks = json.dumps(new_pool_tracks) if new_pool_tracks else album.get('tracks', '[]')
 
-            # ✅✅✅ 修复点2：预处理 tracks_time 字段（和tracks逻辑完全一致）
+            # 预处理 tracks_time 字段（和tracks逻辑完全一致）
             original_pool_tracks_time = safe_json_loads(album.get('tracks_time')) or []
             new_pool_tracks_time = data.get('tracks_time', original_pool_tracks_time)
             if isinstance(new_pool_tracks_time, list):
@@ -704,7 +707,6 @@ def register_album_pool_routes(app):
                         update_log.append(f"{field}：{safe_slice(old_val)}... → {safe_slice(new_val)}...")
                         update_fields.append(f"`{field}` = %s")
                         params.append(sync_tracks)
-                # ✅✅✅ 修复点3：新增 tracks_time 字段的更新逻辑（和tracks逻辑完全一致）
                 elif field == 'tracks_time':
                     if new_pool_tracks_time != original_pool_tracks_time:
                         old_val = json.dumps(original_pool_tracks_time)
@@ -751,40 +753,86 @@ def register_album_pool_routes(app):
             update_sql = f"UPDATE `album_pool` SET {', '.join(update_fields)} WHERE `id` = %s"
             cursor.execute(update_sql, params)
 
-            # ========== ✅ 核心还原：只同步【专辑名、歌手、发行时间】这三个字段 ==========
+            # ========== 核心：差异化同步用户专辑字段（新增同步user_album_intro表） ==========
             cursor.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "albums_%"')
             user_tables = cursor.fetchall()
             sync_count = 0
 
-            only_sync_fields = {
-                "album_name": new_album_name,
-                "singer": new_singer,
-                "release_year": new_release_year
-            }
-
             for table in user_tables:
                 table_name = table['TABLE_NAME']
                 try:
-                    cursor.execute(f'SELECT `id` FROM `{table_name}` WHERE `source_pool_id` = %s', (pool_id,))
+                    # 从表名提取用户ID（albums_123 → 123）
+                    user_id = int(table_name.replace('albums_', ''))
+
+                    # 查询该用户表中关联此公共专辑的所有用户专辑
+                    cursor.execute(f'''
+                        SELECT `id`, `album_intro`, `duration_type` 
+                        FROM `{table_name}` 
+                        WHERE `source_pool_id` = %s
+                    ''', (pool_id,))
                     user_albums = cursor.fetchall()
 
                     for user_album in user_albums:
                         user_album_id = user_album['id']
+                        user_album_intro = user_album.get('album_intro', '').strip()
+
+                        # 构造用户专辑的更新字段和参数（基础字段强制同步）
+                        user_update_fields = [
+                            "`album_name` = %s",
+                            "`singer` = %s",
+                            "`release_year` = %s",
+                            "`duration_type` = %s"  # duration_type 强制同步
+                        ]
+                        user_params = [
+                            new_album_name,
+                            new_singer,
+                            new_release_year,
+                            new_duration_type
+                        ]
+
+                        # 专辑简介同步规则：
+                        # 1. 管理员有新的简介内容
+                        # 2. 满足以下任一条件：
+                        #    - 用户侧简介为空
+                        #    - 用户侧简介和公共专辑原始简介一致（未自定义）
+
+                        need_sync_intro = False
+                        if new_album_intro and (not user_album_intro or user_album_intro == original_album_intro):
+                            user_update_fields.append("`album_intro` = %s")
+                            user_params.append(new_album_intro)
+                            need_sync_intro = True  # 标记需要同步到user_album_intro表
+
+                        # 执行用户专辑更新（albums_用户ID表）
                         user_update_sql = f'''
                             UPDATE `{table_name}` 
-                            SET 
-                                `album_name` = %s,
-                                `singer` = %s,
-                                `release_year` = %s
+                            SET {', '.join(user_update_fields)} 
                             WHERE `id` = %s
                         '''
-                        user_params = [
-                            only_sync_fields['album_name'],
-                            only_sync_fields['singer'],
-                            only_sync_fields['release_year'],
-                            user_album_id
-                        ]
+                        user_params.append(user_album_id)
                         cursor.execute(user_update_sql, user_params)
+
+                        # 关键新增：同步更新user_album_intro表的简介字段
+                        if need_sync_intro:
+                            # 先查询user_album_intro表是否已有该记录
+                            cursor.execute('''
+                                SELECT id FROM user_album_intro 
+                                WHERE user_id = %s AND album_id = %s
+                            ''', (user_id, user_album_id))
+                            intro_exist = cursor.fetchone()
+                            if intro_exist:
+                                # 更新已有记录
+                                cursor.execute('''
+                                    UPDATE user_album_intro 
+                                    SET album_intro = %s 
+                                    WHERE user_id = %s AND album_id = %s
+                                ''', (new_album_intro, user_id, user_album_id))
+                            else:
+                                # 插入新记录
+                                cursor.execute('''
+                                    INSERT INTO user_album_intro (user_id, album_id, album_intro) 
+                                    VALUES (%s, %s, %s)
+                                ''', (user_id, user_album_id, new_album_intro))
+
                         sync_count += 1
 
                 except Exception as e:
@@ -796,12 +844,18 @@ def register_album_pool_routes(app):
 
             return jsonify({
                 "code": 200,
-                "msg": f"成功修改ID为{pool_id}的公共专辑！仅同步专辑名/歌手/发行时间，共同步{sync_count}条用户数据，用户自定义内容全部保留",
+                "msg": f"成功修改ID为{pool_id}的公共专辑！同步专辑名/歌手/发行时间/时长类型，专辑简介仅同步空值/未自定义的用户（双表同步），共同步{sync_count}条用户数据",
                 "data": {
                     "sync_count": sync_count,
                     "new_version": new_version,
                     "update_log": update_log,
-                    "only_sync_fields": only_sync_fields
+                    "sync_rules": {
+                        "album_name": "强制同步（albums_用户ID表）",
+                        "singer": "强制同步（albums_用户ID表）",
+                        "release_year": "强制同步（albums_用户ID表）",
+                        "duration_type": "强制同步（albums_用户ID表）",
+                        "album_intro": "用户侧albums_用户ID表为空 / 与公共专辑原始简介一致 → 同步到albums_用户ID表 + user_album_intro表；否则不同步"
+                    }
                 }
             })
         except Exception as e:

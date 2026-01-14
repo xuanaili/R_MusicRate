@@ -1,6 +1,5 @@
 <template>
   <div class="tag-bubble-chart-container">
-    <!-- ✅ 修复1：删除空的section-title标签 或 清空其样式，彻底根除顶部白线 -->
     <!-- 加载中状态 -->
     <div v-if="loading" class="loading-chart">加载中...</div>
     <!-- 气泡图渲染核心区 -->
@@ -16,8 +15,10 @@
           top: `${item.y - 10}%`,
           backgroundColor: item.color
         }"
+        :title="item.tag.match(/【(.*?)】/)?.[1] || item.tag"
       >
-        <div class="bubble-label">{{ item.tag.match(/【(.*?)】/)?.[1] || item.tag }}</div>
+        <!-- 显示【】外的英文 -->
+        <div class="bubble-label">{{ item.tag.split('【')[0].trim() || item.tag }}</div>
         <div class="bubble-value">{{ item.percent }}%</div>
       </div>
     </div>
@@ -57,11 +58,8 @@ export default {
       const total = tagStats.reduce((sum, item) => sum + item.count, 0)
       if (total === 0) return []
 
-      // ✅ 新增：存储已生成的气泡数据，用于碰撞检测
       const generatedBubbles = []
-      // ✅ 优化：根据标签数量计算基准间距，标签越多间距越小，适配空间
       const baseStep = Math.max(8, 20 - tagStats.length * 0.3)
-      // ✅ 优化：气泡安全边界，防止超出容器（左右留边、上下留边）
       const safeXMin = 8
       const safeXMax = 92
       const safeYMin = 15
@@ -69,13 +67,10 @@ export default {
 
       return tagStats.map((item, idx) => {
         const percent = ((item.count / total) * 100).toFixed(1)
-        // 原有大小计算逻辑 不变
         const size = Math.min(sizeRange.max, Math.max(sizeRange.min, sizeRange.min + percent * 1))
-        // ✅ 优化1：X轴基准均分+随机偏移，不再固定步长，基础避免横向重叠
         let x = safeXMin + idx * baseStep
         x = x > safeXMax ? safeXMax - Math.random() * 10 : x + Math.random() * 6 - 3
-        // ✅ 优化2：Y轴分段随机，纵向分层，减少上下重叠（核心优化）
-        const ySection = Math.floor(idx / 5) // 每5个标签分一层
+        const ySection = Math.floor(idx / 5)
         let y = safeYMin + ySection * 18 + Math.random() * 25
         y = Math.min(safeYMax, Math.max(safeYMin, y))
 
@@ -90,7 +85,6 @@ export default {
           color: color
         }
 
-        // ✅ 核心新增：碰撞检测+自动微调位移，彻底解决重叠问题
         if (generatedBubbles.length > 0) {
           this.avoidOverlap(bubbleItem, generatedBubbles, safeXMin, safeXMax, safeYMin, safeYMax)
         }
@@ -100,7 +94,6 @@ export default {
     }
   },
   methods: {
-    // ✅ 原有方法 不变 - 随机生成同色系颜色
     getRandomColor(base) {
       base = base.replace('#', '')
       let r = parseInt(base.slice(0, 2), 16)
@@ -112,23 +105,17 @@ export default {
       b = Math.round(Math.min(255, Math.max(0, b * (1 + random))))
       return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
     },
-    // ✅ 核心新增：气泡防重叠算法【重中之重】
     avoidOverlap(currentBubble, existBubbles, xMin, xMax, yMin, yMax) {
-      const currentRadius = currentBubble.size / 2 // 气泡半径（百分比转像素不影响碰撞判断）
-      // 遍历所有已存在的气泡，判断是否重叠
+      const currentRadius = currentBubble.size / 2
       existBubbles.forEach(bubble => {
         const existRadius = bubble.size / 2
-        // 计算两个气泡中心点的距离（百分比维度，无需转像素，精准高效）
         const dx = currentBubble.x - bubble.x
         const dy = currentBubble.y - bubble.y
         const distance = Math.sqrt(dx * dx + dy * dy)
-        // 判断是否重叠：间距 < 两个气泡半径之和 → 重叠了
-        const minSafeDistance = currentRadius * 0.01 + existRadius * 0.01 + 1 // +1是预留安全间距，彻底避免贴边
+        const minSafeDistance = currentRadius * 0.01 + existRadius * 0.01 + 1
         if (distance < minSafeDistance) {
-          // ✅ 重叠时：弹性微调位移，向四周随机偏移，直到不重叠
           const offsetX = (Math.random() - 0.5) * 4
           const offsetY = (Math.random() - 0.5) * 4
-          // 修正位移，保证气泡不会超出安全边界
           currentBubble.x = Math.max(xMin, Math.min(xMax, currentBubble.x + offsetX))
           currentBubble.y = Math.max(yMin, Math.min(yMax, currentBubble.y + offsetY))
         }
@@ -149,18 +136,16 @@ export default {
   margin-top: 0 !important;
 }
 
-/* ✅ 修复2：彻底删除这个空标题的样式，根除根源 */
 .section-title {
   display: none !important;
 }
 
-/* ✅ 核心修改：移除所有磨砂/蒙版/半透明背景，改为完全透明，保留原有定位和圆角 */
 .bubble-chart {
   position: relative;
   width: 100%;
   height: 100%;
   flex: 1;
-  background: transparent !important; /* 完全透明核心 */
+  background: transparent !important;
   border-radius: 6px;
   overflow: hidden;
   min-height: 200px;
@@ -173,7 +158,7 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  color: v-bind(mainColor) !important; /* 适配透明背景，直接用主色 */
+  color: v-bind(mainColor) !important;
   font-size: 14px;
 }
 
@@ -188,6 +173,8 @@ export default {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
   transition: transform 0.2s !important;
   z-index: 99 !important;
+  /* ✅ 可选：鼠标悬浮时显示手型指针，提升交互体验 */
+  cursor: pointer;
 }
 
 .bubble:hover {
@@ -199,6 +186,10 @@ export default {
   font-weight: 600 !important;
   margin-bottom: 4px !important;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3) !important;
+  white-space: nowrap;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bubble-value {
@@ -206,7 +197,6 @@ export default {
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3) !important;
 }
 
-/* ✅ 无数据容器同步改为完全透明 */
 .no-chart-data {
   width: 100%;
   height: 100%;
@@ -215,7 +205,7 @@ export default {
   align-items: center;
   color: #999;
   font-size: 14px;
-  background: transparent !important; /* 完全透明核心 */
+  background: transparent !important;
   border-radius: 6px;
   border: none !important;
 }

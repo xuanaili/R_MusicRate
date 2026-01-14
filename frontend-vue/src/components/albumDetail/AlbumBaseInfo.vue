@@ -237,19 +237,19 @@ export default {
       }
       console.log(this.album)
     },
-      // ✅✅✅ 核心新增：纯秒数 转 xxh xxmin 格式 【精准适配你的需求】
-  formatListeningDuration() {
-    // 拿到专辑的纯秒数，容错处理：非数字/空/0 都返回 未知
-    const totalSeconds = this.album.listening_duration
-    if (!totalSeconds || isNaN(Number(totalSeconds)) || Number(totalSeconds) <= 0) {
-      return '未知'
-    }
-    const secNum = Number(totalSeconds)
-    const hours = Math.floor(secNum / 3600) // 总秒数 ÷3600 = 小时数
-    const minutes = Math.floor((secNum % 3600) / 60) // 剩余秒数 ÷60 = 分钟数
-    // 拼接格式：有小时显示xxhxxmin，无小时只显示xxmin，无多余空格/字符
-    return hours > 0 ? `${hours}h${minutes}min` : `${minutes}min`
-  },
+    // ✅✅✅ 核心新增：纯秒数 转 xxh xxmin 格式 【精准适配你的需求】
+    formatListeningDuration() {
+      // 拿到专辑的纯秒数，容错处理：非数字/空/0 都返回 未知
+      const totalSeconds = this.album.listening_duration
+      if (!totalSeconds || isNaN(Number(totalSeconds)) || Number(totalSeconds) <= 0) {
+        return '未知'
+      }
+      const secNum = Number(totalSeconds)
+      const hours = Math.floor(secNum / 3600) // 总秒数 ÷3600 = 小时数
+      const minutes = Math.floor((secNum % 3600) / 60) // 剩余秒数 ÷60 = 分钟数
+      // 拼接格式：有小时显示xxhxxmin，无小时只显示xxmin，无多余空格/字符
+      return hours > 0 ? `${hours}h${minutes}min` : `${minutes}min`
+    },
     removeMyTag(index) {
       this.selectedMyTags.splice(index, 1);
       this.filterTagOptions();
@@ -300,11 +300,7 @@ export default {
     async toggleIntroEdit() {
       if (this.isEditingIntro) {
         const intro = this.albumIntro.trim();
-        if (!intro) {
-          this.$message?.warning('简介不能为空');
-          this.$nextTick(() => this.$refs.introTextarea?.focus());
-          return
-        }
+        // ✅ 移除了非空校验逻辑，允许保存空内容
         const ok = await this.saveUserAlbumIntro(this.album.id, intro);
         ok && (this.isEditingIntro = false);
       } else {
