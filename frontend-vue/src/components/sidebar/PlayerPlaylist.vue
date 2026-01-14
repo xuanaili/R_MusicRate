@@ -15,7 +15,8 @@
             :class="{
               active: localActiveTabIndex === idx,
               dragging: tabDragStartIndex === idx,
-              tabPlaceholder: tabDragPlaceholderIndex === idx
+              // ✅ 修复1：类名拼写一致 tab-placeholder
+              'tab-placeholder': tabDragPlaceholderIndex === idx
             }"
             @click="handleTabChange(idx)"
             draggable="true"
@@ -62,7 +63,6 @@
           @drop.prevent="handleDropAlbum"
           @dragover.prevent="handlePlaylistDragover"
           @dragenter.prevent
-
           @wheel="handleDragWheel"
         >
           <div
@@ -93,13 +93,26 @@
       </div>
 
       <div class="album-section common-fixed-section">
-        <input
-          type="text"
-          class="album-search-input common-search-input"
-          v-model="albumSearchKey"
-          placeholder="搜索专辑名称/歌手..."
-          @input="filterAndSortAlbums"
-        />
+        <!-- 核心修改：搜索框容器改为水平排列，两个搜索框各占一半 -->
+        <div class="search-input-group">
+          <!-- 第一个搜索框：专辑名/歌曲 -->
+          <input
+            type="text"
+            class="album-search-input common-search-input"
+            v-model="albumSearchKey"
+            placeholder="专辑名/歌曲"
+            @input="filterAndSortAlbums"
+          />
+          <!-- 第二个搜索框：发行年/标签 -->
+          <input
+            type="text"
+            class="album-search-input common-search-input"
+            v-model="albumMetaSearchKey"
+            placeholder="发行年/标签"
+            @input="filterAndSortAlbums"
+          />
+        </div>
+
         <div class="album-tool-bar common-tool-bar">
           <div class="sort-group common-sort-group">
             <button
@@ -177,6 +190,8 @@ export default {
   data() {
     return {
       albumSearchKey: '',
+      // 新增：发行时间/标签搜索关键词
+      albumMetaSearchKey: '',
       sortType: 'addTime',
       dragStartIndex: -1,
       dragPlaceholderIndex: -1,
@@ -189,20 +204,22 @@ export default {
       dragTimer: null,
       playModeMap: {order: '顺序播放', single: '单曲循环', random: '随机播放'},
       isDraggingAction: false,
+      // ✅ 修复2：初始化为false，mounted中最后设置为true
       isMounted: false,
       backupKey: 'user_playlist_backup_',
       isBackingUp: false,
       isRestoring: false,
       isEmiting: false,
       lastBackupTime: 0,
-      backupDebounce: 1000,
+      // ✅ 修复3：降低防抖时间，避免快速操作跳过备份
+      backupDebounce: 300,
       dragScrollTimer: null,
       scrollSpeed: 3,
       scrollThreshold: 50,
       // 新增：歌单标签拖拽相关状态
-      tabDragStartIndex: -1,      // 歌单拖拽起始索引
-      tabDragPlaceholderIndex: -1, // 歌单拖拽占位符索引
-      isTabDragging: false        // 是否正在拖拽歌单
+      tabDragStartIndex: -1,
+      tabDragPlaceholderIndex: -1,
+      isTabDragging: false
     };
   },
   computed: {
@@ -267,10 +284,15 @@ export default {
     albumSearchKey() {
       if (this.isMounted) this.filterAndSortAlbums();
     },
+    // 监听第二个搜索框变化
+    albumMetaSearchKey() {
+      if (this.isMounted) this.filterAndSortAlbums();
+    },
     playlistTabs: {
       deep: true,
       immediate: true,
       handler(newVal) {
+        // ✅ 修复4：只有isMounted为true且无锁时才更新，避免覆盖备份
         if (this.isMounted && !this.isEmiting && !this.isBackingUp && !this.isRestoring) {
           if (Array.isArray(newVal) && newVal.length > 0) {
             const newValStr = JSON.stringify(newVal);
@@ -291,18 +313,20 @@ export default {
         }
       }
     },
+    // 核心修复：简化监听条件，只保留必要的锁
     localPlaylistTabs: {
       deep: true,
       handler(newVal) {
-        if (this.isMounted && !this.isDragging && !this.isDraggingAction && !this.isRestoring && !this.isBackingUp && !this.isEmiting && !this.isTabDragging) {
+        if (this.isMounted && !this.isRestoring) {
           clearTimeout(this.dragTimer);
           this.dragTimer = setTimeout(() => {
             if (Array.isArray(newVal) && newVal.length > 0) {
               this.isEmiting = true;
               this.$emit('update:playlistTabs', JSON.parse(JSON.stringify(newVal)));
+              // ✅ 修复5：立即触发备份，不等待emit完成
+              this.safeBackupPlaylistData();
               setTimeout(() => {
                 this.isEmiting = false;
-                this.safeBackupPlaylistData();
               }, 50);
             }
           }, 30);
@@ -316,36 +340,39 @@ export default {
     }
   },
   mounted() {
-    this.isMounted = true;
+    // ✅ 修复6：先执行恢复逻辑，最后设置isMounted为true
+    // 1. 先赋值默认数据
+    this.localPlaylistTabs = JSON.parse(JSON.stringify(this.playlistTabs));
+    this.localActiveTabIndex = this.activeTabIndex;
+
+    // 2. 恢复本地备份（覆盖默认数据）
     this.isRestoring = true;
     this.restorePlaylistData();
     this.isRestoring = false;
 
-    if (this.localPlaylistTabs.length === 0) {
-      this.localPlaylistTabs = JSON.parse(JSON.stringify(this.playlistTabs));
-    }
+    // 3. 初始化筛选数据
     this.filterAlbums = [...this.albumList];
-    this.localActiveTabIndex = this.activeTabIndex;
+
+    // 4. 最后标记组件已挂载
+    this.isMounted = true;
   },
   beforeDestroy() {
     clearTimeout(this.dragTimer);
     clearTimeout(this.dragScrollTimer);
-    this.isBackingUp = true;
+    // ✅ 修复7：强制备份，不触发防抖
     this.backupPlaylistData();
-    this.isBackingUp = false;
 
     this.handlePauseAndUploadDuration();
     this.isMounted = false;
   },
   methods: {
-    // 原有方法保持不变
     safeBackupPlaylistData() {
       const now = Date.now();
-      if (now - this.lastBackupTime < this.backupDebounce) {
-        return;
+      // ✅ 修复8：防抖时间缩短，且允许强制备份（传true跳过防抖）
+      if (arguments[0] || now - this.lastBackupTime > this.backupDebounce) {
+        this.lastBackupTime = now;
+        this.backupPlaylistData();
       }
-      this.lastBackupTime = now;
-      this.backupPlaylistData();
     },
     backupPlaylistData() {
       if (this.isRestoring || this.isBackingUp || this.isEmiting) return;
@@ -360,7 +387,12 @@ export default {
             timestamp: Date.now()
           };
           localStorage.setItem(`${this.backupKey}${this.currentUserId}`, JSON.stringify(backupData));
-          console.log('✅ 歌单数据已备份到本地存储');
+
+          console.log('✅ 歌单数据已备份到本地存储', {
+            tabCount: backupData.tabs.length,
+            activeIndex: backupData.activeIndex,
+            firstTabTrackCount: backupData.tabs[0]?.tracks?.length || 0
+          });
         }
       } catch (err) {
         console.warn('⚠️ 歌单数据备份失败：', err);
@@ -378,15 +410,24 @@ export default {
           const backupStr = localStorage.getItem(`${this.backupKey}${this.currentUserId}`);
           if (backupStr) {
             const backupData = JSON.parse(backupStr);
-            if (backupData.tabs && Date.now() - backupData.timestamp < 7 * 24 * 60 * 60 * 1000) {
+            // 延长有效期到30天，避免频繁丢失数据
+            if (backupData.tabs && Date.now() - backupData.timestamp < 30 * 24 * 60 * 60 * 1000) {
               this.localPlaylistTabs = JSON.parse(JSON.stringify(backupData.tabs));
               this.localActiveTabIndex = backupData.activeIndex || 0;
-              console.log('✅ 从本地备份恢复歌单数据成功');
+              console.log('✅ 从本地备份恢复歌单数据成功', {
+                tabCount: this.localPlaylistTabs.length,
+                activeIndex: this.localActiveTabIndex,
+                firstTabTrackCount: this.localPlaylistTabs[0]?.tracks?.length || 0
+              });
+            } else {
+              console.log('⚠️ 本地备份数据过期或无效，使用默认数据');
             }
+          } else {
+            console.log('ℹ️ 未找到本地备份数据，使用默认数据');
           }
         }
       } catch (err) {
-        console.warn('⚠️ 歌单数据恢复失败：使用默认数据');
+        console.warn('⚠️ 歌单数据恢复失败：使用默认数据', err);
       }
     },
     handlePauseAndUploadDuration() {
@@ -413,7 +454,8 @@ export default {
       if (tabName && tabName.trim()) {
         this.localPlaylistTabs.push({name: tabName.trim(), tracks: []});
         this.localActiveTabIndex = this.localPlaylistTabs.length - 1;
-        this.safeBackupPlaylistData();
+        // ✅ 修复9：强制备份，跳过防抖
+        this.safeBackupPlaylistData(true);
       }
     },
     delPlaylistTab(idx) {
@@ -422,14 +464,14 @@ export default {
         this.handlePauseAndUploadDuration();
         this.localPlaylistTabs.splice(idx, 1);
         this.localActiveTabIndex = Math.max(0, this.localActiveTabIndex - 1);
-        this.safeBackupPlaylistData();
+        this.safeBackupPlaylistData(true);
       }
     },
     handleTabChange(idx) {
       if (this.localActiveTabIndex === idx) return;
       this.handlePauseAndUploadDuration();
       this.localActiveTabIndex = idx;
-      this.safeBackupPlaylistData();
+      this.safeBackupPlaylistData(true);
     },
     handleDragStart(idx, event) {
       this.dragStartIndex = idx;
@@ -515,9 +557,10 @@ export default {
       this.dragStartIndex = -1;
       this.dragPlaceholderIndex = -1;
 
+      // 核心修复：异步重置状态，确保监听能触发
       setTimeout(() => {
         this.isDraggingAction = false;
-        this.safeBackupPlaylistData();
+        this.safeBackupPlaylistData(true);
       }, 100);
     },
     handleDragAlbumStart(album, event) {
@@ -550,14 +593,38 @@ export default {
     filterAndSortAlbums() {
       if (!this.albumList || !this.isMounted) return;
       let filterList = [...this.albumList];
+
+      // 第一个筛选条件：专辑名/歌曲
       const searchKey = this.albumSearchKey.trim().toLowerCase();
       if (searchKey) {
         filterList = filterList.filter(item => {
           const albumName = (item.album_name || '').toLowerCase();
           const singer = (item.singer || '').toLowerCase();
-          return albumName.includes(searchKey) || singer.includes(searchKey);
+          // 新增：支持搜索歌曲名（如果有song_name字段）
+          const songName = (item.song_name || '').toLowerCase();
+          return albumName.includes(searchKey) || singer.includes(searchKey) || songName.includes(searchKey);
         });
       }
+
+      // 第二个筛选条件：发行时间/标签
+      const metaSearchKey = this.albumMetaSearchKey.trim().toLowerCase();
+      if (metaSearchKey) {
+        filterList = filterList.filter(item => {
+          // 处理发行时间
+          console.log(item.release_year)
+          const releaseYear = (item.release_year || '').toString().toLowerCase();
+          // 处理标签（兼容数组和字符串格式）
+          let tagsStr = '';
+          if (Array.isArray(item.tags)) {
+            tagsStr = item.tags.join(',').toLowerCase();
+          } else if (typeof item.tags === 'string') {
+            tagsStr = item.tags.toLowerCase();
+          }
+          return releaseYear.includes(metaSearchKey) || tagsStr.includes(metaSearchKey);
+        });
+      }
+
+      // 排序逻辑保持不变
       switch (this.sortType) {
         case 'addTime':
           filterList.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
@@ -577,14 +644,14 @@ export default {
     delTrack(index) {
       this.localPlaylistTabs[this.localActiveTabIndex].tracks.splice(index, 1);
       if (index === this.currentTrackIndex) this.$emit('update:currentTrackIndex', -1);
-      this.safeBackupPlaylistData();
+      this.safeBackupPlaylistData(true);
     },
     handleRemoveAllTracks() {
       this.handlePauseAndUploadDuration();
       this.localPlaylistTabs[this.localActiveTabIndex].tracks = [];
       this.$emit('update:currentTrackIndex', -1);
       this.$message?.success('已清空当前歌单');
-      this.safeBackupPlaylistData();
+      this.safeBackupPlaylistData(true);
     },
     handleAddThisAlbumTracks(album) {
       if (!album) return;
@@ -592,7 +659,8 @@ export default {
         ...album,
         sortId: this.sortIdSeed++
       });
-      this.safeBackupPlaylistData();
+      // ✅ 修复10：添加专辑后立即备份
+      this.safeBackupPlaylistData(true);
     },
     handleAddAllAlbumTracks() {
       let addCount = 0;
@@ -606,7 +674,7 @@ export default {
         }
       });
       this.$message?.success(`已添加 ${addCount} 张专辑到当前歌单`);
-      this.safeBackupPlaylistData();
+      this.safeBackupPlaylistData(true);
     },
     handleChangeSort(type) {
       this.sortType = type;
@@ -614,7 +682,8 @@ export default {
     handleClose() {
       this.handlePauseAndUploadDuration();
       this.$emit('close-sidebar');
-      this.safeBackupPlaylistData();
+      // ✅ 修复11：强制备份
+      this.safeBackupPlaylistData(true);
 
       if (this.saveUserPlaylistData) {
         this.saveUserPlaylistData();
@@ -700,89 +769,48 @@ export default {
         this.$message?.error('跳转失败，请稍后重试');
       }
     },
-
-    // ========== 新增：歌单标签拖拽相关方法 ==========
-    /**
-     * 歌单标签拖拽开始
-     * @param {number} idx - 歌单索引
-     * @param {Event} e - 拖拽事件
-     */
     handleTabDragStart(idx, e) {
       this.tabDragStartIndex = idx;
       this.tabDragPlaceholderIndex = -1;
       this.isTabDragging = true;
 
-      // 设置拖拽数据
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', idx.toString());
       e.dataTransfer.setDragImage(e.target.cloneNode(true), 50, 20);
     },
-
-    /**
-     * 歌单标签容器dragover处理
-     * @param {Event} e - 拖拽事件
-     */
     handleTabDragover(e) {
       if (!this.isTabDragging) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
     },
-
-    /**
-     * 歌单标签dragover处理
-     * @param {number} idx - 目标歌单索引
-     * @param {Event} e - 拖拽事件
-     */
     handleTabDragOver(idx, e) {
-      // 跳过默认歌单和起始歌单
       if (idx === 0 || idx === this.tabDragStartIndex) return;
 
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
     },
-
-    /**
-     * 歌单标签dragenter处理
-     * @param {number} idx - 目标歌单索引
-     * @param {Event} e - 拖拽事件
-     */
     handleTabDragEnter(idx, e) {
-      // 跳过默认歌单和起始歌单
       if (idx === 0 || idx === this.tabDragStartIndex) return;
 
       e.preventDefault();
       this.tabDragPlaceholderIndex = idx;
     },
-
-    /**
-     * 歌单标签dragleave处理
-     * @param {number} idx - 目标歌单索引
-     */
     handleTabDragLeave(idx) {
       if (this.tabDragPlaceholderIndex === idx) {
         this.tabDragPlaceholderIndex = -1;
       }
     },
-
-    /**
-     * 歌单标签拖拽结束
-     */
     handleTabDragEnd() {
-      // 重置拖拽状态
-      this.isTabDragging = false;
-      this.tabDragStartIndex = -1;
-      this.tabDragPlaceholderIndex = -1;
+      // 核心修复：异步重置歌单拖拽状态，避免拦截监听
+      setTimeout(() => {
+        this.isTabDragging = false;
+        this.tabDragStartIndex = -1;
+        this.tabDragPlaceholderIndex = -1;
+      }, 100);
     },
-
-    /**
-     * 歌单标签drop处理（完成排序）
-     * @param {number} dropIndex - 放下位置索引
-     * @param {Event} e - 拖拽事件
-     */
     handleTabDrop(dropIndex, e) {
       e.preventDefault();
 
-      // 验证条件
       if (
           !this.isTabDragging ||
           dropIndex === 0 ||
@@ -793,30 +821,22 @@ export default {
         return;
       }
 
-      // 复制歌单数组并调整顺序
       const newTabs = [...this.localPlaylistTabs];
-      // 移除拖拽项
       const [draggedTab] = newTabs.splice(this.tabDragStartIndex, 1);
-      // 插入到目标位置
       newTabs.splice(dropIndex, 0, draggedTab);
 
-      // 更新歌单列表
       this.localPlaylistTabs = newTabs;
 
-      // 如果拖拽的是当前激活的歌单，更新激活索引
       if (this.localActiveTabIndex === this.tabDragStartIndex) {
         this.localActiveTabIndex = dropIndex;
-      }
-      // 如果目标位置是当前激活的歌单，调整激活索引
-      else if (this.localActiveTabIndex === dropIndex) {
+      } else if (this.localActiveTabIndex === dropIndex) {
         this.localActiveTabIndex = this.tabDragStartIndex;
       }
 
-      // 保存数据
-      this.safeBackupPlaylistData();
+      // ✅ 修复12：歌单标签拖拽后强制备份
+      this.safeBackupPlaylistData(true);
       this.$message?.success('歌单顺序已更新');
 
-      // 重置拖拽状态
       this.handleTabDragEnd();
     }
   }
@@ -898,7 +918,6 @@ export default {
   background: rgba(255, 255, 255, 0.5);
 }
 
-/* 新增：歌单拖拽相关样式 */
 .playlist-tab-item.dragging {
   opacity: 0.5;
   background: rgba(255, 255, 255, 0.2);
@@ -910,7 +929,6 @@ export default {
   border: 1px dashed v-bind(mainColorDark);
 }
 
-/* 禁用默认歌单的拖拽光标 */
 .playlist-tab-item:nth-child(1) {
   cursor: default !important;
 }
@@ -1151,16 +1169,24 @@ export default {
   position: relative;
 }
 
-.common-search-input {
+/* 核心修改：搜索框容器改为水平排列，两个搜索框各占50%宽度 */
+.search-input-group {
+  display: flex;
+  gap: 8px; /* 两个搜索框之间的间距 */
   width: 100%;
+  margin-bottom: 8px;
+}
+
+.common-search-input {
+  /* 关键：每个搜索框占一半宽度 */
+  flex: 1;
   padding: 8px 10px;
   border-radius: 4px;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.5);
   background: rgba(255, 255, 255, 0.3);
   backdrop-filter: blur(3px);
   color: v-bind(mainColorDarkDouble);
   font-size: 13px;
-  margin-bottom: 8px;
 }
 
 .common-search-input::placeholder {
@@ -1238,7 +1264,6 @@ export default {
   display: none !important;
 }
 
-/* 拖拽相关样式优化 */
 [draggable="true"] {
   cursor: grab;
 }

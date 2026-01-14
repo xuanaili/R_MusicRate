@@ -853,7 +853,9 @@ async getAlbumAudioInfo() {
         if (res.data.code === 200) {
           this.albumList = res.data.data.map(item => ({
             ...item,
-            my_score: item.score
+            my_score: item.score,
+            tags: item.tags,
+            release_year:item.release_year,
           }))
         }
       } catch (err) {

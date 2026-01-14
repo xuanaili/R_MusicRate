@@ -5,6 +5,7 @@ from flask import request, jsonify
 import traceback
 import pymysql
 
+from .score import calculate_album_total_score
 from ..db_utils import get_db, get_current_user_id, get_album_table_name, check_and_create_user_album_table
 from ..decorators import login_required
 
@@ -13,6 +14,7 @@ def register_playlist_routes(app):
     """注册播放列表相关路由"""
 
     # ========== 原有接口：查询用户可播放的专辑列表 (保留，不修改) ==========
+    # 修改后的核心接口
     @app.route('/api/playlist/get-user-audio-albums', methods=['GET'])
     @login_required
     def get_user_audio_albums_for_playlist():
@@ -30,13 +32,17 @@ def register_playlist_routes(app):
             db = get_db()
             cursor = db.cursor(pymysql.cursors.DictCursor)
 
+            # 修改SQL：增加查询 my_score 原始字段（注意字段名要和数据库一致）
             sql = f'''
                 SELECT 
-                    ua.my_score as score,
+                    ua.my_score,  # 原始评分列表（字符串格式）
+                    ua.tags,
+                    ua.release_year,
                     ua.album_name,
                     ua.created_at,
                     ua.source_pool_id,
-                    ua.singer
+                    ua.singer,
+                    ua.id  # 增加专辑ID，前端可能需要
                 FROM `{user_album_table}` ua
                 INNER JOIN album_pool ap ON ua.source_pool_id = ap.id
                 WHERE 
@@ -47,13 +53,41 @@ def register_playlist_routes(app):
             '''
             cursor.execute(sql)
             album_list = cursor.fetchall()
-
             cursor.close()
+
+            # 核心处理：遍历专辑列表，计算综合评分
+            processed_albums = []
+            for album in album_list:
+                # 初始化综合评分为0
+                total_score = 0.0
+
+                # 解析 my_score 字段（数据库中是JSON字符串）
+                if album.get('my_score'):
+                    try:
+                        # 将字符串转成列表
+                        score_list = json.loads(album['my_score'])
+                        # 调用计算函数得到综合分数
+                        total_score = calculate_album_total_score(score_list)
+                    except (json.JSONDecodeError, TypeError):
+                        # 解析失败时评分置0
+                        total_score = 0.0
+
+                # 构造返回数据（保持原有字段名，前端无需修改）
+                processed_albums.append({
+                    'id': album.get('id', 0),
+                    'score': total_score,  # 综合评分
+                    'album_name': album.get('album_name', ''),
+                    'created_at': album.get('created_at', ''),
+                    'source_pool_id': album.get('source_pool_id', 0),
+                    'singer': album.get('singer', ''),
+                    'tags':album.get('tags', ''),
+                    'release_year':album.get('release_year', ''),
+                })
 
             return jsonify({
                 "code": 200,
-                "msg": f"查询成功，共获取 {len(album_list)} 张可播放专辑",
-                "data": album_list
+                "msg": f"查询成功，共获取 {len(processed_albums)} 张可播放专辑",
+                "data": processed_albums
             })
 
         except Exception as e:
