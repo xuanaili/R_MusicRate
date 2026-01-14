@@ -456,19 +456,27 @@ async saveAllScore() {
         score: 0
       }];
     },
-    initFavouriteTrackList() {
-      this.favouriteTrackList = [];
-      const names = this.favourite_tracks || [], secs = this.favourite_tracks_time || [];
-      names.forEach((name, idx) => {
-        const dbSec = secs[idx] || 0;
-        this.favouriteTrackList.push({
-          name: name.trim() || '未知曲目',
-          sec: dbSec,
-          duration: this.secondsToTime(dbSec)
-        });
-      });
-      if (!names.length) this.favouriteTrackList = [{name: '未知曲目', sec: 0, duration: '0:00:00'}];
-    },
+// 修复initFavouriteTrackList方法，支持保留编辑后的数据
+initFavouriteTrackList(keepCurrentData = false) {
+  // 如果标记为保留当前数据，且已有编辑后的列表，则不重置
+  if (keepCurrentData && this.favouriteTrackList.length > 0) {
+    return;
+  }
+
+  this.favouriteTrackList = [];
+  const names = this.favourite_tracks || [], secs = this.favourite_tracks_time || [];
+  names.forEach((name, idx) => {
+    const dbSec = secs[idx] || 0;
+    this.favouriteTrackList.push({
+      name: name.trim() || '未知曲目',
+      sec: dbSec,
+      duration: this.secondsToTime(dbSec)
+    });
+  });
+  if (!names.length) this.favouriteTrackList = [{name: '未知曲目', sec: 0, duration: '0:00:00'}];
+},
+
+// 优化saveTrackList方法的错误提示
     formatDurationInput(type, idx) {
       const list = type === 'tracks' ? this.trackList : this.favouriteTrackList;
       const track = list[idx];
@@ -497,17 +505,24 @@ async saveAllScore() {
         totalSec += this.timeToSeconds(track.playDuration);
       });
     },
-    async toggleEditStatus(type) {
-      const key = type === 'tracks' ? 'isTrackEditMode' : 'isFavouriteEditMode';
-      if (this[key]) {
-        await this.saveAllScore();
-        await this.saveTrackList(type);
-        this[key] = false;
-        type === 'tracks' && (this.showParseModal = false);
-      } else {
-        this[key] = true;
-      }
-    },
+// 重点修复的方法
+async toggleEditStatus(type) {
+  const key = type === 'tracks' ? 'isTrackEditMode' : 'isFavouriteEditMode';
+  if (this[key]) {
+    // 先保存数据
+    await this.saveTrackList(type);
+    // 喜欢时刻需要额外刷新数据（修复核心）
+    if (type === 'favourite') {
+      this.initFavouriteTrackList(true); // 传入true保留当前编辑的数据
+    } else {
+      await this.saveAllScore(); // 单曲列表仍需要保存评分
+    }
+    this[key] = false;
+    type === 'tracks' && (this.showParseModal = false);
+  } else {
+    this[key] = true;
+  }
+},
     addNewTrack(type) {
       if (type === 'tracks') {
         this.trackList.push({name: '', duration: '0:00:00', sec: 0, playDuration: '0:00:00', score: 0});
@@ -522,40 +537,58 @@ async saveAllScore() {
       list.splice(idx, 1);
       type === 'tracks' && this.isDurationMode && this.calcTrackTimestamp();
     },
-    async saveTrackList(type) {
-      try {
-        let submitList, submitSecArr, apiUrl, emitKey1, emitKey2;
-        if (type === 'tracks') {
-          submitList = this.trackList.map(i => i.name.trim() || '未知曲目');
-          submitSecArr = this.trackList.map(i => i.sec || 0);
-          apiUrl = `/api/album/update/tracks/${this.album.id}`;
-          emitKey1 = 'tracks';
-          emitKey2 = 'tracks_time';
-        } else {
-          submitList = this.favouriteTrackList.map(i => i.name.trim() || '未知曲目');
-          submitSecArr = this.favouriteTrackList.map(i => i.sec || 0);
-          apiUrl = `/api/album/update/favourite_tracks/${this.album.id}`;
-          emitKey1 = 'favourite_tracks';
-          emitKey2 = 'favourite_tracks_time';
-        }
-        const fullTrackList = submitList.map(n => ({name: n}));
-        const res = await this.$axios.put(apiUrl, {
-          tracks: submitList,
-          full_tracks: fullTrackList,
-          tracks_time: submitSecArr
-        }, {
-          headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
-        });
-        if (res.data.code === 200) {
-          this.$emit('update-album-data', {[emitKey1]: submitList, [emitKey2]: submitSecArr});
-        } else {
-          alert(`❌ 保存失败：${res.data.msg}`);
-        }
-      } catch (err) {
-        console.error('保存失败：', err);
-        alert(err.response?.data?.msg || '❌ 保存失败，请重试！');
+// 优化saveTrackList方法的错误提示
+async saveTrackList(type) {
+  try {
+    // 先校验album.id是否存在
+    if (!this.album.id) {
+      alert('❌ 保存失败：未找到专辑ID');
+      return;
+    }
+
+    let submitList, submitSecArr, apiUrl, emitKey1, emitKey2;
+    if (type === 'tracks') {
+      submitList = this.trackList.map(i => i.name.trim() || '未知曲目');
+      submitSecArr = this.trackList.map(i => i.sec || 0);
+      apiUrl = `/api/album/update/tracks/${this.album.id}`;
+      emitKey1 = 'tracks';
+      emitKey2 = 'tracks_time';
+    } else {
+      submitList = this.favouriteTrackList.map(i => i.name.trim() || '未知曲目');
+      submitSecArr = this.favouriteTrackList.map(i => i.sec || 0);
+      apiUrl = `/api/album/update/favourite_tracks/${this.album.id}`;
+      emitKey1 = 'favourite_tracks';
+      emitKey2 = 'favourite_tracks_time';
+    }
+
+    const fullTrackList = submitList.map(n => ({name: n}));
+    const res = await this.$axios.put(apiUrl, {
+      tracks: submitList,
+      full_tracks: fullTrackList,
+      tracks_time: submitSecArr
+    }, {
+      headers: {
+        'Authorization': localStorage.getItem('token') || '',
+        'Content-Type': 'application/json'
       }
-    },
+    });
+
+    if (res.data.code === 200) {
+      // 保存成功后立即更新父组件数据
+      this.$emit('update-album-data', {[emitKey1]: submitList, [emitKey2]: submitSecArr});
+      // 给用户友好提示
+      this.$message?.success(`✅ ${type === 'tracks' ? '单曲列表' : '喜欢时刻'} 保存成功！`) ||
+      alert(`✅ ${type === 'tracks' ? '单曲列表' : '喜欢时刻'} 保存成功！`);
+    } else {
+      alert(`❌ 保存失败：${res.data.msg || '服务器返回错误'}`);
+    }
+  } catch (err) {
+    console.error('保存失败：', err);
+    const errorMsg = err.response?.data?.msg ||
+                    (err.message.includes('401') ? '登录已过期，请重新登录' : '网络异常，请重试');
+    alert(`❌ 保存失败：${errorMsg}`);
+  }
+},
     handleTrackClick(idx) {
       !this.isTrackEditMode && this.$emit('track-jump', this.trackList[idx].sec || 0);
     },
