@@ -47,6 +47,10 @@
         @update-album-data="updateAlbumData"
         @track-jump="handleTrackJump"
         @toggle-ball-play="handleToggleBallPlay"
+          @toggle-meteor-play="handleToggleMeteorPlay"
+
+
+
         :isMusicPlaying="isPlaying"
         :main-color="albumMainColor"
         :main-color-dark="albumMainColorDark"
@@ -55,6 +59,10 @@
         :main-color-white-double="albumMainColorWhiteDouble"
         @update-album-score="handleUpdateAlbumScore"
         @score-list-change="handleScoreList"
+
+
+        @update-rhy-config="handleUpdateRhyConfig"
+
       />
 
       <AlbumReviewEditor
@@ -208,7 +216,6 @@ import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
 // 核心新增：引入评分计算工具函数
 import {calculateAlbumTotalScore} from '@/utils/scoreCalc.js'
 // ✅✅✅ 整合新增：引入全局配置文件 (小球动画配置)
-import globalConfig from "@/config/index.js";
 
 export default {
   name: 'AlbumDetail',
@@ -305,9 +312,26 @@ export default {
       isScalingUp: true,
       isMouseHover: false,
       autoBallTimer: null,
-      currentBallConfig: globalConfig.ballConfig.default,
-      isBallPlay: false // ✅【重中之重】父组件新增核心变量，和子组件联动控制小球开关
+      isBallPlay: false, // ✅【重中之重】父组件新增核心变量，和子组件联动控制小球开关
+
+    meteorList: [], // 存储流星DOM元素
+    meteorAnimationId: null, // 流星动画帧ID
+    isMeteorPlay: false, // 流星播放状态
+    autoMeteorTimer: null, // 流星自动生成定时器 ✅ 新增
+
+
+      //节奏组件共用配置
+      rhyConfig:{
+        a:1,
+        b:2,
+        c:3,
+        d:4,
+        e:5
+
+      },
     };
+
+
   },
   computed: {
     filteredComments() {
@@ -336,6 +360,19 @@ export default {
     }
   },
   watch: {
+
+        // 新增：监听流星配置更新
+    meteorConfig: {
+      handler(newVal) {
+        // 同步到currentBallConfig，确保参数统一
+        this.currentBallConfig = {
+          ...this.currentBallConfig,
+          ...newVal
+        };
+      },
+      deep: true
+    },
+
   volume(val) {
     const volumeNum = Number(val);
     const validVolume = Number.isFinite(volumeNum) ? Math.max(0, Math.min(1, volumeNum)) : 0.3;
@@ -419,14 +456,62 @@ export default {
         }
       },
     },
+
+
     // ✅✅✅ 【修复2】核心新增监听：同时监听播放状态 + 小球开关状态，双重控制
-    isPlaying(newVal) {
-      this.isBallPlay && newVal ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
-    },
+  isPlaying(newVal) {
+    // 小球逻辑
+    this.isBallPlay && newVal ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
+    // 流星逻辑
+    this.isMeteorPlay && newVal ? this.startAutoMeteorGenerate() : this.stopAutoMeteorGenerate();
+  },
     // ✅✅✅ 【修复2】核心新增监听：单独监听小球开关状态，子组件点击后立即生效
-    isBallPlay(newVal) {
-      newVal && this.isPlaying ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
+  isBallPlay(newVal) {
+    // 先停止所有旧的动画和定时器
+    this.stopAutoBallGenerate();
+    this.destroyBallAnimation();
+
+    if (newVal) {
+      this.isMeteorPlay = false; // 开启小球时，主动关闭流星（内部互斥）
+      this.destroyMeteorAnimation(); // 清理流星动画
+
+      // 初始化并启动小球动画
+      this.$nextTick(() => {
+        this.initBallAnimation();
+        if (this.isPlaying) {
+          this.startAutoBallGenerate();
+        }
+      });
     }
+  },
+
+
+  isMeteorPlay(newVal) {
+    newVal && this.isPlaying ? this.startAutoMeteorGenerate() : this.stopAutoMeteorGenerate();
+    if (newVal) {
+      this.isBallPlay = false; // 开启流星时关闭小球
+      this.destroyBallAnimation(); // 清理小球动画
+    }
+  },
+
+
+      // 新增：监听配置参数变化，实时重启动画
+  currentBallConfig: {
+    handler() {
+      // 如果当前是小球模式且音乐在播放，重启小球生成
+      if (this.isBallPlay && this.isPlaying) {
+        this.stopAutoBallGenerate(); // 先停止旧定时器
+        this.startAutoBallGenerate(); // 重启加载新参数
+      }
+      // 如果当前是流星模式且音乐在播放，重启流星生成
+      if (this.isMeteorPlay && this.isPlaying) {
+        this.stopAutoMeteorGenerate(); // 先停止旧定时器
+        this.startAutoMeteorGenerate(); // 重启加载新参数
+      }
+    },
+    deep: true // 深度监听对象内部属性变化
+  },
+
   },
   async created() {
     if (!localStorage.getItem('token')) {
@@ -469,6 +554,7 @@ export default {
     // ✅✅✅ 整合新增：父组件挂载后初始化小球动画
     this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
     this.initBallAnimation();
+      this.initMeteorAnimation(); // 初始化流星动画
     this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();
     window.addEventListener("resize", this.initBallAnimation);
   },
@@ -476,17 +562,20 @@ export default {
     // ✅✅✅ 整合新增：组件激活时重新初始化小球动画
     this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
     this.initBallAnimation();
+      this.initMeteorAnimation(); // 激活时初始化流星
     this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();
   },
   deactivated() {
     // ✅✅✅ 整合新增：组件失活时销毁小球动画
     this.destroyBallAnimation();
     this.stopAutoBallGenerate();
+      this.destroyMeteorAnimation(); // 失活时销毁流星
   },
   beforeDestroy() {
     // ✅✅✅ 整合新增：组件销毁时彻底销毁小球动画+移除监听
     clearInterval(this.ratingTimer);
     this.destroyBallAnimation();
+      this.destroyMeteorAnimation(); // 销毁时清理流星
     this.stopAutoBallGenerate();
     window.removeEventListener("resize", this.initBallAnimation);
     // 原有清除逻辑
@@ -510,6 +599,35 @@ export default {
     });
   },
   methods: {
+        // 新增：接收 rhyConfig 并更新本地数据
+    handleUpdateRhyConfig(rhyConfig) {
+
+console.log('祖父组件接收的 rhyConfig：', JSON.parse(JSON.stringify(this.rhyConfig)));
+  // 2. 核心修改：只提取需要的5个字段，忽略所有其他字段
+  const pureRhyConfig = {
+    a: Number(rhyConfig.a) || 1,  // 加默认值，避免空值/非数字
+    b: Number(rhyConfig.b) || 2,
+    c: Number(rhyConfig.c) || 3,
+    d: Number(rhyConfig.d) || 4,
+    e: Number(rhyConfig.e) || 5
+  };
+
+  // 3. 赋值纯净的对象给 this.rhyConfig
+  this.rhyConfig = pureRhyConfig;
+
+      // 可选：如果需要根据 rhyConfig 更新动画逻辑
+      if (this.isBallPlay && this.isPlaying) {
+        this.stopAutoBallGenerate();
+        this.startAutoBallGenerate();
+      }
+      if (this.isMeteorPlay && this.isPlaying) {
+        this.stopAutoMeteorGenerate();
+        this.startAutoMeteorGenerate();
+      }
+    },
+
+
+
     // ✅ ✅ ✅ 新增核心方法：触发上传音频弹窗
     handleTriggerUpload() {
       if (this.isAdmin) {
@@ -1682,68 +1800,196 @@ async prepareScore() {
       });
     },
     // ✅✅✅ ======================== 以下是整合新增的【小球动画所有核心方法】 ========================
-    getBallConfigByTag(tags) {
-      if (!tags || !Array.isArray(tags) || tags.length === 0) {
-        return globalConfig.ballConfig.default;
-      }
-      const firstTag = tags[0];
-      return globalConfig.ballConfig[firstTag] || globalConfig.ballConfig.default;
-    },
-    createTailBall(x, y, isAuto = false) {
-      let ballSize;
-      if (isAuto) {
-        const {minSize, maxSize} = this.currentBallConfig;
-        ballSize = Math.floor(Math.random() * (maxSize - minSize)) + minSize;
-      } else {
-        ballSize = Math.floor(Math.random() * 12) + 8;
-      }
-      const halfSize = ballSize / 2;
-      const ballDom = document.createElement("div");
-      const mainGradients = [
-        `linear-gradient(135deg, ${this.albumMainColorDarkDouble} 0%, ${this.albumMainColorDark} 100%)`,
-        `linear-gradient(135deg, ${this.albumMainColorDark} 0%, ${this.albumMainColor} 100%)`,
-        `linear-gradient(135deg, ${this.albumMainColor} 0%, ${this.albumMainColorWhite} 100%)`,
-        `linear-gradient(135deg, ${this.albumMainColorWhite} 0%, ${this.albumMainColorWhiteDouble} 100%)`,
-        `linear-gradient(135deg, ${this.albumMainColorDarkDouble} 0%, ${this.albumMainColorWhiteDouble} 100%)`,
-      ];
-      const randomColor = mainGradients[Math.floor(Math.random() * mainGradients.length)];
-      ballDom.style.cssText = `
-        position:absolute; width:${ballSize}px; height:${ballSize}px; border-radius:50%;
-        background:${randomColor}; pointer-events:none; z-index:100;
-        left:${x - halfSize}px; top:${y - halfSize}px;
-      `;
-      this.wrapDom.appendChild(ballDom);
-      this.tailBalls.push({dom: ballDom, alpha: 1});
-    },
-    initBallAnimation() {
-      this.destroyBallAnimation();
-      this.wrapDom = this.$refs.ballWrap;
-      this.wrapDom && (this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation));
-    },
-    renderBallAnimation() {
-      if (this.tailBalls.length === 0) {
-        this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
-        return;
-      }
-      this.tailBalls = this.tailBalls.filter((ball) => {
-        ball.alpha -= 0.01;
-        if (ball.alpha <= 0) {
-          ball.dom.remove();
-          return false;
+
+
+    startAutoBallGenerate() {
+      // ✅✅✅ 【修复4】核心判断：三重条件，缺一不可，彻底杜绝关不掉的问题
+      if (this.autoBallTimer || this.isMouseHover || !this.isPlaying || !this.isBallPlay) return;
+
+      const{a,b,c,d,e}=this.rhyConfig
+      const light2Size=a
+      const sizeMax=b*5
+      const sizeMin=Math.floor(sizeMax/3)
+      const timeLine=c*10
+      const lightSize=d/100
+      const numWeight=Math.floor(e/10)
+
+
+
+      this.autoBallTimer = setInterval(() => {
+        if (!this.wrapDom || this.isMouseHover || !this.isPlaying || !this.isBallPlay) return;
+        for (let i = 0; i < numWeight; i++) {
+          const x = Math.floor(Math.random() * this.wrapDom.offsetWidth);
+          const y = Math.floor(Math.random() * this.wrapDom.offsetHeight);
+          this.createTailBall(x, y,sizeMax,sizeMin,lightSize,light2Size, true);
         }
-        ball.dom.style.opacity = ball.alpha;
-        ball.dom.style.transform = `scale(${ball.alpha})`;
-        return true;
-      });
-      this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
+      }, timeLine);
     },
-    destroyBallAnimation() {
-      this.ballAnimationId && cancelAnimationFrame(this.ballAnimationId);
-      this.tailBalls.forEach((ball) => ball.dom?.remove());
-      this.ballAnimationId = null;
-      this.tailBalls = [];
-      this.wrapDom && (this.wrapDom.innerHTML = "");
-    },
+createTailBall(x, y,sizeMax,sizeMin,lightSize,light2Size, isAuto = false) {
+  let ballSize;
+  if (isAuto) {
+    ballSize = Math.floor(Math.random() * (sizeMax - sizeMin)) + sizeMin;
+  } else {
+    ballSize = Math.floor(Math.random() * 12) + 8;
+  }
+  const halfSize = ballSize / 2;
+  const ballDom = document.createElement("div");
+
+  // ✨ 增强渐变效果：添加多色阶渐变 + 透明度渐变 + 动态发光
+  const gradientVariations = [
+    // 主色调渐变（更细腻的过渡）
+    `linear-gradient(135deg, ${this.albumMainColorDarkDouble} 0%, ${this.albumMainColorDark} 50%, ${this.albumMainColor} 100%)`,
+    `linear-gradient(45deg, ${this.albumMainColor} 0%, ${this.albumMainColorWhite} 70%, ${this.albumMainColorWhiteDouble} 100%)`,
+    `linear-gradient(90deg, ${this.albumMainColorDark} 0%, rgba(${this.hexToRgb(this.albumMainColor).r}, ${this.hexToRgb(this.albumMainColor).g}, ${this.hexToRgb(this.albumMainColor).b}, 0.8) 100%)`,
+    // 透明渐变（更自然的消失效果）
+    `radial-gradient(circle, ${this.albumMainColor} 0%, rgba(${this.hexToRgb(this.albumMainColor).r}, ${this.hexToRgb(this.albumMainColor).g}, ${this.hexToRgb(this.albumMainColor).b}, 0.6) 70%, transparent 100%)`,
+    // 双色渐变（更丰富的视觉效果）
+    `linear-gradient(135deg, ${this.albumMainColorDarkDouble} 0%, ${this.albumMainColorWhiteDouble} 100%)`
+  ];
+
+  const randomGradient = gradientVariations[Math.floor(Math.random() * gradientVariations.length)];
+
+  // ✨ 新增：随机初始透明度 + 动态发光效果
+  const initialAlpha = lightSize*0.8 +Math.random() *  0.1; // 初始透明度 0.2-1.0
+  const glowSize = light2Size+Math.random() * 10; // 发光大小 5-15px
+
+  ballDom.style.cssText = `
+    position:absolute;
+    width:${ballSize}px;
+    height:${ballSize}px;
+    border-radius:50%;
+    background:${randomGradient};
+    pointer-events:none;
+    z-index:100;
+    left:${x - halfSize}px;
+    top:${y - halfSize}px;
+    opacity: ${initialAlpha};
+    box-shadow: 0 0 ${glowSize}px rgba(${this.hexToRgb(this.albumMainColor).r}, ${this.hexToRgb(this.albumMainColor).g}, ${this.hexToRgb(this.albumMainColor).b}, 0.5);
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+  `;
+
+  this.wrapDom.appendChild(ballDom);
+  // 保存初始大小和透明度，用于渐变动画
+  this.tailBalls.push({
+    dom: ballDom,
+    alpha: initialAlpha,
+    size: ballSize,
+    initialSize: ballSize
+  });
+},
+// 十六进制颜色转RGB对象（方便生成透明渐变）
+hexToRgb(hex) {
+  // 去除#号
+  const cleanHex = hex.replace(/^#/, '');
+  // 解析RGB值
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return { r, g, b };
+},
+// 2. 优化初始化方法：确保销毁完成后再重建
+initBallAnimation() {
+  // 先彻底销毁旧动画
+  this.destroyBallAnimation();
+
+  // 重新获取容器
+  this.wrapDom = this.$refs.ballWrap;
+  if (!this.wrapDom) return;
+
+  // 重新启动渲染循环
+  this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
+
+  // 重新启动自动生成（如果需要）
+  if (this.isBallPlay && this.isPlaying && !this.isMouseHover) {
+    this.startAutoBallGenerate();
+  }
+},
+
+
+// 3. 优化渲染方法：修复过滤逻辑，确保所有小球都能被清理
+renderBallAnimation() {
+  // 边界检查：容器不存在则停止
+  if (!this.wrapDom) {
+    this.destroyBallAnimation();
+    return;
+  }
+
+  // 过滤并更新小球状态
+  const newTailBalls = [];
+  for (let i = 0; i < this.tailBalls.length; i++) {
+    const ball = this.tailBalls[i];
+    // 安全检查：DOM不存在则跳过
+    if (!ball.dom || !ball.dom.parentNode) {
+      continue;
+    }
+
+    // 渐变衰减：透明度和大小同时变化
+    ball.alpha -= 0.015;
+    ball.size = ball.initialSize * ball.alpha;
+
+    if (ball.alpha <= 0) {
+      // 强制移除DOM
+      try {
+        ball.dom.remove();
+      } catch (e) {print(e)}
+      continue;
+    }
+
+    // 应用渐变样式
+    ball.dom.style.opacity = ball.alpha;
+    ball.dom.style.transform = `scale(${ball.alpha})`;
+    // 增强：添加轻微的位置偏移，模拟漂浮效果
+    const currentLeft = parseFloat(ball.dom.style.left) || 0;
+    const currentTop = parseFloat(ball.dom.style.top) || 0;
+    ball.dom.style.left = `${currentLeft + (Math.random() * 2 - 1)}px`;
+    ball.dom.style.top = `${currentTop + (Math.random() * 2 - 1)}px`;
+
+    newTailBalls.push(ball);
+  }
+
+  // 替换数组（避免原数组引用问题）
+  this.tailBalls = newTailBalls;
+
+  // 继续循环（只有还有小球或开启状态才继续）
+  if (this.tailBalls.length > 0 || this.isBallPlay) {
+    this.ballAnimationId = requestAnimationFrame(this.renderBallAnimation);
+  } else {
+    // 没有小球且关闭状态，停止循环
+    cancelAnimationFrame(this.ballAnimationId);
+    this.ballAnimationId = null;
+  }
+},
+
+
+// 1. 优化销毁方法：彻底停止所有动画和定时器
+destroyBallAnimation() {
+  // 停止动画帧
+  if (this.ballAnimationId) {
+    cancelAnimationFrame(this.ballAnimationId);
+    this.ballAnimationId = null;
+  }
+
+  // 停止自动生成定时器
+  this.stopAutoBallGenerate();
+
+  // 移除所有小球DOM元素（双重保障）
+  if (this.wrapDom) {
+    // 方式1：清空数组并移除DOM
+    this.tailBalls.forEach((ball) => {
+      try {
+        ball.dom?.remove();
+      } catch (e) {
+        console.warn('移除小球DOM失败:', e);
+      }
+    });
+    // 方式2：直接清空容器（兜底）
+    this.wrapDom.innerHTML = "";
+  }
+
+  // 清空数组
+  this.tailBalls = [];
+  this.isMouseHover = false; // 重置鼠标悬浮状态
+},
     handleMouseMove(e) {
       if (!this.wrapDom || !this.isBallPlay) return; // ✅ 加判断：关闭状态不生成鼠标小球
       this.isMouseHover = true;
@@ -1751,30 +1997,238 @@ async prepareScore() {
       const x = e.offsetX, y = e.offsetY;
       this.createTailBall(x, y);
     },
-    handleMouseLeave() {
-      this.isMouseHover = false;
-      this.destroyBallAnimation();
-      this.$nextTick(() => {
-        this.initBallAnimation();
-        this.isBallPlay && this.isPlaying && this.startAutoBallGenerate(); // ✅ 加判断
-      });
-    },
-    startAutoBallGenerate() {
-      // ✅✅✅ 【修复4】核心判断：三重条件，缺一不可，彻底杜绝关不掉的问题
-      if (this.autoBallTimer || this.isMouseHover || !this.isPlaying || !this.isBallPlay) return;
-      const {minRate, maxRate, numWeight} = this.currentBallConfig;
-      this.autoBallTimer = setInterval(() => {
-        if (!this.wrapDom || this.isMouseHover || !this.isPlaying || !this.isBallPlay) return;
-        for (let i = 0; i < numWeight; i++) {
-          const x = Math.floor(Math.random() * this.wrapDom.offsetWidth);
-          const y = Math.floor(Math.random() * this.wrapDom.offsetHeight);
-          this.createTailBall(x, y, true);
-        }
-      }, Math.floor(Math.random() * (maxRate - minRate)) + minRate);
-    },
+// 4. 优化鼠标离开事件：确保异步更新DOM后再重建
+handleMouseLeave() {
+  this.isMouseHover = false;
+  // 立即销毁当前动画
+  this.destroyBallAnimation();
+  // 等待DOM更新完成后再初始化
+  this.$nextTick(() => {
+    this.initBallAnimation();
+    // 只有同时满足开启和播放状态才重新生成
+    if (this.isBallPlay && this.isPlaying) {
+      this.startAutoBallGenerate();
+    }
+  });
+},
+
     stopAutoBallGenerate() {
       this.autoBallTimer && (clearInterval(this.autoBallTimer), (this.autoBallTimer = null));
     },
+
+
+    // 修复：自动生成流星逻辑
+    startAutoMeteorGenerate() {
+
+      // 三重条件校验
+      if (this.autoMeteorTimer || this.isMouseHover || !this.isPlaying || !this.isMeteorPlay) return;
+
+      // 正确获取参数：从meteorConfig和currentBallConfig中取值
+
+
+      const {a, b, c, d,e} = this.rhyConfig;
+      const angle=a/1.5
+      const size=b*5
+      const timeLine=c*10
+      const speed=d/5
+      const finalNumWeight=Math.floor(e/20)
+
+
+
+      // 使用合理的默认值兜底
+
+      this.autoMeteorTimer = setInterval(() => {
+        if (!this.wrapDom || this.isMouseHover || !this.isPlaying || !this.isMeteorPlay) return;
+
+        // 批量生成流星
+        for (let i = 0; i < finalNumWeight; i++) {
+          // 随机起始位置（屏幕顶部外）
+          const x = Math.floor(Math.random() * this.wrapDom.offsetWidth);
+          const y = -50;
+
+          // 随机化参数，增加视觉多样性
+          const randomParams = {
+            angle: angle + (Math.random() * 10 - 5), // 角度±5度波动
+            size: size * (0.8 + Math.random() * 0.4), // 大小±20%波动
+            speed: speed * (0.8 + Math.random() * 0.4) // 速度±20%波动
+          };
+
+          this.createMeteor(x, y, randomParams);
+        }
+      },
+          timeLine);
+    },
+
+    // 优化：创建流星方法，修复参数使用
+    createMeteor(x, y, meteorParams) {
+      if (!this.wrapDom) return;
+
+      // 解构参数并设置默认值
+      const {
+        angle = this.meteorConfig.angle || 45,
+        size = this.meteorConfig.size || 10,
+        speed = this.meteorConfig.speed || 30,
+      } = meteorParams;
+
+      // ✨ 流星渐变优化
+      const rgb = this.hexToRgb(this.albumMainColor);
+
+      const gradient = `linear-gradient(
+        ${angle}deg,
+        rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1) 0%,
+        rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.7) 50%,
+        transparent 100%
+      )`;
+
+      // 创建流星主体（圆形）
+      const meteorDom = document.createElement("div");
+      meteorDom.style.cssText = `
+        position:absolute;
+        width: ${size}px;
+        height: ${size}px;
+        background: ${gradient};
+        border-radius: 50%;
+        pointer-events:none;
+        z-index: 101;
+        left:${x}px;
+        top:${y}px;
+        box-shadow: 0 0 ${size * 2}px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.8);
+        opacity: 1;
+        transition: all 0.05s linear;
+      `;
+
+
+
+      // 添加到容器
+      this.wrapDom.appendChild(meteorDom);
+
+      // 流星移动动画
+      const moveMeteor = () => {
+        // 角度转弧度，计算x/y偏移
+        const radian = (angle * Math.PI) / 180;
+        x += speed * Math.sin(radian);
+        y += speed * Math.cos(radian);
+
+        // 更新位置
+        meteorDom.style.left = `${x}px`;
+        meteorDom.style.top = `${y}px`;
+
+        // 渐变透明度
+        let alpha = 1 - (y / window.innerHeight);
+        meteorDom.style.opacity = alpha > 0 ? alpha : 0;
+        meteorDom.style.transform = `scale(${alpha > 0.5 ? alpha : 0.5})`;
+
+        // 超出屏幕则移除
+        if (y > window.innerHeight + size ) {
+          meteorDom.remove();
+          return;
+        }
+
+        requestAnimationFrame(moveMeteor);
+      };
+
+      // 启动移动动画
+      requestAnimationFrame(moveMeteor);
+    },
+
+   // 停止自动生成流星
+stopAutoMeteorGenerate() {
+  this.autoMeteorTimer && (clearInterval(this.autoMeteorTimer), (this.autoMeteorTimer = null));
+},
+
+    // 新增：接收子组件的流星配置更新
+    handleUpdateMeteorConfig(config) {
+      this.meteorConfig = {
+        ...this.meteorConfig,
+        ...config
+      };
+    },
+
+    // 修复：接收小球配置更新
+    handleUpdateBallConfig(config) {
+      this.currentBallConfig = {
+        ...this.currentBallConfig,
+        ...config
+      };
+    },
+// 初始化流星动画
+initMeteorAnimation() {
+  this.destroyMeteorAnimation();
+  // 清空旧数据
+  this.meteorList = [];
+  // 启动渲染循环（仅用于清理过期元素）
+  this.meteorAnimationId = requestAnimationFrame(this.renderMeteorAnimation);
+},
+
+// 渲染流星动画（仅用于清理）
+renderMeteorAnimation() {
+  // 清理超出屏幕的流星元素
+  this.meteorList = this.meteorList.filter(meteor => {
+    const isOutOfBounds =
+      meteor.y > window.innerHeight + 100 ||
+      meteor.x < -100 ||
+      meteor.x > window.innerWidth + 100 ||
+      meteor.alpha <= 0;
+
+    if (isOutOfBounds) {
+      meteor.dom?.remove();
+      return false;
+    }
+    return true;
+  });
+
+  // 继续循环
+  this.meteorAnimationId = requestAnimationFrame(this.renderMeteorAnimation);
+},
+
+// 销毁流星动画
+destroyMeteorAnimation() {
+  // 停止动画帧
+  this.meteorAnimationId && cancelAnimationFrame(this.meteorAnimationId);
+  this.meteorAnimationId = null;
+
+  // 停止自动生成定时器
+  this.stopAutoMeteorGenerate();
+
+  // 移除所有流星DOM
+  this.meteorList.forEach(meteor => meteor.dom?.remove());
+  this.meteorList = [];
+
+  // 清空容器中的流星元素（兜底）
+  if (this.wrapDom) {
+    const meteors = this.wrapDom.querySelectorAll('div[style*="z-index: 101"]');
+    meteors.forEach(meteor => meteor.remove());
+  }
+},
+
+// 处理子组件触发的生成流星事件
+handleGenerateMeteor(meteorParams = {}) {
+  if (!this.wrapDom || !this.isMeteorPlay) return;
+
+  const { count = 1, ...params } = meteorParams;
+  for (let i = 0; i < count; i++) {
+    const x = Math.floor(Math.random() * this.wrapDom.offsetWidth);
+    const y = -50;
+    this.createMeteor(x, y, params);
+  }
+},
+
+// 处理流星播放状态切换
+handleToggleMeteorPlay(val) {
+  this.isMeteorPlay = val;
+
+  if (val) {
+    // 开启流星：初始化动画 + 自动生成（如果音乐在播放）
+    this.initMeteorAnimation();
+    this.isPlaying && this.startAutoMeteorGenerate();
+  } else {
+    // 关闭流星：销毁动画 + 停止自动生成
+    this.destroyMeteorAnimation();
+  }
+},
+
+
+
   },
   // 路由离开守卫，强制保存播放列表
   beforeRouteLeave(to, from, next) {
@@ -1876,7 +2330,7 @@ async prepareScore() {
   flex: 1;
   margin-left: 200px;
   padding: 30px;
-  padding-bottom: 30px !important;
+  padding-bottom: 140px !important;
   overflow-y: auto;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);

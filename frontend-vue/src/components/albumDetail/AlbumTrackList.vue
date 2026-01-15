@@ -196,10 +196,15 @@
             :isMusicPlaying="isMusicPlaying"
             :mainColorDark="mainColorDark"
             :mainColorDarkDouble="mainColorDarkDouble"
+
+
             :initialBallConfig="currentBallConfig"
             @toggle-ball-play="handleBallPlayToggle"
-            @update-ball-config="handleBallConfigUpdate"
-            @generate-rhythm-ball="handleGenerateRhythmBall"
+            @toggle-meteor-play="handleMeteorPlayToggle"
+            @generate-meteor="handleGenerateMeteor"
+
+            @update-rhy-config="$emit('update-rhy-config', $event);"
+
           />
         </div>
       </div>
@@ -259,7 +264,8 @@ export default {
       showParseModal: false,
       // 仅保留小球配置传递给子组件
       currentBallConfig: globalConfig.ballConfig.default,
-      isHoverRatingArea: false
+      isHoverRatingArea: false,
+      isMeteorPlay: false // 新增：流星播放状态
     };
   },
   watch: {
@@ -312,6 +318,21 @@ export default {
     this.saveAllScore();
   },
   methods: {
+        // 新增：处理流星开关事件
+    handleMeteorPlayToggle(isPlay) {
+      this.isMeteorPlay = isPlay;
+      this.$emit('toggle-meteor-play', isPlay);
+    },
+
+    // 新增：处理流星生成事件
+    handleGenerateMeteor(meteorParams) {
+      this.$emit('generate-meteor', meteorParams);
+    },
+
+
+
+
+
     // AlbumTrackList 的 saveAllScore 方法
     async saveAllScore() {
       try {

@@ -4,34 +4,40 @@
       <div class="ball-switch-wrap">
         <h3>样式参数</h3>
       </div>
-      <!-- 配置项和开关横向排列 -->
       <div class="config-with-toggle">
         <div class="ball-config-list">
-          <div class="config-item" v-for="item in configItems" :key="item.key">
+          <div class="config-item" v-for="(item ) in configItems" :key="item.key">
             <span class="config-label" style="display: none;">{{ item.label }}</span>
             <div
               class="config-progress-vertical"
               @mousedown="(e) => startBallConfigDrag(e, item.key)"
               @click="(e) => setBallConfigByClick(e, item.key)"
+              :ref="el => { if (el) progressRefs[item.key] = el }"
             >
-              <div class="progress-inner" :style="{height: `${getPercent(item.key)}%`}"></div>
+              <!-- 修复1：将0-100的数值转换为百分比高度 -->
+              <div class="progress-inner" :style="{height: `${rhyConfig[item.key] || 0}%`}"></div>
             </div>
-            <span class="config-value" style="display: none;">{{ currentBallConfig[item.key] }}</span>
+            <span class="config-value" style="display: none;">{{ rhyConfig[item.key] }}</span>
           </div>
         </div>
-        <!-- 两个开关垂直排列 -->
         <div class="toggle-btn-group">
-          <!-- 开关1：关闭状态 -->
           <div
             class="toggle-btn"
             :class="{active: toggleStatus === 'close'}"
             @click="switchToggle('close')"
+            title="关闭动画"
           ></div>
-          <!-- 开关2：小球开启状态 -->
           <div
             class="toggle-btn"
             :class="{active: toggleStatus === 'play'}"
             @click="switchToggle('play')"
+            title="开启小球动画"
+          ></div>
+          <div
+            class="meteor-btn"
+            :class="{active: toggleStatus === 'meteor'}"
+            @click="switchToggle('meteor')"
+            title="开启流星动画"
           ></div>
         </div>
       </div>
@@ -40,8 +46,6 @@
 </template>
 
 <script>
-import globalConfig from '@/config/index.js';
-
 export default {
   name: 'RhythmBall',
   props: {
@@ -53,7 +57,7 @@ export default {
     isMusicPlaying: {
       type: Boolean,
       required: true,
-      default: true
+      default: false
     },
     mainColorDark: {
       type: String,
@@ -72,181 +76,238 @@ export default {
   },
   data() {
     return {
-      toggleStatus: 'close', // 切换状态：close-关闭 play-小球开启
-      currentBallConfig: {},
+      toggleStatus: 'close',
+      // ========== 核心：rhyConfig 只保留5个参数 ==========
+      rhyConfig: {
+        a: 20,
+        b: 40,
+        c: 30,
+        d: 50,
+        e: 10
+      },
+      // ========== 仅保留必要的基础数据 ==========
       isBallConfigDragging: false,
       currentConfigKey: '',
-      autoBallTimer: null,
+      progressRefs: {},
       configItems: [
-        { key: 'minSize', label: '最小尺寸' },
-        { key: 'maxSize', label: '最大尺寸' },
-        { key: 'minRate', label: '最小速率' },
-        { key: 'maxRate', label: '最大速率' },
-        { key: 'numWeight', label: '数量权重' }
-      ]
+         {key: 'a', label: '参数A'},
+        {key: 'b', label: '参数B'},
+
+        {key: 'c', label: '参数C'},
+        {key: 'd', label: '参数D'},
+        {key: 'e', label: '参数E'}
+      ],
+      // 流星基础配置（独立存在，不混入rhyConfig）
+      meteorConfig: {
+        angle: 45,
+        size: 10,
+        tailLength: 50,
+        speed: 30
+      },
+      // 定时器（必要的控制变量）
+      autoBallTimer: null,
+      autoMeteorTimer: null
     };
   },
   computed: {
-    // 计算是否开启小球
+    // 仅保留两个状态计算属性
     isBallPlay() {
       return this.toggleStatus === 'play';
+    },
+    isMeteorPlay() {
+      return this.toggleStatus === 'meteor';
     }
   },
   watch: {
-    album: {
+    // 仅监听rhyConfig的变化
+    rhyConfig: {
       handler(newVal) {
-        this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
+        this.$emit('update-rhy-config', {...newVal});
       },
-      deep: true,
-      immediate: true
+      deep: true
     },
+    // 播放状态监听
     isMusicPlaying(newVal) {
       newVal && this.isBallPlay ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
+      newVal && this.isMeteorPlay ? this.startAutoMeteorGenerate() : this.stopAutoMeteorGenerate();
     },
     isBallPlay(newVal) {
       this.$emit('toggle-ball-play', newVal);
-      newVal && this.isMusicPlaying ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
+      if (newVal) {
+        this.toggleStatus = 'play';
+        this.$emit('toggle-meteor-play', false);
+        this.isMusicPlaying && this.startAutoBallGenerate();
+      }
+    },
+    isMeteorPlay(newVal) {
+      this.$emit('toggle-meteor-play', newVal);
+      if (newVal) {
+        this.toggleStatus = 'meteor';
+        this.$emit('toggle-ball-play', false);
+        this.isMusicPlaying && this.startAutoMeteorGenerate();
+      }
+    },
+    // 流星配置独立监听
+    meteorConfig: {
+      handler(newVal) {
+        this.$emit('update-meteor-config', newVal);
+      },
+      deep: true
     }
   },
   mounted() {
-    this.currentBallConfig = {
-      ...globalConfig.ballConfig.default,
-      ...this.initialBallConfig,
-      ...this.getBallConfigByTag(this.album.tags)
-    };
+    this.bindDragEvents();
+    // 初始化事件发射
+    this.$emit('toggle-ball-play', this.isBallPlay);
+    this.$emit('toggle-meteor-play', this.isMeteorPlay);
+    this.$emit('update-rhy-config', this.rhyConfig);
 
     this.$nextTick(() => {
       this.isMusicPlaying && this.isBallPlay && this.startAutoBallGenerate();
+      this.isMusicPlaying && this.isMeteorPlay && this.startAutoMeteorGenerate();
     });
   },
   deactivated() {
-    this.stopAutoBallGenerate();
+    this.clearAllStates();
   },
   beforeDestroy() {
-    clearInterval(this.autoBallTimer);
-    this.isBallConfigDragging = false;
-    this.currentConfigKey = '';
-    document.removeEventListener('mousemove', this.handleBallConfigMouseMove);
-    document.removeEventListener('mouseup', this.stopBallConfigDrag);
-    this.stopAutoBallGenerate();
+    this.clearAllStates();
+    this.unbindDragEvents();
   },
   methods: {
-    getBallConfigByTag(tags) {
-      if (!tags || !Array.isArray(tags) || tags.length === 0) {
-        return globalConfig.ballConfig.default;
-      }
-      const firstTag = tags[0];
-      return globalConfig.ballConfig[firstTag] || globalConfig.ballConfig.default;
-    },
-    // 切换开关状态（互斥逻辑）
+    // 切换动画状态
     switchToggle(status) {
       this.toggleStatus = status;
-    },
-    getPercent(key) {
-      const config = this.currentBallConfig;
-      let val = config[key];
-      let max, min;
-      switch (key) {
-        case 'minSize':
-        case 'maxSize':
-          min = 0;
-          max = 1000;
-          break;
-        case 'minRate':
-        case 'maxRate':
-          min = 10;
-          max = 4000;
-          break;
-        case 'numWeight':
-          min = 0;
-          max = 10;
-          break;
-        default:
-          return 0;
+      if (status === 'close') {
+        this.$emit('toggle-ball-play', false);
+        this.$emit('toggle-meteor-play', false);
+      } else if (status === 'play') {
+        this.$emit('toggle-ball-play', true);
+        this.$emit('toggle-meteor-play', false);
+      } else if (status === 'meteor') {
+        this.$emit('toggle-ball-play', false);
+        this.$emit('toggle-meteor-play', true);
+        this.triggerGenerateMeteor();
       }
-      const percent = ((val - min) / (max - min)) * 100;
-      return Math.max(0, Math.min(100, percent));
     },
+    // 拖拽相关方法
     startBallConfigDrag(e, key) {
       this.isBallConfigDragging = true;
       this.currentConfigKey = key;
-      this.calcBallConfigValueByMouse(e, key);
-      document.addEventListener('mousemove', this.handleBallConfigMouseMove);
-      document.addEventListener('mouseup', this.stopBallConfigDrag);
+      this.calcConfigValueByMouse(e, key);
       e.stopPropagation();
       e.preventDefault();
     },
-    handleBallConfigMouseMove(e) {
+    handleConfigMouseMove(e) {
       if (this.isBallConfigDragging && this.currentConfigKey) {
-        this.calcBallConfigValueByMouse(e, );
+        this.calcConfigValueByMouse(e, this.currentConfigKey);
       }
     },
-    stopBallConfigDrag() {
+    stopConfigDrag() {
       this.isBallConfigDragging = false;
       this.currentConfigKey = '';
-      document.removeEventListener('mousemove', this.handleBallConfigMouseMove);
-      document.removeEventListener('mouseup', this.stopBallConfigDrag);
     },
-    calcBallConfigValueByMouse(e, key) {
-      const progressDom = e.currentTarget.querySelector('.progress-inner').parentNode;
-      const rect = progressDom.getBoundingClientRect();
-      let percent = ((rect.bottom - e.clientY) / rect.height) * 100;
-      percent = Math.max(0, Math.min(100, percent));
-      this.setBallConfigValueByPercent(key, percent);
-    },
-    setBallConfigValueByPercent(key, percent) {
-      let min, max, step = 1;
-      switch (key) {
-        case 'minSize':
-        case 'maxSize':
-          min = 0;
-          max = 1000;
-          step = 1;
-          break;
-        case 'minRate':
-        case 'maxRate':
-          min = 10;
-          max = 4000;
-          step = 10;
-          break;
-        case 'numWeight':
-          min = 0;
-          max = 10;
-          step = 1;
-          break;
-        default:
-          return;
+    calcConfigValueByMouse(e, letterKey) {
+      let progressDom = this.progressRefs[letterKey] ||
+          (e.currentTarget?.classList.contains('config-progress-vertical') && e.currentTarget) ||
+          document.querySelector(`.config-item:nth-child(${this.configItems.findIndex(i => i.key === letterKey) + 1}) .config-progress-vertical`);
+
+      if (!progressDom || !(progressDom instanceof HTMLElement)) {
+        console.warn(`无法找到进度条元素: ${letterKey}`);
+        return;
       }
-      let realValue = ((max - min) * (percent / 100)) + min;
-      realValue = Math.round(realValue / step) * step;
-      realValue = Math.max(min, Math.min(max, realValue));
-      this.currentConfigKey = key;
-      this.currentBallConfig[key] = realValue;
-      this.$emit('update-ball-config', {...this.currentBallConfig});
+
+      try {
+        const rect = progressDom.getBoundingClientRect();
+        // 修复2：修正数值计算逻辑，确保0对应底部，100对应顶部，且数值范围0-100
+        const value = Math.max(0, Math.min(100, ((rect.bottom - e.clientY) / rect.height) * 100));
+        this.rhyConfig = {
+          ...this.rhyConfig,
+          [letterKey]: Math.round(value)
+        };
+      } catch (error) {
+        console.error('计算进度条值时出错:', error);
+      }
     },
     setBallConfigByClick(e, key) {
-      this.currentConfigKey = key;
-      this.calcBallConfigValueByMouse(e, key);
+      this.calcConfigValueByMouse(e, key);
     },
+    bindDragEvents() {
+      document.addEventListener('mousemove', this.handleConfigMouseMove);
+      document.addEventListener('mouseup', this.stopConfigDrag);
+    },
+    unbindDragEvents() {
+      document.removeEventListener('mousemove', this.handleConfigMouseMove);
+      document.removeEventListener('mouseup', this.stopConfigDrag);
+    },
+    // 生成流星
+    triggerGenerateMeteor() {
+      this.$emit('generate-meteor', {
+        count: this.rhyConfig.e,
+        ...this.meteorConfig
+      });
+    },
+    // 小球自动生成（临时变量仅在方法内使用）
     startAutoBallGenerate() {
       if (!this.isBallPlay) return;
-      const {minRate, maxRate, numWeight} = this.currentBallConfig;
+      // 所有计算变量都是局部的，不挂载到实例
+      const {a, b, c, d, e} = this.rhyConfig;
+      const minSize = Math.floor(a * 0.95) + 5;
+      const maxSize = Math.floor(b * 0.9) + 10;
+      const minRate = Math.floor(c * 29) + 100;
+      const maxRate = Math.floor(d * 49) + 100;
+      const numWeight = Math.floor(e * 0.09) + 1;
+
       this.autoBallTimer = setInterval(() => {
         if (!this.isBallPlay || !this.isMusicPlaying) return;
         for (let i = 0; i < numWeight; i++) {
-          const size = Math.floor(Math.random() * (this.currentBallConfig.maxSize - this.currentBallConfig.minSize)) + this.currentBallConfig.minSize;
+          const size = Math.floor(Math.random() * (maxSize - minSize)) + minSize;
           this.$emit('generate-rhythm-ball', {size});
         }
       }, Math.floor(Math.random() * (maxRate - minRate)) + minRate);
     },
     stopAutoBallGenerate() {
-      this.autoBallTimer && (clearInterval(this.autoBallTimer), this.autoBallTimer = null);
+      this.autoBallTimer && clearInterval(this.autoBallTimer);
+      this.autoBallTimer = null;
+    },
+    // 流星自动生成（同理，临时变量局部化）
+    startAutoMeteorGenerate() {
+      if (!this.isMeteorPlay) return;
+      const {c, d, e} = this.rhyConfig;
+      const minRate = Math.floor(c * 29) + 100;
+      const maxRate = Math.floor(d * 49) + 100;
+      const numWeight = Math.floor(e * 0.09) + 1;
+
+      this.autoMeteorTimer = setInterval(() => {
+        if (!this.isMeteorPlay || !this.isMusicPlaying) return;
+        this.$emit('generate-meteor', {
+          ...this.meteorConfig,
+          count: numWeight,
+          colorStart: this.mainColorDarkDouble,
+          colorEnd: this.mainColorDark,
+          minRate,
+          maxRate
+        });
+      }, Math.floor(Math.random() * (maxRate - minRate)) + minRate);
+    },
+    stopAutoMeteorGenerate() {
+      this.autoMeteorTimer && clearInterval(this.autoMeteorTimer);
+      this.autoMeteorTimer = null;
+    },
+    // 统一清理状态
+    clearAllStates() {
+      this.toggleStatus = 'close';
+      this.$emit('toggle-ball-play', false);
+      this.$emit('toggle-meteor-play', false);
+      this.stopAutoBallGenerate();
+      this.stopAutoMeteorGenerate();
     }
   }
 };
 </script>
 
 <style scoped>
+/* 样式部分完全不变，无需修改 */
 .rhythm-container {
   width: 100%;
   background: transparent !important;
@@ -261,6 +322,7 @@ export default {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
 }
 
 .ball-config-panel {
@@ -269,6 +331,8 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  position: relative;
+  z-index: 20;
 }
 
 .ball-switch-wrap {
@@ -284,7 +348,6 @@ export default {
   border-bottom: 4px solid v-bind(mainColorDark);
 }
 
-/* 配置项和开关横向排列容器 */
 .config-with-toggle {
   display: flex;
   align-items: stretch;
@@ -310,6 +373,13 @@ export default {
   justify-content: flex-end;
 }
 
+.config-label {
+  font-size: 12px;
+  color: v-bind(mainColorDarkDouble);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .config-progress-vertical {
   width: 8px;
   height: 100%;
@@ -328,16 +398,19 @@ export default {
   transition: height 0.3s ease;
 }
 
-/* 开关按钮组：垂直排列 */
+.config-value {
+  font-size: 11px;
+  color: v-bind(mainColorDarkDouble);
+}
+
 .toggle-btn-group {
   display: flex;
   flex-direction: column;
-  gap: 15px; /* 开关间距 */
+  gap: 15px;
   align-self: flex-start;
-  margin-top: 20px; /* 整体向上位置 */
+  margin-top: 20px;
 }
 
-/* 通用开关样式 */
 .toggle-btn {
   width: 16px;
   height: 16px;
@@ -347,7 +420,6 @@ export default {
   position: relative;
 }
 
-/* 未激活状态 - 粗横线 */
 .toggle-btn::before {
   content: '';
   position: absolute;
@@ -360,14 +432,65 @@ export default {
   transform: translateY(-50%);
 }
 
-/* 激活状态 - 实心圆点 */
 .toggle-btn.active {
   border-radius: 50%;
   background-color: v-bind(mainColorDark);
 }
 
-/* 激活状态隐藏横线 */
 .toggle-btn.active::before {
   display: none;
+}
+
+.meteor-btn {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+  position: relative;
+}
+
+.meteor-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background-color: v-bind(mainColorDark);
+  transform: translateY(-50%) ;
+  border-radius: 2px;
+}
+
+
+
+.meteor-btn::after {
+
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 6px;
+  height: 2px;
+  background-color: v-bind(mainColorDark);
+  transform: translateY(-50%) rotate(-45deg);
+  border-radius: 1px;
+  opacity: 0.6;
+}
+
+.meteor-btn.active {
+  background-color: v-bind(mainColorDark);
+    border-radius: 50%;
+  transform: rotate(-45deg);
+}
+
+.meteor-btn.active::before,
+.meteor-btn.active::after {
+  display: none;
+}
+
+.toggle-btn:disabled, .meteor-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
