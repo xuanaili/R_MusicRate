@@ -1876,7 +1876,7 @@ async prepareScore() {
   flex: 1;
   margin-left: 200px;
   padding: 30px;
-  padding-bottom: 140px !important;
+  padding-bottom: 30px !important;
   overflow-y: auto;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);

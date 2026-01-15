@@ -1,266 +1,228 @@
 <template>
   <div class="root-container">
-  <div class="tab-content">
-    <div class="main-layout">
-      <div class="left-panel">
-        <div class="sticky-top-box">
-          <div class="tab-nav-btn-box">
-            <div class="track-tab-nav">
-              <div
-                class="tab-item"
-                :class="{active: activeTab === 'tracks'}"
-                @click="activeTab = 'tracks'"
-              >
-                单曲列表
+    <div class="tab-content">
+      <div class="main-layout">
+        <div class="left-panel">
+          <div class="sticky-top-box">
+            <div class="tab-nav-btn-box">
+              <div class="track-tab-nav">
+                <div
+                  class="tab-item"
+                  :class="{active: activeTab === 'tracks'}"
+                  @click="activeTab = 'tracks'"
+                >
+                  单曲列表
+                </div>
+                <div
+                  class="tab-item"
+                  :class="{active: activeTab === 'favourite'}"
+                  @click="activeTab = 'favourite'"
+                >
+                  喜欢时刻
+                </div>
               </div>
-              <div
-                class="tab-item"
-                :class="{active: activeTab === 'favourite'}"
-                @click="activeTab = 'favourite'"
-              >
-                喜欢时刻
-              </div>
-            </div>
-            <div class="tracks-header sticky-header">
-              <div class="tracks-action-btn">
-                <button
-                  class="edit-btn"
-                  @click="toggleEditStatus(activeTab)"
-                  :class="{active: activeTab === 'tracks' ? isTrackEditMode : isFavouriteEditMode}"
-                >
-                  {{ activeTab === 'tracks'
-                    ? (isTrackEditMode ? '保存' : '编辑')
-                    : (isFavouriteEditMode ? '保存' : '编辑')
-                  }}
-                </button>
-                <button
-                  v-if="activeTab === 'tracks' && isTrackEditMode"
-                  class="mode-btn"
-                  @click="toggleDurationMode"
-                  :class="{active: isDurationMode}"
-                  style="margin-left: 8px;"
-                >
-                  {{ isDurationMode ? '切换为时间戳' : '切换为时长' }}
-                </button>
-                <button
-                  v-if="activeTab === 'tracks' && isTrackEditMode"
-                  class="mode-btn"
-                  @click="showParseModal = true"
-                  style="margin-left: 8px;"
-                >
-                  文本解析
-                </button>
+              <div class="tracks-header sticky-header">
+                <div class="tracks-action-btn">
+                  <button
+                    class="edit-btn"
+                    @click="toggleEditStatus(activeTab)"
+                    :class="{active: activeTab === 'tracks' ? isTrackEditMode : isFavouriteEditMode}"
+                  >
+                    {{ activeTab === 'tracks'
+                      ? (isTrackEditMode ? '保存' : '编辑')
+                      : (isFavouriteEditMode ? '保存' : '编辑')
+                    }}
+                  </button>
+                  <button
+                    v-if="activeTab === 'tracks' && isTrackEditMode"
+                    class="mode-btn"
+                    @click="toggleDurationMode"
+                    :class="{active: isDurationMode}"
+                    style="margin-left: 8px;"
+                  >
+                    {{ isDurationMode ? '切换为时间戳' : '切换为时长' }}
+                  </button>
+                  <button
+                    v-if="activeTab === 'tracks' && isTrackEditMode"
+                    class="mode-btn"
+                    @click="showParseModal = true"
+                    style="margin-left: 8px;"
+                  >
+                    文本解析
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div class="tab-content-scroll">
-          <div class="tracks-container" v-show="activeTab === 'tracks'">
-            <div class="tracks-list">
-              <div
-                v-for="(track, idx) in trackList"
-                :key="idx"
-                class="track-item"
-              >
-                <div class="track-index">{{ idx + 1 }}.</div>
-                <div v-if="isTrackEditMode" class="track-edit-content">
-                  <input
-                    type="text"
-                    v-model="track.name"
-                    placeholder="请输入曲目名称"
-                    class="track-name-input"
-                  />
-                  <input
-                    v-if="!isDurationMode"
-                    type="text"
-                    v-model="track.duration"
-                    placeholder="0:00:00 时间戳"
-                    class="track-duration-input"
-                    maxlength="8"
-                    @input="track.duration = filterDurationInput(track.duration)"
-                    @blur="formatDurationInput('tracks', idx)"
-                  />
-                  <input
-                    v-else
-                    type="text"
-                    v-model="track.playDuration"
-                    placeholder="0:00:00 单曲时长"
-                    class="track-duration-input"
-                    maxlength="8"
-                    @input="track.playDuration = filterDurationInput(track.playDuration)"
-                    @blur="handleDurationInputBlur(idx)"
-                  />
-                </div>
-                <div v-else class="track-show-content">
-                  <div class="track-name-wrap" @click="handleTrackClick(idx)">
-                    <div class="track-name-text">{{ track.name || '未知曲目' }}</div>
-                    <div class="track-name-line"></div>
+          <div class="tab-content-scroll">
+            <div class="tracks-container" v-show="activeTab === 'tracks'">
+              <div class="tracks-list">
+                <div
+                  v-for="(track, idx) in trackList"
+                  :key="idx"
+                  class="track-item"
+                >
+                  <div class="track-index">{{ idx + 1 }}.</div>
+                  <div v-if="isTrackEditMode" class="track-edit-content">
+                    <input
+                      type="text"
+                      v-model="track.name"
+                      placeholder="请输入曲目名称"
+                      class="track-name-input"
+                    />
+                    <input
+                      v-if="!isDurationMode"
+                      type="text"
+                      v-model="track.duration"
+                      placeholder="0:00:00 时间戳"
+                      class="track-duration-input"
+                      maxlength="8"
+                      @input="track.duration = filterDurationInput(track.duration)"
+                      @blur="formatDurationInput('tracks', idx)"
+                    />
+                    <input
+                      v-else
+                      type="text"
+                      v-model="track.playDuration"
+                      placeholder="0:00:00 单曲时长"
+                      class="track-duration-input"
+                      maxlength="8"
+                      @input="track.playDuration = filterDurationInput(track.playDuration)"
+                      @blur="handleDurationInputBlur(idx)"
+                    />
                   </div>
-                  <!-- ✨ 新增：添加滚轮事件监听 -->
-                  <div class="track-score-slider-wrap"
-                       @click.stop @mousedown.stop @mouseup.stop @mouseleave.stop
-                       @wheel.prevent="handleTrackScoreWheel($event, idx)">
-                    <div
-                      class="track-score-slider"
-                      ref="scoreSlider"
-                      @mousedown="(e) => startTrackScore(e, idx)"
-                      @mouseup="stopTrackScore"
-                      @mouseleave="stopTrackScore"
-                      @click="(e) => setTrackScoreByClick(e, idx)"
-                    >
-                      <div
-                        class="track-score-progress"
-                        :style="{ width: `${track.score || 0}%` }"
-                      ></div>
+                  <div v-else class="track-show-content">
+                    <div class="track-name-wrap" @click="handleTrackClick(idx)">
+                      <div class="track-name-text">{{ track.name || '未知曲目' }}</div>
+                      <div class="track-name-line"></div>
                     </div>
-                    <span class="track-score-text">{{ track.score || 0 }}分</span>
+                    <!-- ✨ 新增：添加滚轮事件监听 -->
+                    <div class="track-score-slider-wrap"
+                         @click.stop @mousedown.stop @mouseup.stop @mouseleave.stop
+                         @wheel.prevent="handleTrackScoreWheel($event, idx)">
+                      <div
+                        class="track-score-slider"
+                        ref="scoreSlider"
+                        @mousedown="(e) => startTrackScore(e, idx)"
+                        @mouseup="stopTrackScore"
+                        @mouseleave="stopTrackScore"
+                        @click="(e) => setTrackScoreByClick(e, idx)"
+                      >
+                        <div
+                          class="track-score-progress"
+                          :style="{ width: `${track.score || 0}%` }"
+                        ></div>
+                      </div>
+                      <span class="track-score-text">{{ track.score || 0 }}分</span>
+                    </div>
+                    <div class="track-duration" @click="handleTrackClick(idx)">{{ track.duration || '0:00:00' }}</div>
                   </div>
-                  <div class="track-duration" @click="handleTrackClick(idx)">{{ track.duration || '0:00:00' }}</div>
-                </div>
-                <div v-if="isTrackEditMode" class="track-del-btn">
-                  <button @click.stop="deleteTrack('tracks', idx)">×</button>
+                  <div v-if="isTrackEditMode" class="track-del-btn">
+                    <button @click.stop="deleteTrack('tracks', idx)">×</button>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div v-if="isTrackEditMode" class="add-track-btn-box">
-              <button class="add-track-btn" @click="addNewTrack('tracks')">➕ 添加新单曲</button>
-            </div>
-          </div>
-          <div class="tracks-container" v-show="activeTab === 'favourite'">
-            <div class="tracks-list">
-              <div
-                v-for="(track, idx) in favouriteTrackList"
-                :key="idx"
-                class="track-item"
-                @click="handleFavouriteTrackClick(idx)"
-              >
-                <div class="track-index">{{ idx + 1 }}.</div>
-                <div v-if="isFavouriteEditMode" class="track-edit-content">
-                  <input
-                    type="text"
-                    v-model="track.name"
-                    placeholder="请输入喜欢曲目名称"
-                    class="track-name-input"
-                  />
-                  <input
-                    type="text"
-                    v-model="track.duration"
-                    placeholder="0:00:00"
-                    class="track-duration-input"
-                    maxlength="8"
-                    @input="track.duration = filterDurationInput(track.duration)"
-                    @blur="formatDurationInput('favourite', idx)"
-                  />
-                </div>
-                <div v-else class="track-show-content">
-                  <div class="track-name-wrap">
-                    <div class="track-name-text">{{ track.name || '未知曲目' }}</div>
-                    <div class="track-name-line"></div>
-                  </div>
-                  <div class="track-duration">{{ track.duration || '0:00:00' }}</div>
-                </div>
-                <div v-if="isFavouriteEditMode" class="track-del-btn">
-                  <button @click.stop="deleteTrack('favourite', idx)">×</button>
-                </div>
+              <div v-if="isTrackEditMode" class="add-track-btn-box">
+                <button class="add-track-btn" @click="addNewTrack('tracks')">➕ 添加新单曲</button>
               </div>
             </div>
-            <div v-if="isFavouriteEditMode" class="add-track-btn-box">
-              <button class="add-track-btn" @click="addNewTrack('favourite')">➕ 添加新时间戳</button>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="right-panel">
-        <div class="rate-container">
-          <div class="rate-content-wrap">
-            <div class="rate-text-area">
-              <h3>整体感觉</h3>
-              <div class="rate-score">{{ score.toFixed(1) }} 分</div>
-              <button class="reset-rate-btn" @click="resetRating">重置评分</button>
-            </div>
-            <div class="rate-circle-area">
-              <div class="outer-circle"
-                   @mouseenter="enterRatingArea"
-                   @mouseleave="leaveRatingArea"
-                   @wheel.prevent="handleRatingWheel"
-                   @click="handleRatingClick"
-              >
-                <div class="inner-circle" :style="{ width: `${score}%`, height: `${score}%` }"></div>
+            <div class="tracks-container" v-show="activeTab === 'favourite'">
+              <div class="tracks-list">
+                <div
+                  v-for="(track, idx) in favouriteTrackList"
+                  :key="idx"
+                  class="track-item"
+                  @click="handleFavouriteTrackClick(idx)"
+                >
+                  <div class="track-index">{{ idx + 1 }}.</div>
+                  <div v-if="isFavouriteEditMode" class="track-edit-content">
+                    <input
+                      type="text"
+                      v-model="track.name"
+                      placeholder="请输入喜欢曲目名称"
+                      class="track-name-input"
+                    />
+                    <input
+                      type="text"
+                      v-model="track.duration"
+                      placeholder="0:00:00"
+                      class="track-duration-input"
+                      maxlength="8"
+                      @input="track.duration = filterDurationInput(track.duration)"
+                      @blur="formatDurationInput('favourite', idx)"
+                    />
+                  </div>
+                  <div v-else class="track-show-content">
+                    <div class="track-name-wrap">
+                      <div class="track-name-text">{{ track.name || '未知曲目' }}</div>
+                      <div class="track-name-line"></div>
+                    </div>
+                    <div class="track-duration">{{ track.duration || '0:00:00' }}</div>
+                  </div>
+                  <div v-if="isFavouriteEditMode" class="track-del-btn">
+                    <button @click.stop="deleteTrack('favourite', idx)">×</button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="isFavouriteEditMode" class="add-track-btn-box">
+                <button class="add-track-btn" @click="addNewTrack('favourite')">➕ 添加新时间戳</button>
               </div>
             </div>
           </div>
         </div>
-        <div class="rhythm-container">
-          <div class="ball-config-panel">
-            <div class="ball-switch-wrap">
-              <h3>节奏小球参数</h3>
-              <div
-                class="ball-toggle-switch"
-                :class="{active: isBallPlay}"
-                @click="toggleBallPlay"
-              >
-                <span>{{ isBallPlay ? '开启中' : '已关闭' }}</span>
+        <div class="right-panel">
+          <div class="rate-container">
+            <div class="rate-content-wrap">
+              <div class="rate-text-area">
+                <h3>整体感觉</h3>
+                <div class="rate-score">{{ score.toFixed(1) }} 分</div>
+                <button class="reset-rate-btn" @click="resetRating">重置评分</button>
               </div>
-            </div>
-            <div class="ball-config-list">
-              <div class="config-item">
-                <span class="config-label">最小尺寸</span>
-                <div class="config-progress-vertical" @mousedown="(e) => startBallConfigDrag(e, 'minSize')" @click="(e) => setBallConfigByClick(e, 'minSize')">
-                  <div class="progress-inner" :style="{height: `${getPercent('minSize')}%`}"></div>
+              <div class="rate-circle-area">
+                <div class="outer-circle"
+                     @mouseenter="enterRatingArea"
+                     @mouseleave="leaveRatingArea"
+                     @wheel.prevent="handleRatingWheel"
+                     @click="handleRatingClick"
+                >
+                  <div class="inner-circle" :style="{ width: `${score}%`, height: `${score}%` }"></div>
                 </div>
-                <span class="config-value">{{ currentBallConfig.minSize }}</span>
-              </div>
-              <div class="config-item">
-                <span class="config-label">最大尺寸</span>
-                <div class="config-progress-vertical" @mousedown="(e) => startBallConfigDrag(e, 'maxSize')" @click="(e) => setBallConfigByClick(e, 'maxSize')">
-                  <div class="progress-inner" :style="{height: `${getPercent('maxSize')}%`}"></div>
-                </div>
-                <span class="config-value">{{ currentBallConfig.maxSize }}</span>
-              </div>
-              <div class="config-item">
-                <span class="config-label">最小速率</span>
-                <div class="config-progress-vertical" @mousedown="(e) => startBallConfigDrag(e, 'minRate')" @click="(e) => setBallConfigByClick(e, 'minRate')">
-                  <div class="progress-inner" :style="{height: `${getPercent('minRate')}%`}"></div>
-                </div>
-                <span class="config-value">{{ currentBallConfig.minRate }}</span>
-              </div>
-              <div class="config-item">
-                <span class="config-label">最大速率</span>
-                <div class="config-progress-vertical" @mousedown="(e) => startBallConfigDrag(e, 'maxRate')" @click="(e) => setBallConfigByClick(e, 'maxRate')">
-                  <div class="progress-inner" :style="{height: `${getPercent('maxRate')}%`}"></div>
-                </div>
-                <span class="config-value">{{ currentBallConfig.maxRate }}</span>
-              </div>
-              <div class="config-item">
-                <span class="config-label">数量权重</span>
-                <div class="config-progress-vertical" @mousedown="(e) => startBallConfigDrag(e, 'numWeight')" @click="(e) => setBallConfigByClick(e, 'numWeight')">
-                  <div class="progress-inner" :style="{height: `${getPercent('numWeight')}%`}"></div>
-                </div>
-                <span class="config-value">{{ currentBallConfig.numWeight }}</span>
               </div>
             </div>
           </div>
+          <!-- 引入节奏小球子组件 -->
+          <RhythmBall
+            :album="album"
+            :isMusicPlaying="isMusicPlaying"
+            :mainColorDark="mainColorDark"
+            :mainColorDarkDouble="mainColorDarkDouble"
+            :initialBallConfig="currentBallConfig"
+            @toggle-ball-play="handleBallPlayToggle"
+            @update-ball-config="handleBallConfigUpdate"
+            @generate-rhythm-ball="handleGenerateRhythmBall"
+          />
         </div>
       </div>
     </div>
+    <TrackParse
+      :visible="showParseModal"
+      :mainColorDark="mainColorDark"
+      :mainColorDarkDouble="mainColorDarkDouble"
+      @close="showParseModal = false"
+      @parse-success="handleParseSuccess"
+    />
   </div>
-  <TrackParse
-    :visible="showParseModal"
-    :mainColorDark="mainColorDark"
-    :mainColorDarkDouble="mainColorDarkDouble"
-    @close="showParseModal = false"
-    @parse-success="handleParseSuccess"
-  />
-    </div>
 </template>
 
 <script>
 import globalConfig from '@/config/index.js';
 import TrackParse from '@/components/sidebar/TrackParse.vue';
+// 引入节奏小球子组件
+import RhythmBall from '@/components/RhythmBall.vue';
 
 export default {
   name: 'AlbumTrackList',
-  components: {TrackParse},
+  components: {TrackParse, RhythmBall},
   props: {
     album: {
       type: Object,
@@ -295,11 +257,8 @@ export default {
       currentSliderDom: null,
       isDurationMode: false,
       showParseModal: false,
-      isBallPlay: false,
+      // 仅保留小球配置传递给子组件
       currentBallConfig: globalConfig.ballConfig.default,
-      isBallConfigDragging: false,
-      currentConfigKey: '',
-      autoBallTimer: null,
       isHoverRatingArea: false
     };
   },
@@ -316,6 +275,7 @@ export default {
         this.initTrackList(true);
         this.initFavouriteTrackList();
         this.getAllScore();
+        // 更新小球配置（传递给子组件）
         this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
       }, deep: true
     },
@@ -323,13 +283,6 @@ export default {
     activeTab(newVal) {
       this.showParseModal = false;
       this[newVal === 'tracks' ? 'isFavouriteEditMode' : 'isTrackEditMode'] = false;
-    },
-    isMusicPlaying(newVal) {
-      newVal && this.isBallPlay ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
-    },
-    isBallPlay(newVal) {
-      this.$emit('toggle-ball-play', newVal);
-      newVal && this.isMusicPlaying ? this.startAutoBallGenerate() : this.stopAutoBallGenerate();
     }
   },
   mounted() {
@@ -338,7 +291,6 @@ export default {
     this.getAllScore();
     this.$nextTick(() => {
       this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
-      this.isMusicPlaying && this.isBallPlay && this.startAutoBallGenerate();
     });
   },
   activated() {
@@ -347,44 +299,38 @@ export default {
     this.getAllScore();
     this.$nextTick(() => {
       this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
-      this.isMusicPlaying && this.isBallPlay && this.startAutoBallGenerate();
     });
   },
   deactivated() {
     this.saveAllScore();
-    this.stopAutoBallGenerate();
   },
   beforeDestroy() {
-    clearInterval(this.autoBallTimer);
     this.isTrackScoring = false;
     this.currentTrackIdx = -1;
     this.currentSliderDom = null;
     document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
-    document.removeEventListener('mousemove', this.handleBallConfigMouseMove);
-    document.removeEventListener('mouseup', this.stopBallConfigDrag);
     this.saveAllScore();
-    this.stopAutoBallGenerate();
   },
   methods: {
-// AlbumTrackList 的 saveAllScore 方法
-async saveAllScore() {
-  try {
-    const albumId = this.album.id;
-    if (!albumId) return;
-    let scoreList = [this.score];
-    this.trackList.forEach(item => scoreList.push(item.score || 0));
+    // AlbumTrackList 的 saveAllScore 方法
+    async saveAllScore() {
+      try {
+        const albumId = this.album.id;
+        if (!albumId) return;
+        let scoreList = [this.score];
+        this.trackList.forEach(item => scoreList.push(item.score || 0));
 
-    console.log('📤 AlbumTrackList 发射的scoreList：', scoreList);
-    this.$emit('score-list-change', scoreList); // 发射给父组件
+        console.log('📤 AlbumTrackList 发射的scoreList：', scoreList);
+        this.$emit('score-list-change', scoreList); // 发射给父组件
 
-    await this.$axios.put(`/api/album/score/save/${albumId}`, {score_list: scoreList}, {
-      headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
-    });
-    console.log('✅ 评分保存成功：', albumId, scoreList);
-  } catch (err) {
-    console.error('保存评分失败：', err);
-  }
-},
+        await this.$axios.put(`/api/album/score/save/${albumId}`, {score_list: scoreList}, {
+          headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
+        });
+        console.log('✅ 评分保存成功：', albumId, scoreList);
+      } catch (err) {
+        console.error('保存评分失败：', err);
+      }
+    },
     async getAllScore() {
       try {
         const albumId = this.album.id;
@@ -456,27 +402,26 @@ async saveAllScore() {
         score: 0
       }];
     },
-// 修复initFavouriteTrackList方法，支持保留编辑后的数据
-initFavouriteTrackList(keepCurrentData = false) {
-  // 如果标记为保留当前数据，且已有编辑后的列表，则不重置
-  if (keepCurrentData && this.favouriteTrackList.length > 0) {
-    return;
-  }
+    // 修复initFavouriteTrackList方法，支持保留编辑后的数据
+    initFavouriteTrackList(keepCurrentData = false) {
+      // 如果标记为保留当前数据，且已有编辑后的列表，则不重置
+      if (keepCurrentData && this.favouriteTrackList.length > 0) {
+        return;
+      }
 
-  this.favouriteTrackList = [];
-  const names = this.favourite_tracks || [], secs = this.favourite_tracks_time || [];
-  names.forEach((name, idx) => {
-    const dbSec = secs[idx] || 0;
-    this.favouriteTrackList.push({
-      name: name.trim() || '未知曲目',
-      sec: dbSec,
-      duration: this.secondsToTime(dbSec)
-    });
-  });
-  if (!names.length) this.favouriteTrackList = [{name: '未知曲目', sec: 0, duration: '0:00:00'}];
-},
-
-// 优化saveTrackList方法的错误提示
+      this.favouriteTrackList = [];
+      const names = this.favourite_tracks || [], secs = this.favourite_tracks_time || [];
+      names.forEach((name, idx) => {
+        const dbSec = secs[idx] || 0;
+        this.favouriteTrackList.push({
+          name: name.trim() || '未知曲目',
+          sec: dbSec,
+          duration: this.secondsToTime(dbSec)
+        });
+      });
+      if (!names.length) this.favouriteTrackList = [{name: '未知曲目', sec: 0, duration: '0:00:00'}];
+    },
+    // 优化saveTrackList方法的错误提示
     formatDurationInput(type, idx) {
       const list = type === 'tracks' ? this.trackList : this.favouriteTrackList;
       const track = list[idx];
@@ -505,24 +450,25 @@ initFavouriteTrackList(keepCurrentData = false) {
         totalSec += this.timeToSeconds(track.playDuration);
       });
     },
-// 重点修复的方法
-async toggleEditStatus(type) {
-  const key = type === 'tracks' ? 'isTrackEditMode' : 'isFavouriteEditMode';
-  if (this[key]) {
-    // 先保存数据
-    await this.saveTrackList(type);
-    // 喜欢时刻需要额外刷新数据（修复核心）
-    if (type === 'favourite') {
-      this.initFavouriteTrackList(true); // 传入true保留当前编辑的数据
-    } else {
-      await this.saveAllScore(); // 单曲列表仍需要保存评分
-    }
-    this[key] = false;
-    type === 'tracks' && (this.showParseModal = false);
-  } else {
-    this[key] = true;
-  }
-},
+    // 重点修复的方法
+    async toggleEditStatus(type) {
+      const key = type === 'tracks' ? 'isTrackEditMode' : 'isFavouriteEditMode';
+      if (this[key]) {
+        // 只执行对应类型的列表保存，完全分离逻辑
+        await this.saveTrackList(type);
+        // 只有「单曲列表」才需要保存评分，喜欢时刻不碰评分
+        if (type === 'tracks') {
+          await this.saveAllScore();
+        } else {
+          // 喜欢时刻保存后，刷新列表但不影响单曲评分
+          this.initFavouriteTrackList(true);
+        }
+        this[key] = false;
+        type === 'tracks' && (this.showParseModal = false);
+      } else {
+        this[key] = true;
+      }
+    },
     addNewTrack(type) {
       if (type === 'tracks') {
         this.trackList.push({name: '', duration: '0:00:00', sec: 0, playDuration: '0:00:00', score: 0});
@@ -537,58 +483,55 @@ async toggleEditStatus(type) {
       list.splice(idx, 1);
       type === 'tracks' && this.isDurationMode && this.calcTrackTimestamp();
     },
-// 优化saveTrackList方法的错误提示
-async saveTrackList(type) {
-  try {
-    // 先校验album.id是否存在
-    if (!this.album.id) {
-      alert('❌ 保存失败：未找到专辑ID');
-      return;
-    }
+    // 优化saveTrackList方法的错误提示
+    async saveTrackList(type) {
+      try {
+        // 先校验album.id是否存在
+        if (!this.album.id) {
+          alert('❌ 保存失败：未找到专辑ID');
+          return;
+        }
 
-    let submitList, submitSecArr, apiUrl, emitKey1, emitKey2;
-    if (type === 'tracks') {
-      submitList = this.trackList.map(i => i.name.trim() || '未知曲目');
-      submitSecArr = this.trackList.map(i => i.sec || 0);
-      apiUrl = `/api/album/update/tracks/${this.album.id}`;
-      emitKey1 = 'tracks';
-      emitKey2 = 'tracks_time';
-    } else {
-      submitList = this.favouriteTrackList.map(i => i.name.trim() || '未知曲目');
-      submitSecArr = this.favouriteTrackList.map(i => i.sec || 0);
-      apiUrl = `/api/album/update/favourite_tracks/${this.album.id}`;
-      emitKey1 = 'favourite_tracks';
-      emitKey2 = 'favourite_tracks_time';
-    }
+        let submitList, submitSecArr, apiUrl, emitKey1, emitKey2;
+        if (type === 'tracks') {
+          submitList = this.trackList.map(i => i.name.trim() || '未知曲目');
+          submitSecArr = this.trackList.map(i => i.sec || 0);
+          apiUrl = `/api/album/update/tracks/${this.album.id}`;
+          emitKey1 = 'tracks';
+          emitKey2 = 'tracks_time';
+        } else {
+          submitList = this.favouriteTrackList.map(i => i.name.trim() || '未知曲目');
+          submitSecArr = this.favouriteTrackList.map(i => i.sec || 0);
+          apiUrl = `/api/album/update/favourite_tracks/${this.album.id}`;
+          emitKey1 = 'favourite_tracks';
+          emitKey2 = 'favourite_tracks_time';
+        }
 
-    const fullTrackList = submitList.map(n => ({name: n}));
-    const res = await this.$axios.put(apiUrl, {
-      tracks: submitList,
-      full_tracks: fullTrackList,
-      tracks_time: submitSecArr
-    }, {
-      headers: {
-        'Authorization': localStorage.getItem('token') || '',
-        'Content-Type': 'application/json'
+        const fullTrackList = submitList.map(n => ({name: n}));
+        const res = await this.$axios.put(apiUrl, {
+          tracks: submitList,
+          full_tracks: fullTrackList,
+          tracks_time: submitSecArr
+        }, {
+          headers: {
+            'Authorization': localStorage.getItem('token') || '',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (res.data.code === 200) {
+          // 保存成功后立即更新父组件数据
+          this.$emit('update-album-data', {[emitKey1]: submitList, [emitKey2]: submitSecArr});
+        } else {
+          alert(`❌ 保存失败：${res.data.msg || '服务器返回错误'}`);
+        }
+      } catch (err) {
+        console.error('保存失败：', err);
+        const errorMsg = err.response?.data?.msg ||
+            (err.message.includes('401') ? '登录已过期，请重新登录' : '网络异常，请重试');
+        alert(`❌ 保存失败：${errorMsg}`);
       }
-    });
-
-    if (res.data.code === 200) {
-      // 保存成功后立即更新父组件数据
-      this.$emit('update-album-data', {[emitKey1]: submitList, [emitKey2]: submitSecArr});
-      // 给用户友好提示
-      this.$message?.success(`✅ ${type === 'tracks' ? '单曲列表' : '喜欢时刻'} 保存成功！`) ||
-      alert(`✅ ${type === 'tracks' ? '单曲列表' : '喜欢时刻'} 保存成功！`);
-    } else {
-      alert(`❌ 保存失败：${res.data.msg || '服务器返回错误'}`);
-    }
-  } catch (err) {
-    console.error('保存失败：', err);
-    const errorMsg = err.response?.data?.msg ||
-                    (err.message.includes('401') ? '登录已过期，请重新登录' : '网络异常，请重试');
-    alert(`❌ 保存失败：${errorMsg}`);
-  }
-},
+    },
     handleTrackClick(idx) {
       !this.isTrackEditMode && this.$emit('track-jump', this.trackList[idx].sec || 0);
     },
@@ -661,6 +604,7 @@ async saveTrackList(type) {
       // 更新分数
       this.trackList[idx].score = newScore;
     },
+    // 获取小球配置（仅用于初始化传递给子组件）
     getBallConfigByTag(tags) {
       if (!tags || !Array.isArray(tags) || tags.length === 0) {
         return globalConfig.ballConfig.default;
@@ -668,121 +612,20 @@ async saveTrackList(type) {
       const firstTag = tags[0];
       return globalConfig.ballConfig[firstTag] || globalConfig.ballConfig.default;
     },
-    toggleBallPlay() {
-      this.isBallPlay = !this.isBallPlay;
+    // 子组件事件处理方法
+    handleBallPlayToggle(isPlay) {
+      // 向父组件发射小球开关状态
+      this.$emit('toggle-ball-play', isPlay);
     },
-    getPercent(key) {
-      const config = this.currentBallConfig;
-      let val = config[key];
-      let max, min;
-      switch (key) {
-        case 'minSize':
-          min = 0;
-          max = 1000;
-          break;
-        case 'maxSize':
-          min = 0;
-          max = 1000;
-          break;
-        case 'minRate':
-          min = 10;
-          max = 4000;
-          break;
-        case 'maxRate':
-          min = 10;
-          max = 4000;
-          break;
-        case 'numWeight':
-          min = 0;
-          max = 10;
-          break;
-        default:
-          return 0;
-      }
-      const percent = ((val - min) / (max - min)) * 100;
-      return Math.max(0, Math.min(100, percent));
+    handleBallConfigUpdate(newConfig) {
+      // 更新父组件中的小球配置
+      this.currentBallConfig = newConfig;
+      // 向父组件的父组件发射配置更新事件
+      this.$emit('update-ball-config', newConfig);
     },
-    startBallConfigDrag(e, key) {
-      this.isBallConfigDragging = true;
-      this.currentConfigKey = key;
-      this.calcBallConfigValueByMouse(e, key);
-      document.addEventListener('mousemove', this.handleBallConfigMouseMove);
-      document.addEventListener('mouseup', this.stopBallConfigDrag);
-      e.stopPropagation();
-      e.preventDefault();
-    },
-    handleBallConfigMouseMove(e) {
-      if (this.isBallConfigDragging && this.currentConfigKey) {
-        this.calcBallConfigValueByMouse(e, this.currentConfigKey);
-      }
-    },
-    stopBallConfigDrag() {
-      this.isBallConfigDragging = false;
-      this.currentConfigKey = '';
-      document.removeEventListener('mousemove', this.handleBallConfigMouseMove);
-      document.removeEventListener('mouseup', this.stopBallConfigDrag);
-    },
-    calcBallConfigValueByMouse(e, key) {
-      const progressDom = e.currentTarget.querySelector('.progress-inner').parentNode;
-      const rect = progressDom.getBoundingClientRect();
-      let percent = ((rect.bottom - e.clientY) / rect.height) * 100;
-      percent = Math.max(0, Math.min(100, percent));
-      this.setBallConfigValueByPercent(key, percent);
-    },
-    setBallConfigValueByPercent(key, percent) {
-      let min, max, step = 1;
-      switch (key) {
-        case 'minSize':
-          min = 0;
-          max = 1000;
-          step = 1;
-          break;
-        case 'maxSize':
-          min = 0;
-          max = 1000;
-          step = 1;
-          break;
-        case 'minRate':
-          min = 10;
-          max = 4000;
-          step = 10;
-          break;
-        case 'maxRate':
-          min = 10;
-          max = 4000;
-          step = 10;
-          break;
-        case 'numWeight':
-          min = 0;
-          max = 10;
-          step = 1;
-          break;
-        default:
-          return;
-      }
-      let realValue = ((max - min) * (percent / 100)) + min;
-      realValue = Math.round(realValue / step) * step;
-      realValue = Math.max(min, Math.min(max, realValue));
-      this.currentBallConfig[key] = realValue;
-      this.$emit('update-ball-config', {...this.currentBallConfig});
-    },
-    setBallConfigByClick(e, key) {
-      this.currentConfigKey = key;
-      this.calcBallConfigValueByMouse(e, key);
-    },
-    startAutoBallGenerate() {
-      if (!this.isBallPlay) return;
-      const {minRate, maxRate, numWeight} = this.currentBallConfig;
-      this.autoBallTimer = setInterval(() => {
-        if (!this.isBallPlay || !this.isMusicPlaying) return;
-        for (let i = 0; i < numWeight; i++) {
-          const size = Math.floor(Math.random() * (this.currentBallConfig.maxSize - this.currentBallConfig.minSize)) + this.currentBallConfig.minSize;
-          this.$emit('generate-rhythm-ball', {size});
-        }
-      }, Math.floor(Math.random() * (maxRate - minRate)) + minRate);
-    },
-    stopAutoBallGenerate() {
-      this.autoBallTimer && (clearInterval(this.autoBallTimer), this.autoBallTimer = null);
+    handleGenerateRhythmBall(ballInfo) {
+      // 向父组件发射生成小球事件
+      this.$emit('generate-rhythm-ball', ballInfo);
     }
   }
 };
@@ -1018,108 +861,6 @@ async saveTrackList(type) {
   border-radius: 50%;
   transition: width 0.05s linear, height 0.05s linear;
   opacity: 0.85;
-}
-
-.rhythm-container {
-  width: 100%;
-  background: transparent !important;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: none;
-  box-sizing: border-box;
-  flex: 1;
-  min-height: 350px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.ball-config-panel {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.ball-switch-wrap {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.ball-switch-wrap h3 {
-  margin: 0;
-  font-size: 16px;
-  color: v-bind(mainColorDarkDouble);
-  font-weight: 600;
-  padding-bottom: 8px;
-  border-bottom: 4px solid v-bind(mainColorDark);
-}
-
-.ball-toggle-switch {
-  padding: 6px 14px;
-  border-radius: 6px;
-  background: #94a3b8;
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.ball-toggle-switch.active {
-  background: v-bind(mainColorDark);
-}
-
-.ball-config-list {
-  display: flex;
-  justify-content: space-around;
-  align-items: flex-end;
-  width: 100%;
-  height: calc(100% - 150px);
-  gap: 8px;
-}
-
-.config-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-}
-
-.config-label {
-  font-size: 12px;
-  color: v-bind(mainColorDarkDouble);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.config-value {
-  font-size: 13px;
-  color: v-bind(mainColorDark);
-  font-weight: bold;
-}
-
-.config-progress-vertical {
-  width: 8px;
-  height: 220px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column-reverse;
-  cursor: pointer;
-}
-
-.progress-inner {
-  width: 100%;
-  background: v-bind(mainColorDark);
-  border-radius: 4px;
-  transition: height 0.3s ease;
 }
 
 .tracks-container {
