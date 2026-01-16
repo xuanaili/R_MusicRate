@@ -325,6 +325,75 @@ def create_album_comments():
         print(traceback.format_exc())
         raise e
 
+
+def create_album_tags():
+    """创建专辑类型表（兼容MySQL所有版本：TEXT替代JSON，移除默认值）"""
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS album_tags (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '类型ID',
+                tags_name VARCHAR(100) NOT NULL COMMENT '类型名（格式：English【中文】）',
+                aka_name VARCHAR(500) DEFAULT '' COMMENT '别名（格式：别名1,别名2,别名3）',
+                parameter_style TEXT COMMENT '样式参数（JSON字符串：{"type":0,"style":"a","param_b":"b","param_c":"c","param_d":"d","param_e":"e"}）',
+                brief_intro VARCHAR(500) DEFAULT '' COMMENT '简洁介绍',
+                detail_intro TEXT COMMENT '详细介绍',
+                -- 核心修改：TEXT替代JSON，移除DEFAULT（后续代码层默认空数组）
+                related_singers TEXT COMMENT '关联歌手（JSON字符串：[{"id":1,"name":"周杰伦"},{"id":2,"name":"陈奕迅"}]）',
+                related_albums TEXT COMMENT '关联专辑（JSON字符串：[{"id":1,"name":"七里香"},{"id":2,"name":"U87"}]）',
+                related_tags TEXT COMMENT '关联其他风格（JSON字符串：[{"id":3,"name":"Folk【民谣】"},{"id":4,"name":"Rock【摇滚】"}]）',
+                parent_tag_ids VARCHAR(200) DEFAULT '' COMMENT '父标签ID（格式：1,2,3）',
+                create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                is_enabled TINYINT UNSIGNED DEFAULT 1 COMMENT '是否启用：1-启用，0-禁用',
+                UNIQUE INDEX idx_tags_name (tags_name),
+                INDEX idx_parent_tag_ids (parent_tag_ids),
+                INDEX idx_is_enabled (is_enabled)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='专辑类型表';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ album_tags表 创建/检查成功！")
+    except Exception as e:
+        db.rollback()
+        print(f"❌ 创建album_tags表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
+def create_album_singers():
+    """创建歌手信息表（兼容MySQL所有版本：TEXT替代JSON，移除默认值）"""
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS album_singers (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '歌手ID',
+                singer_name VARCHAR(100) NOT NULL COMMENT '歌手姓名（如：周杰伦）',
+                birth_place VARCHAR(200) DEFAULT '' COMMENT '出生地（如：中国台湾省新北市）',
+                singer_alias VARCHAR(500) DEFAULT '' COMMENT '别名（格式：别名1,别名2,别名3）',
+                detail_intro TEXT COMMENT '详细介绍',
+                -- 核心修改：TEXT替代JSON，移除DEFAULT
+                related_singers TEXT COMMENT '介绍中关联歌手（JSON字符串：[{"id":1,"name":"陈奕迅"}]）',
+                related_albums TEXT COMMENT '介绍中关联专辑（JSON字符串：[{"id":1,"name":"七里香"}]）',
+                related_tags TEXT COMMENT '介绍中关联风格（JSON字符串：[{"id":1,"name":"Pop【流行】"}]）',
+                display_singers TEXT COMMENT '展示用关联歌手（JSON字符串：[{"id":2,"name":"方文山"}]）',
+                create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                is_enabled TINYINT UNSIGNED DEFAULT 1 COMMENT '是否启用：1-启用，0-禁用',
+                UNIQUE INDEX idx_singer_name (singer_name),
+                INDEX idx_is_enabled (is_enabled)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='歌手信息表';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ album_singers表 创建/检查成功！")
+    except Exception as e:
+        db.rollback()
+        print(f"❌ 创建album_singers表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
 # ========== ✅✅✅ 核心：初始化所有基础表 ==========
 def init_base_tables():
     """初始化基础表"""
@@ -338,6 +407,8 @@ def init_base_tables():
         create_user_playlist_table()
         create_user_recommend()
 
+        create_album_tags()
+        create_album_singers()
 
         print("✅ MySQL基础表初始化成功！")
         init_default_admin()
