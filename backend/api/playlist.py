@@ -5,9 +5,9 @@ from flask import request, jsonify
 import traceback
 import pymysql
 
-from .score import calculate_album_total_score
-from ..db_utils import get_db, get_current_user_id, get_album_table_name, check_and_create_user_album_table
-from ..decorators import login_required
+from backend.utils.db import get_db, get_current_user_id, get_album_table_name, check_and_create_user_album_table
+from backend.utils.decorators import login_required
+from ..utils.score import calculate_album_total_score
 
 
 def register_playlist_routes(app):

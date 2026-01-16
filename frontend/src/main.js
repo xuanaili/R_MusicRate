@@ -1,4 +1,4 @@
-// MusicRate/frontend-vue/src/main.js
+// MusicRate/frontend/src/main.js
 import Vue from 'vue'
 import App from './App.vue'
 import axios from 'axios'

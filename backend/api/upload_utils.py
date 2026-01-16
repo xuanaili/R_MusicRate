@@ -3,7 +3,7 @@ from flask import send_from_directory, request, jsonify
 import os
 import uuid
 import traceback
-from .config import UPLOAD_FOLDER, COVER_BASE_URL, AUDIO_UPLOAD_FOLDER  # 新增：导入音频配置
+from backend.config import UPLOAD_FOLDER, COVER_BASE_URL, AUDIO_UPLOAD_FOLDER  # 新增：导入音频配置
 
 def register_upload_routes(app):
     """注册图床相关路由（需传入Flask app实例）- 封面+音频"""

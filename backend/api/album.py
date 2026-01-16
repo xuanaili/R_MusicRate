@@ -3,14 +3,15 @@ import json
 import traceback
 
 from .unlock import format_duration
-from ..db_utils import (
-    get_db, get_album_table_name, get_current_user_id,
-    save_user_album_intro, get_user_album_intro
+from backend.utils.db import (
+    get_db, get_album_table_name, get_current_user_id
 )
-from ..decorators import login_required
-from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, VALID_SORT_FIELDS
+from backend.utils.decorators import login_required
+from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 import pymysql
-from .score import calculate_album_total_score  # 根据实际路径调整，确保能导入
+
+from ..utils.intro import get_user_album_intro, save_user_album_intro
+from ..utils.score import calculate_album_total_score
 
 
 def register_album_routes(app):

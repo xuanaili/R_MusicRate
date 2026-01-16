@@ -5,8 +5,8 @@ from flask import request, jsonify
 import json
 import uuid
 import traceback
-from ..db_utils import get_db, get_album_table_name, get_current_user_id  # 导入get_current_user_id
-from ..decorators import login_required
+from backend.utils.db import get_db, get_album_table_name, get_current_user_id  # 导入get_current_user_id
+from backend.utils.decorators import login_required
 
 
 def register_review_routes(app):

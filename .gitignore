@@ -1,22 +1,22 @@
 # ===================== 前端（Vue CLI）忽略项 =====================
 # 依赖包（核心，必忽略）
-frontend-vue/node_modules/
+frontend/node_modules/
 # 打包产物
-frontend-vue/dist/
-frontend-vue/build/
+frontend/dist/
+frontend/build/
 # 缓存文件
-frontend-vue/.cache/
-frontend-vue/.npm/
+frontend/.cache/
+frontend/.npm/
 # 环境变量（本地配置）
-frontend-vue/.env
-frontend-vue/.env.local
-frontend-vue/.env.development.local
-frontend-vue/.env.production.local
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
 # Vue CLI临时文件
-frontend-vue/.pnpm-debug.log
-frontend-vue/yarn-debug.log
-frontend-vue/yarn-error.log
-frontend-vue/npm-debug.log*
+frontend/.pnpm-debug.log
+frontend/yarn-debug.log
+frontend/yarn-error.log
+frontend/npm-debug.log*
 
 # ===================== 后端（Flask）忽略项 =====================
 # Python虚拟环境

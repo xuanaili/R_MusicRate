@@ -1,9 +1,9 @@
 import pymysql
-from flask import request, jsonify, g
+from flask import jsonify
 import traceback
 import time
-from ..db_utils import get_db, get_album_table_name, get_current_user_id
-from ..decorators import login_required
+from backend.utils.db import get_db, get_album_table_name, get_current_user_id
+from backend.utils.decorators import login_required
 
 # 全局内存存储 播放计时状态 - key: f"{user_id}_{album_id}", value: 开始时间戳
 PLAYING_TIMER_CACHE = {}

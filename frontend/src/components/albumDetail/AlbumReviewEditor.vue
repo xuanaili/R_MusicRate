@@ -114,20 +114,15 @@
       </div>
       <p class="no-feeling" v-else>暂无听后感记录，快来添加吧~</p>
 
-      <!-- ✅ 听后感输入框 去掉所有边界颜色 纯净透明 + 右上角提交按钮【核心修复】 -->
+      <!-- ✅ 听后感输入框 去掉所有边界颜色 纯净透明 + 移除加号按钮 -->
       <div class="review-edit-area">
         <textarea
           v-model="newFeelingContent"
-          placeholder="输入听后感..."
+          placeholder="输入听后感...（回车发送，Shift+回车换行）"
           class="review-textarea"
           rows="3"
+          @keydown="handleTextareaKeydown"
         ></textarea>
-        <!-- ✅ 按钮移出列表、放到输入框容器内 → 永久显示 + 固定在右上角 -->
-        <button
-          @click="handleAddReview"
-          class="save-btn"
-          :disabled="!newFeelingContent.trim()"
-        >新增听后感</button>
       </div>
     </div>
   </div>
@@ -203,6 +198,19 @@ export default {
     this.fetchCalendarReviewData();
   },
   methods: {
+    // 核心：处理textarea键盘事件
+    handleTextareaKeydown(e) {
+      // 判断是否按下回车键
+      if (e.key === 'Enter') {
+        // shift + 回车：正常换行，不做处理
+        if (e.shiftKey) {
+          return;
+        }
+        // 只按回车：阻止默认换行行为，执行发送
+        e.preventDefault();
+        this.handleAddReview();
+      }
+    },
     extractMainColor(imgUrl) {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
@@ -328,28 +336,25 @@ export default {
     getRecordCount(day) {
       return this.reviewRecordData.filter(item => item.year === this.currentYear && item.month === this.currentMonth && item.day === day).length;
     },
-getDayDetailList() {
-  const dayRecords = this.reviewRecordData.filter(
-      item =>
-          item.year === this.currentYear &&
-          item.month === this.currentMonth &&
-          item.day === this.selectedDay
-  );
-  const correctFeelings = this.album.review?.feelings || [];
-  const matchList = dayRecords.map(record => {
-    const matchItem = correctFeelings.find(f => f.id === record.id);
-    return matchItem
-        ? {...matchItem, listening_duration: matchItem.listening_duration}
-        : record;
-  });
-  // ========== 核心修改 - 替换原有的时长排序 ==========
-  // 按 创建时间(create_time) 倒序排序 → 最新的在最上面
-
-  return matchList.sort((a, b) => {
-    return new Date(b.create_time) - new Date(a.create_time);
-  });
-  // ==================================================
-},
+    getDayDetailList() {
+      const dayRecords = this.reviewRecordData.filter(
+          item =>
+              item.year === this.currentYear &&
+              item.month === this.currentMonth &&
+              item.day === this.selectedDay
+      );
+      const correctFeelings = this.album.review?.feelings || [];
+      const matchList = dayRecords.map(record => {
+        const matchItem = correctFeelings.find(f => f.id === record.id);
+        return matchItem
+            ? {...matchItem, listening_duration: matchItem.listening_duration}
+            : record;
+      });
+      // 按 创建时间(create_time) 倒序排序 → 最新的在最上面
+      return matchList.sort((a, b) => {
+        return new Date(b.create_time) - new Date(a.create_time);
+      });
+    },
     isToday(day) {
       const now = new Date()
       return now.getFullYear() === this.currentYear && now.getMonth() + 1 === this.currentMonth && now.getDate() === day
@@ -364,43 +369,43 @@ getDayDetailList() {
       this.tooltipVisible = false;
       this.tooltipText = '';
     },
-// AlbumReviewEditor.vue 中 handleAddReview 方法（已优化）
-async handleAddReview() {
-  if (!this.newFeelingContent.trim()) {
-    this.$message?.warning('听后感内容不能为空！');
-    return;
-  }
-
-  // 1. 通知父组件保存并获取最新评分（确保scoreList已同步到album.my_score）
-  await this.$emit('prepare-score');
-
-  // 2. 读取父组件同步后的 album.my_score（就是最新的scoreList）
-  let scoreList = [];
-  if (this.album.my_score) {
-    if (typeof this.album.my_score === 'string') {
-      try {
-        scoreList = JSON.parse(this.album.my_score);
-      } catch (err) {
-        scoreList = [];
+    // 提交听后感方法
+    async handleAddReview() {
+      if (!this.newFeelingContent.trim()) {
+        this.$message?.warning('听后感内容不能为空！');
+        return;
       }
-    } else if (Array.isArray(this.album.my_score)) {
-      // 深拷贝，避免引用问题
-      scoreList = JSON.parse(JSON.stringify(this.album.my_score));
-    }
-  }
 
-  console.log('🎯 子组件使用的最新scoreList（来自album.my_score）：', scoreList);
-  const finalScore = calculateAlbumTotalScore(scoreList);
-  console.log('🎯 计算出的综合评分：', finalScore);
+      // 1. 通知父组件保存并获取最新评分（确保scoreList已同步到album.my_score）
+      await this.$emit('prepare-score');
 
-  // 3. 提交听后感，传递最新计算的评分
-  await this.$emit('add-review', this.newFeelingContent, finalScore);
+      // 2. 读取父组件同步后的 album.my_score（就是最新的scoreList）
+      let scoreList = [];
+      if (this.album.my_score) {
+        if (typeof this.album.my_score === 'string') {
+          try {
+            scoreList = JSON.parse(this.album.my_score);
+          } catch (err) {
+            scoreList = [];
+          }
+        } else if (Array.isArray(this.album.my_score)) {
+          // 深拷贝，避免引用问题
+          scoreList = JSON.parse(JSON.stringify(this.album.my_score));
+        }
+      }
 
-  // 4. 重置和刷新
-  this.newFeelingContent = '';
-  this.fetchCalendarReviewData();
-  this.$forceUpdate();
-},
+      console.log('🎯 子组件使用的最新scoreList（来自album.my_score）：', scoreList);
+      const finalScore = calculateAlbumTotalScore(scoreList);
+      console.log('🎯 计算出的综合评分：', finalScore);
+
+      // 3. 提交听后感，传递最新计算的评分
+      await this.$emit('add-review', this.newFeelingContent, finalScore);
+
+      // 4. 重置和刷新
+      this.newFeelingContent = '';
+      this.fetchCalendarReviewData();
+      this.$forceUpdate();
+    },
     async handleDeleteSingle(feelingId) {
       await this.$emit('delete-single', feelingId);
       this.fetchCalendarReviewData();
@@ -950,7 +955,7 @@ async handleAddReview() {
   color: v-bind(mainColorDark) !important;
 }
 
-/* ✅ 核心修改：输入框彻底去掉所有边界颜色，纯净透明无任何边框 + 相对定位承载按钮 */
+/* ✅ 核心修改：输入框彻底去掉所有边界颜色，纯净透明（已移除按钮相关样式） */
 .review-edit-area {
   width: 100%;
   box-sizing: border-box;
@@ -962,7 +967,6 @@ async handleAddReview() {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   border: none !important;
-  position: relative; /* 关键：给按钮做绝对定位的父容器 */
 }
 
 .review-textarea {
@@ -986,30 +990,5 @@ async handleAddReview() {
   font-weight: 400;
 }
 
-/* ✅✅✅ 按钮样式修改：固定在输入框右上角 + 完美间距 + 样式不变 */
-.save-btn {
-  position: absolute;
-  top: 6px; /* 和输入框padding一致，垂直对齐 */
-  right: 10px; /* 和输入框padding一致，水平对齐 */
-  padding: 8px 20px;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 12px;
-  background-color: v-bind(mainColorDark) !important;
-  z-index: 10;
-}
-
-.save-btn:disabled {
-  background: #999 !important;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.save-btn:hover:not(:disabled) {
-  opacity: 0.95;
-  filter: brightness(0.9);
-}
+/* 已移除加号按钮相关样式 */
 </style>

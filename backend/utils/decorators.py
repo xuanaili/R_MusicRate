@@ -1,8 +1,8 @@
 # MusicRate\backend\decorators.py 登录校验装饰器 - 独立封装登录验证逻辑
 from functools import wraps
-from flask import request, jsonify, g
+from flask import request, jsonify
 import traceback
-from .db_utils import get_db, check_and_create_user_album_table, set_current_user_id
+from backend.utils.db import get_db, check_and_create_user_album_table, set_current_user_id
 
 def login_required(func):
     """登录校验装饰器：验证token有效性，设置当前登录用户ID"""

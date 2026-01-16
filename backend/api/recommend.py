@@ -1,21 +1,11 @@
-from flask import request, jsonify, g
-import json
+from flask import request, jsonify
 import traceback
-import random
 from datetime import datetime, date
-from ..db_utils import get_db, get_current_user_id
-from ..decorators import login_required
+from backend.utils.db import get_db, get_current_user_id
+from backend.utils.decorators import login_required
 import pymysql.cursors
 
-
-# ========== 复用你原有代码的安全JSON解析函数 ==========
-def safe_json_loads(s):
-    if s is None or s == "":
-        return None
-    try:
-        return json.loads(s)
-    except (json.JSONDecodeError, TypeError):
-        return None
+from ..utils.json import safe_json_loads
 
 
 def register_recommend_routes(app):

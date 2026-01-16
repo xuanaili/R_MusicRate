@@ -3,7 +3,9 @@ from flask import request, jsonify
 import uuid
 import traceback
 from datetime import datetime
-from ..db_utils import get_db, create_user_album_table, encrypt_password, verify_password  # 导入加密/验证函数
+
+from backend.utils.auth import verify_password
+from backend.utils.db import get_db, create_user_album_table, encrypt_password  # 导入加密/验证函数
 
 
 def register_auth_routes(app):

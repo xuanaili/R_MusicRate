@@ -3,8 +3,8 @@ import json
 import traceback
 import random
 import os  # 文件操作模块
-from ..db_utils import get_db, get_album_table_name, get_current_user_id
-from ..decorators import login_required
+from backend.utils.db import get_db, get_album_table_name, get_current_user_id
+from backend.utils.decorators import login_required
 # 导入所有需要的配置，包含音频相关
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, UPLOAD_FOLDER, AUDIO_BASE_URL, AUDIO_UPLOAD_FOLDER
 

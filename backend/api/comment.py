@@ -1,12 +1,10 @@
 # MusicRate\backend\api\comment.py 评论相关接口 - 私有评论（原有）+ 公共评论（新增）
-from flask import request, jsonify, g
+from flask import request, jsonify
 import json
 import traceback
 from datetime import datetime
-
-from ..config import MYSQL_CONFIG
-from ..db_utils import get_db, get_album_table_name, get_current_user_id
-from ..decorators import login_required
+from backend.utils.db import get_db, get_album_table_name, get_current_user_id
+from backend.utils.decorators import login_required
 import pymysql
 
 def register_comment_routes(app):

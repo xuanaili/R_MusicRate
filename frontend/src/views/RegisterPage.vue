@@ -1,4 +1,4 @@
-<!--MusicRate/frontend-vue/src/views/RegisterPage.vue-->
+<!--MusicRate/frontend/src/views/RegisterPage.vue-->
 <template>
   <div class="register-container">
     <h2>用户注册</h2>

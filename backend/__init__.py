@@ -1,8 +1,8 @@
 from flask import Flask
 from flask_cors import CORS
 from .config import SECRET_KEY, HOST, PORT
-from .db_utils import close_db
-from .upload_utils import register_upload_routes
+from backend.utils.db import close_db
+from backend.api.upload_utils import register_upload_routes
 from .api import register_all_api_routes
 
 
