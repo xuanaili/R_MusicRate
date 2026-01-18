@@ -282,7 +282,7 @@ export default {
         this.initFavouriteTrackList();
         this.getAllScore();
         // 更新小球配置（传递给子组件）
-        this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
+        //this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
       }, deep: true
     },
     isTrackEditMode(newVal) {if (!newVal) this.showParseModal = false;},
@@ -296,7 +296,7 @@ export default {
     this.initFavouriteTrackList();
     this.getAllScore();
     this.$nextTick(() => {
-      this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
+      //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
     });
   },
   activated() {
@@ -304,7 +304,7 @@ export default {
     this.initFavouriteTrackList();
     this.getAllScore();
     this.$nextTick(() => {
-      this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
+      //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
     });
   },
   deactivated() {

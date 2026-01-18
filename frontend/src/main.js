@@ -12,6 +12,7 @@ import AlbumDetail from '@/views/AlbumDetail.vue'
 import SearchAlbumPool from '@/components/searchMusic/SearchAlbumPool.vue'
 // ========== 核心新增：导入编辑页组件 ==========
 import EditPoolAlbum from '@/components/sidebar/EditPoolAlbum.vue'
+import TagDetail from "@/views/TagDetail.vue";
 // ========== 新增结束 ==========
 
 // 安装插件
@@ -56,7 +57,18 @@ const router = new VueRouter({
       meta: { requiresAuth: true }
     },
     // ========== 新增WebHome主页路由【核心】 ==========
-    { path: '/webhome', name: 'WebHome', component: () => import('@/views/WebHome.vue') }
+    { path: '/webhome', name: 'WebHome', component: () => import('@/views/WebHome.vue') },
+
+
+
+          {
+      path: '/tag-detail',
+      name: 'TagDetail',
+      component: TagDetail,
+      meta: {
+        title: '标签详情'
+      }
+    }
 
   ]
 })

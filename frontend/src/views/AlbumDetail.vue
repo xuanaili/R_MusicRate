@@ -421,7 +421,7 @@ export default {
           this.setFullPageBg(newVal.cover_img);
           if (newVal.cover_img) this.extractAlbumMainColor(newVal.cover_img);
           // ✅✅✅ 整合新增：专辑切换时，重新匹配小球配置
-          this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
+          //this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
         }
       }
     },
@@ -552,7 +552,7 @@ export default {
   },
   mounted() {
     // ✅✅✅ 整合新增：父组件挂载后初始化小球动画
-    this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
+    //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
     this.initBallAnimation();
       this.initMeteorAnimation(); // 初始化流星动画
     this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();
@@ -560,7 +560,7 @@ export default {
   },
   activated() {
     // ✅✅✅ 整合新增：组件激活时重新初始化小球动画
-    this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
+    //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
     this.initBallAnimation();
       this.initMeteorAnimation(); // 激活时初始化流星
     this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();

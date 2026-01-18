@@ -104,6 +104,10 @@ import TagBubbleChart from '@/components/TagBubbleChart.vue'
 export default {
   name: "DailyRecommend",
   components: {TagBubbleChart},
+
+  props: {
+    activeSubTab: String,        // 父级传值，例如 'category'
+  },
   data() {
     return {
       albumData: null,
@@ -120,6 +124,7 @@ export default {
     }
   },
   created() {
+    console.log('activeSubTab =', this.activeSubTab)
     if (!localStorage.getItem('token')) {
       this.$router.push('/login');
       return;

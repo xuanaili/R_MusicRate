@@ -46,18 +46,19 @@
         </div>
         <div
           class="sub-tab-item"
-          :class="{ active: activeSubTab === 'ranking' }"
-          @click="activeSubTab = 'ranking'"
-        >
-          排行榜
-        </div>
-        <div
-          class="sub-tab-item"
           :class="{ active: activeSubTab === 'category' }"
           @click="activeSubTab = 'category'"
         >
           音乐类型
         </div>
+        <div
+          class="sub-tab-item"
+          :class="{ active: activeSubTab === 'ranking' }"
+          @click="activeSubTab = 'ranking'"
+        >
+          排行榜
+        </div>
+
         <div
           class="sub-tab-item"
           :class="{ active: activeSubTab === 'singer' }"
@@ -109,12 +110,27 @@
         <!-- 发现音乐 子组件【原封不动】 -->
         <DailyRecommend
           v-if="activeMainTab === 'discover' && activeSubTab === 'recommend'"
+
+          :active-sub-tab="activeSubTab"
           @sendCoverBg="getCoverBgUrl"
           @sendThemeColor="getThemeColor"
         />
-        <RankingList v-if="activeMainTab === 'discover' && activeSubTab === 'ranking'" />
-        <CategoryList v-if="activeMainTab === 'discover' && activeSubTab === 'category'" />
-        <SingerList v-if="activeMainTab === 'discover' && activeSubTab === 'singer'" />
+        <RankingList
+            v-if="activeMainTab === 'discover' && activeSubTab === 'ranking'"
+            :active-sub-tab="activeSubTab"
+        />
+        <CategoryList
+            v-if="activeMainTab === 'discover' && activeSubTab === 'category'"
+            :active-sub-tab="activeSubTab"
+              :mainColor="mainColor"
+  :mainColorDark="mainColorDark"
+  :mainColorDarkDouble="mainColorDarkDouble"
+
+        />
+        <SingerList
+            v-if="activeMainTab === 'discover' && activeSubTab === 'singer'"
+            :active-sub-tab="activeSubTab"
+        />
 
         <!-- ✅ 我的音乐 子组件【核心改造】 -->
         <MusicList
@@ -195,6 +211,8 @@ export default {
         this.$forceUpdate()
       })
     },
+
+
     coverBgUrl(newVal) {
       localStorage.setItem('persistCoverBg', newVal)
     },
