@@ -9,47 +9,63 @@
 
     <div v-else-if="!tagInfo" class="empty-container">
       <div class="empty-text">未找到该标签的相关信息</div>
-      <button class="back-btn" @click="$router.go(-1)">返回上一页</button>
+            <!-- 修改点1：空状态的返回按钮 -->
+      <button class="back-btn" @click="goToMusicCategory">返回音乐类型</button>
+
     </div>
 
-    <!-- 磨砂玻璃容器【和首页nav-mask-container风格统一】 -->
+    <!-- 磨砂玻璃容器【修复层级和定位】 -->
     <div v-else class="tag-detail-mask">
       <div class="tag-detail-content">
-        <!-- 顶部导航栏 -->
-        <div class="header-nav">
-          <!-- 左侧：父标签展示 -->
-          <div class="parent-tags-wrapper">
-            <div class="parent-tags" v-if="parentTags.length">
-              <router-link
-                v-for="(tag, index) in parentTags"
-                :key="tag.id"
-                :to="{ path: '/tag-detail', query: { tagName: tag.tags_name } }"
-                class="parent-tag-item"
-              >
-                {{ tag.tags_name }}
-                <span class="plus-sign" v-if="index < parentTags.length - 1">+</span>
-              </router-link>
+        <!-- 🔥 头部整体蒙版容器：导航栏 + 标签名称 + 别名 -->
+        <div class="tag-header-mask">
+          <!-- 顶部导航栏 -->
+          <div class="header-nav">
+            <!-- 左侧：父标签展示 -->
+            <div class="parent-tags-wrapper">
+              <div class="parent-tags" v-if="parentTags.length">
+                <router-link
+                  v-for="(tag, index) in parentTags"
+                  :key="tag.id"
+                  :to="{ path: '/tag-detail', query: { tagName: tag.tags_name } }"
+                  class="parent-tag-item"
+                >
+                  {{ parseEnglishName(tag.tags_name) }}
+                  <span class="plus-sign" v-if="index < parentTags.length - 1">-</span>
+                </router-link>
+                <!-- 追加当前标签英文名 -->
+                <span class="current-tag-item">
+                  <strong> ->
+                    </strong>
+                  {{ parseEnglishName(tagInfo.tags_name) }}
+
+
+                </span>
+              </div>
+              <!-- 无父标签时显示当前标签英文名 -->
+              <div class="parent-tags-placeholder" v-else>
+                {{ parseEnglishName(tagInfo.tags_name) }}
+              </div>
             </div>
-            <!-- 无父标签时占位 -->
-            <div class="parent-tags-placeholder" v-else>&nbsp;</div>
+
+            <!-- 右侧：操作按钮 -->
+            <div class="header-actions">
+      <!-- 修改点1：空状态的返回按钮 -->
+      <button class="back-btn" @click="goToMusicCategory">返回音乐类型</button>
+              <button
+                v-if="isAdmin"
+                class="edit-tag-btn"
+                @click="handleOpenEditTagSidebar"
+              >
+                ✏️ 编辑标签
+              </button>
+            </div>
           </div>
 
-          <!-- 右侧：操作按钮 -->
-          <div class="header-actions">
-            <button class="back-btn" @click="$router.go(-1)">返回上一页</button>
-            <button
-              v-if="isAdmin"
-              class="edit-tag-btn"
-              @click="handleOpenEditTagSidebar"
-            >
-              ✏️ 编辑标签
-            </button>
+          <div class="tag-basic-info">
+            <h1 class="tag-name">{{ parseEnglishName(tagInfo.tags_name) }}</h1>
+            <div v-if="tagInfo.aka_name" class="tag-aka">别名：{{ tagInfo.aka_name }}</div>
           </div>
-        </div>
-
-        <div class="tag-basic-info">
-          <h1 class="tag-name">{{ tagInfo.tags_name }}</h1>
-          <div v-if="tagInfo.aka_name" class="tag-aka">别名：{{ tagInfo.aka_name }}</div>
         </div>
 
         <!-- 简介 + 详细介绍 并排切换区域 -->
@@ -89,7 +105,7 @@
           </div>
         </div>
 
-        <!-- 气泡图 + 折线图 3:7 布局容器 -->
+        <!-- 气泡图 + 折线图 3:7 布局容器【修复响应式】 -->
         <div class="charts-container">
           <!-- 气泡图区域 - 占3份 -->
           <div class="chart-col chart-col-3">
@@ -208,8 +224,7 @@
             <div class="search-area">
               <!-- 年份筛选提示 -->
               <div v-if="selectedYear" class="year-filter-tip">
-                已筛选：<span>{{ selectedYear }}年</span>
-                <button @click="clearYearFilter" class="clear-year-btn">清空筛选</button>
+                <button @click="clearYearFilter" class="clear-year-btn">{{ selectedYear }}年</button>
               </div>
 
               <!-- 专辑名/歌手搜索框 -->
@@ -237,9 +252,9 @@
               <AlbumPoolItem
                 :album="album"
                 :is-admin="isAdmin"
-                :mainColor="mainColor"
-                :mainColorDark="mainColorDark"
-                :mainColorDarkDouble="mainColorDarkDouble"
+                :mainColor="localMainColor"
+                :mainColorDark="localMainColorDark"
+                :mainColorDarkDouble="localMainColorDarkDouble"
                 @copy-album="copyAlbum"
                 @view-detail="viewAlbumDetail"
                 @delete-album="deletePoolAlbum"
@@ -471,6 +486,25 @@ export default {
     }
   },
   methods: {
+
+goToMusicCategory() {
+  // 1. 把Tab状态存到localStorage（比window变量更稳定）
+  localStorage.setItem('targetMainTab', 'discover');
+  localStorage.setItem('targetSubTab', 'category');
+
+  // 2. 跳转/webhome（不再在then里查找组件）
+  this.$router.push(`/webhome`).catch(err => {
+    console.error('跳转失败：', err);
+    // 终极兜底：直接改URL
+    window.location.href = `${window.location.origin}/#/webhome`;
+  });
+},
+    // 🔥 新增：解析标签名称，提取英文名（分割【符号】）
+    parseEnglishName(tagName) {
+      if (!tagName) return ''
+      const englishPart = tagName.split('【')[0].trim()
+      return englishPart
+    },
     // 切换简介/详细介绍标签 - 简化逻辑，只切换选中状态
     switchIntroTab(tabType) {
       this.introActiveTab = tabType // 直接切换，不再有"全部显示"状态
@@ -1005,7 +1039,14 @@ export default {
 </script>
 
 <style scoped>
-/* 主容器 - 相对定位，层级管理【和首页一致】 */
+/* 全局样式重置 - 统一盒模型 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* 主容器 - 修复定位和响应式 */
 .tag-detail-container {
   max-width: 1600px;
   margin: 20px auto;
@@ -1014,9 +1055,11 @@ export default {
   min-height: calc(100vh - 40px);
   z-index: 2;
   font-family: "Microsoft YaHei", sans-serif;
+  width: 100%; /* 确保宽度100% */
+  overflow: hidden; /* 防止内容溢出 */
 }
 
-/* 全屏模糊背景层【1:1复刻首页的bg-layer】 */
+/* 全屏模糊背景层【修复层级和性能】 */
 .bg-layer {
   position: fixed;
   top: 0;
@@ -1027,9 +1070,10 @@ export default {
   filter: blur(25px) brightness(1.2);
   -webkit-filter: blur(25px) brightness(1.2);
   background-attachment: fixed;
+  will-change: transform; /* 优化性能 */
 }
 
-/* 加载/空状态容器 */
+/* 加载/空状态容器【修复居中】 */
 .loading-container, .empty-container {
   display: flex;
   flex-direction: column;
@@ -1039,9 +1083,15 @@ export default {
   color: v-bind(localMainColorDarkDouble);
   position: relative;
   z-index: 2;
+  width: 100%; /* 确保宽度100% */
 }
 
-/* 磨砂玻璃容器【和首页nav-mask-container风格统一】 */
+.loading-text, .empty-text {
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+
+/* 磨砂玻璃容器【修复样式和层级】 */
 .tag-detail-mask {
   background-color: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(8px);
@@ -1054,30 +1104,61 @@ export default {
   width: 100%;
   box-sizing: border-box;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  overflow: hidden; /* 防止内部内容溢出 */
 }
 
-/* 内容容器 */
+/* 内容容器【修复内边距】 */
 .tag-detail-content {
   width: 100%;
   box-sizing: border-box;
   position: relative;
   z-index: 3;
+  overflow: hidden; /* 防止溢出 */
 }
 
-/* 顶部导航栏样式 */
+/* 头部整体蒙版样式 */
+.tag-header-mask {
+  background-color: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 顶部导航栏样式【修复布局】 */
 .header-nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid rgba(0,0,0,0.05);
   position: relative;
   z-index: 3;
+  border-bottom: none !important;
+  flex-wrap: wrap; /* 响应式换行 */
+  gap: 15px; /* 添加间距 */
+}
+
+/* 导航栏下划线样式 */
+.header-nav::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background-color: v-bind(localMainColorDark) !important;
+  opacity: 1 !important;
 }
 
 .parent-tags-wrapper {
   flex: 1;
+  min-width: 200px; /* 最小宽度，防止挤压 */
 }
 
 .parent-tags {
@@ -1089,6 +1170,9 @@ export default {
 
 .parent-tags-placeholder {
   height: 24px;
+  color: v-bind(localMainColor);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .parent-tag-item {
@@ -1112,10 +1196,20 @@ export default {
   font-weight: bold;
 }
 
+.current-tag-item {
+  color: v-bind(localMainColor);
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .header-actions {
   display: flex;
   gap: 10px;
   white-space: nowrap;
+  flex-shrink: 0; /* 防止被挤压 */
 }
 
 .back-btn {
@@ -1126,6 +1220,11 @@ export default {
   border-radius: 4px;
   cursor: pointer;
   font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.back-btn:hover {
+  opacity: 0.9;
 }
 
 .edit-tag-btn {
@@ -1137,6 +1236,11 @@ export default {
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.edit-tag-btn:hover {
+  opacity: 0.9;
 }
 
 /* 标签基础信息 */
@@ -1153,24 +1257,21 @@ export default {
   font-style: italic;
 }
 
-/* 简介+详细介绍 并排切换样式 - 移除原有样式，复用tab-item样式 */
+/* 简介+详细介绍 区域【修复样式】 */
 .intro-tabs-container {
   margin-bottom: 30px;
   background: rgba(255,255,255,0.1);
   border-radius: 8px;
   padding: 20px;
   backdrop-filter: blur(4px);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .intro-tabs {
   display: flex;
   gap: 10px;
   margin-bottom: 15px;
-}
-
-/* 移除原有intro-tab-item样式，完全复用tab-item样式 */
-.intro-tab-item {
-  /* 样式完全由tab-item控制 */
 }
 
 .intro-content-wrap {
@@ -1184,6 +1285,7 @@ export default {
   padding: 15px;
   border-radius: 6px;
   background: rgba(255,255,255,0.2);
+  min-height: 100px; /* 最小高度 */
 }
 
 .intro-panel h3 {
@@ -1199,25 +1301,30 @@ export default {
   white-space: pre-line;
 }
 
-/* 气泡图+折线图 3:7 布局样式 */
+/* 气泡图+折线图 3:7 布局【核心修复】 */
 .charts-container {
   display: flex;
   gap: 20px;
   margin: 30px 0;
   width: 100%;
   box-sizing: border-box;
+  flex-wrap: wrap; /* 响应式换行 */
 }
 
-/* 3份列 */
+/* 修复列布局 - 使用flex-basis而不是flex */
+.chart-col {
+  box-sizing: border-box;
+  min-width: 0; /* 防止内容溢出 */
+}
+
 .chart-col-3 {
-  flex: 3;
-  min-width: 0; /* 防止内容溢出 */
+  flex: 0 0 calc(30% - 10px); /* 精确30%宽度 */
+  min-width: 280px; /* 最小宽度，保证小屏幕可用 */
 }
 
-/* 7份列 */
 .chart-col-7 {
-  flex: 7;
-  min-width: 0; /* 防止内容溢出 */
+  flex: 0 0 calc(70% - 10px); /* 精确70%宽度 */
+  min-width: 400px; /* 最小宽度 */
 }
 
 /* 气泡图区域样式 */
@@ -1228,6 +1335,7 @@ export default {
   backdrop-filter: blur(4px);
   height: 100%; /* 让气泡图容器高度和折线图一致 */
   box-sizing: border-box;
+  min-height: 250px; /* 最小高度 */
 }
 
 .tag-bubble-section h3 {
@@ -1237,7 +1345,7 @@ export default {
   font-weight: 600;
 }
 
-/* 图表样式 - 优化居中显示 */
+/* 图表样式 - 优化显示 */
 .tag-album-chart {
   padding: 20px;
   background: rgba(255,255,255,0.1);
@@ -1248,6 +1356,7 @@ export default {
   align-items: center;
   height: 100%; /* 让折线图容器高度和气泡图一致 */
   box-sizing: border-box;
+  min-height: 250px; /* 最小高度 */
 }
 
 .chart-loading, .chart-empty {
@@ -1259,68 +1368,24 @@ export default {
 }
 
 #albumYearChart {
-  width: 100% !important;  /* 适配7份列宽度 */
+  width: 100% !important;
   height: 250px !important;
   min-height: 250px !important;
   cursor: pointer;
   border-radius: 8px;
   background:transparent !important;
   backdrop-filter: blur(4px);
-  margin: 0 auto !important; /* 强制居中 */
-}
-
-/* 标签详情其他样式 */
-.tag-brief-intro, .tag-detail-intro, .tag-related-info {
-  margin-bottom: 30px;
-}
-
-.tag-brief-intro h3, .tag-detail-intro h3, .tag-related-info h3 {
-  color: v-bind(localMainColorDarkDouble);
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.tag-detail-intro .intro-content {
-  line-height: 1.8;
-  color: v-bind(localMainColorDark);
-  white-space: pre-line;
-}
-
-.related-item h4 {
-  color: v-bind(localMainColorDark);
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.related-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.related-tag {
-  padding: 6px 12px;
-  background-color: rgba(255,255,255,0.1);
-  border-radius: 20px;
-  font-size: 14px;
-  color: v-bind(localMainColorDark);
-  text-decoration: none;
-  backdrop-filter: blur(4px);
-}
-
-.related-tag:hover {
-  background-color: v-bind(localMainColor);
-  color: #fff;
+  margin: 0 auto !important;
 }
 
 /* 专辑列表容器样式 */
 .album-list-container {
   margin-top: 30px;
   width: 100%;
+  box-sizing: border-box;
 }
 
-/* 顶部操作区样式【和首页统一】 */
+/* 顶部操作区样式【修复布局】 */
 .all-actions-wrapper {
   display: flex;
   align-items: center;
@@ -1340,6 +1405,7 @@ export default {
 .dropdown-btn-container {
   position: relative;
   z-index: 9999;
+  flex-shrink: 0; /* 防止被挤压 */
 }
 
 .dropdown-btn {
@@ -1393,6 +1459,7 @@ export default {
   backdrop-filter: none !important;
   border: none;
   overflow: visible;
+  min-width: 100%; /* 最小宽度 */
 }
 
 .dropdown-options li {
@@ -1426,7 +1493,7 @@ export default {
   box-sizing: border-box;
 }
 
-/* 核心样式：升序/降序按钮样式，简介/详细介绍按钮复用此样式 */
+/* 核心样式：按钮样式 */
 .tab-item {
   padding: 8px 16px;
   border-radius: 6px;
@@ -1440,13 +1507,11 @@ export default {
   background: transparent;
 }
 
-/* 激活状态：背景有颜色，文字白色 */
 .tab-item.active {
   background: v-bind(localMainColorDark);
   color: #fff;
 }
 
-/* 未激活状态：底部横线，透明背景，有字体颜色 */
 .tab-item::after {
   content: '';
   position: absolute;
@@ -1455,105 +1520,90 @@ export default {
   width: 100%;
   height: 4px;
   border-radius: 2px;
-  background-color: v-bind(localMainColorDark) !important;
-  opacity: 1 !important;
+  background-color: v-bind(localMainColorDark);
+  opacity: 0.3;
+  transition: opacity 0.2s;
 }
 
-/* 搜索区域样式 */
+.tab-item.active::after {
+  opacity: 0;
+}
+
+/* 搜索区域样式【修复布局】 */
 .search-area {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
   margin-left: auto;
+  flex-wrap: wrap; /* 响应式换行 */
 }
 
-/* 年份筛选提示样式 */
 .year-filter-tip {
-  padding: 6px 12px;
-  background: rgba(64, 158, 255, 0.1);
+  background: v-bind(localMainColor);
+  color: white;
+  padding: 8px 12px;
   border-radius: 4px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-
-.year-filter-tip span {
-  color: v-bind(localMainColor);
-  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .clear-year-btn {
-  padding: 2px 8px;
-  background: v-bind(localMainColor);
-  color: white;
+  background: transparent;
   border: none;
-  border-radius: 3px;
+  color: white;
   cursor: pointer;
-  font-size: 12px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font-weight: 600;
+  padding: 0;
+  margin: 0;
 }
 
-/* 搜索框样式 */
 .search-container {
   display: flex;
   align-items: center;
-  gap: 8px;
+  background: transparent;
+  border-radius: 4px;
+  padding: 0 10px;
+  flex: 1;
+  min-width: 200px; /* 最小宽度 */
 }
 
 .search-input {
-  padding: 6px 10px;
-  width: 200px;
-  border-radius: 4px;
-  font-size: 14px;
-  background: rgba(255,255,255,0.2) !important;
-  border: none !important;
-  color: v-bind(localMainColorDarkDouble) !important;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  color: v-bind(localMainColorDarkDouble);
   outline: none;
-  backdrop-filter: blur(4px);
+  width: 100%; /* 改为100%宽度 */
+  min-width: 150px;
 }
 
 .search-input::placeholder {
-  color: v-bind(localMainColorDarkDouble) !important;
+  color: v-bind(localMainColorDark);
   opacity: 0.7;
 }
 
 .search-btn {
-  padding: 6px 12px;
-  background: v-bind(localMainColorDark);
+  background: v-bind(localMainColor);
   color: white;
   border: none;
+  padding: 8px 12px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .clear-btn {
-  padding: 6px 12px;
-  background: v-bind(localMainColorDarkDouble);
-  color: white;
+  background: transparent;
   border: none;
-  border-radius: 4px;
+  color: v-bind(localMainColorDark);
   cursor: pointer;
   font-size: 14px;
+  padding: 0 5px;
+  flex-shrink: 0;
 }
 
-.clear-btn:hover {
-  background: v-bind(localMainColorDark);
-}
-
-/* 搜索结果样式 */
-.loading-tip, .empty-tip {
-  text-align: center;
-  color: v-bind(localMainColorDark);
-  padding: 30px 0;
-}
-
+/* 专辑列表样式 */
 .album-list {
   margin-top: 20px;
   position: relative;
@@ -1570,101 +1620,120 @@ export default {
   z-index: 2;
 }
 
-/* 分页样式【和首页统一】 */
+.loading-tip, .empty-tip {
+  text-align: center;
+  padding: 40px 0;
+  color: v-bind(localMainColorDark);
+  font-size: 14px;
+  width: 100%;
+}
+
+/* 分页样式【修复布局】 */
 .pagination {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   margin-top: 30px;
-  padding: 10px 16px;
   flex-wrap: wrap;
   width: 100%;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(4px);
-  border-radius: 8px;
-  box-sizing: border-box;
-  justify-content: flex-start;
+  padding: 10px;
+}
+
+.page-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: v-bind(localMainColor);
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.2s;
+}
+
+.page-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .page-info-wrapper {
-  position: relative;
-  padding: 4px 0;
-  display: inline-block;
-}
-
-.page-info {
-  color: v-bind(localMainColorDarkDouble);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.page-info-wrapper::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background-color: v-bind(localMainColorDark) !important;
-  opacity: 1 !important;
+  padding: 0 10px;
+  color: v-bind(localMainColorDark);
 }
 
 .jump-page {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
+  flex-shrink: 0;
 }
 
 .page-input {
-  padding: 6px 10px;
   width: 60px;
+  padding: 8px;
+  border: 1px solid rgba(0,0,0,0.1);
   border-radius: 4px;
-  font-size: 14px;
-  background: rgba(255,255,255,0.2) !important;
-  border: none !important;
-  color: v-bind(localMainColorDarkDouble) !important;
   outline: none;
-  backdrop-filter: blur(4px);
   text-align: center;
 }
 
 .jump-btn {
-  padding: 6px 12px;
-  background: v-bind(localMainColorDark);
-  color: white;
+  padding: 8px 12px;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.page-btn {
-  padding: 6px 12px;
   background: v-bind(localMainColorDark);
   color: white;
-  border: none;
-  border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.page-btn:disabled {
-  background: #999;
-  cursor: not-allowed;
-  opacity: 0.7;
 }
 
 /* 响应式适配 */
-@media (max-width: 768px) {
+@media (max-width: 1200px) {
+  .chart-col-3, .chart-col-7 {
+    flex: 0 0 100%; /* 小屏幕下占满宽度 */
+    margin-bottom: 20px;
+  }
+
   .charts-container {
     flex-direction: column;
+    gap: 20px;
   }
-  .chart-col-3, .chart-col-7 {
-    flex: none;
+}
+
+@media (max-width: 768px) {
+  .tag-detail-container {
+    padding: 0 10px;
+    margin: 10px auto;
+  }
+
+  .tag-detail-mask {
+    padding: 15px;
+  }
+
+  .header-nav {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .header-actions {
+    align-self: flex-end;
+  }
+
+  .all-actions-wrapper {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .search-area {
+    margin-left: 0;
     width: 100%;
+    margin-top: 10px;
+  }
+
+  .album-list {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 15px;
   }
 }
 </style>

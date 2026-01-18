@@ -6,6 +6,8 @@ from backend.utils.db import get_db, get_current_user_id, get_album_table_name
 import pymysql
 
 from backend.utils.decorators import login_required
+from backend.utils.json import safe_json_loads
+from backend.utils.tag import get_album_tag_stats
 
 
 def register_tags_routes(app):
@@ -183,6 +185,8 @@ def register_tags_routes(app):
             print(f"❌ 获取标签详情出错：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取标签详情失败：{str(e)}"}), 200
+
+
 
     # 在 register_tags_routes 函数中新增以下接口
     # ✅ 4. 新增：获取树状结构的标签列表接口
@@ -503,7 +507,6 @@ def register_tags_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取失败：{str(e)}"}), 200
 
-    # 在 register_tags_routes 函数中修改 /api/tags/album/list 接口
     @app.route('/api/tags/album/list', methods=['GET', 'OPTIONS'])
     @login_required
     def get_tag_album_list():
@@ -592,20 +595,21 @@ def register_tags_routes(app):
                 user_listened_source_ids = [item['source_pool_id'] for item in cursor.fetchall()]
 
             # ======================
-            # Step 3：构建筛选条件
+            # Step 3：构建筛选条件（修复：添加表别名ap）
             # ======================
             query_params = []
-            where_conditions = ["id IN ({})".format(','.join(['%s'] * len(album_ids)))]
+            # 修复1：添加表别名ap，避免字段冲突
+            where_conditions = ["ap.id IN ({})".format(','.join(['%s'] * len(album_ids)))]
             query_params.extend(album_ids)
 
             # 年份筛选
             if release_year and release_year.isdigit():
-                where_conditions.append("release_year = %s")
+                where_conditions.append("ap.release_year = %s")
                 query_params.append(int(release_year))
 
             # 专辑名/歌手搜索
             if keyword:
-                where_conditions.append("(album_name LIKE %s OR singer LIKE %s)")
+                where_conditions.append("(ap.album_name LIKE %s OR ap.singer LIKE %s)")
                 query_params.extend([f'%{keyword}%', f'%{keyword}%'])
 
             # ✅ 新增：听状态筛选
@@ -613,7 +617,7 @@ def register_tags_routes(app):
                 # 只显示用户已听的专辑
                 if user_listened_source_ids:
                     source_placeholders = ','.join(['%s'] * len(user_listened_source_ids))
-                    where_conditions.append(f"id IN ({source_placeholders})")
+                    where_conditions.append(f"ap.id IN ({source_placeholders})")
                     query_params.extend(user_listened_source_ids)
                 else:
                     # 无已听专辑，直接返回空
@@ -634,15 +638,16 @@ def register_tags_routes(app):
                 # 只显示用户未听的专辑
                 if user_listened_source_ids:
                     source_placeholders = ','.join(['%s'] * len(user_listened_source_ids))
-                    where_conditions.append(f"id NOT IN ({source_placeholders})")
+                    where_conditions.append(f"ap.id NOT IN ({source_placeholders})")
                     query_params.extend(user_listened_source_ids)
 
             # ======================
-            # Step 4：查询总数
+            # Step 4：查询总数（修复：关联users表+添加表别名）
             # ======================
             count_sql = f'''
                 SELECT COUNT(*) as total 
-                FROM album_pool 
+                FROM album_pool ap
+                LEFT JOIN users u ON ap.create_user = u.user_id
                 WHERE {" AND ".join(where_conditions)}
             '''
             cursor.execute(count_sql, query_params)
@@ -650,30 +655,70 @@ def register_tags_routes(app):
             total_pages = (total + page_size - 1) // page_size
 
             # ======================
-            # Step 5：分页查询专辑列表
+            # Step 5：分页查询专辑列表（修复：关联users表+添加表别名）
             # ======================
             offset = (page - 1) * page_size
+            # 修复2：关联users表获取创建用户名称，添加表别名ap
             list_sql = f'''
-                SELECT * 
-                FROM album_pool 
+                SELECT ap.*, u.username as create_user_name 
+                FROM album_pool ap
+                LEFT JOIN users u ON ap.create_user = u.user_id
                 WHERE {" AND ".join(where_conditions)}
-                ORDER BY {sort_field} {sort_order}
+                ORDER BY ap.{sort_field} {sort_order}
                 LIMIT %s OFFSET %s
             '''
-            query_params.extend([page_size, offset])
-            cursor.execute(list_sql, query_params)
+            # 修复3：先复制筛选参数，避免分页参数污染原参数列表
+            list_query_params = query_params.copy()
+            list_query_params.extend([page_size, offset])
+            cursor.execute(list_sql, list_query_params)
             album_list = cursor.fetchall()
 
-            # ✅ 为每个专辑添加听状态标识
+            # ======================
+            # Step 6：格式化数据（添加创建用户和标签信息）
+            # ======================
+            result_list = []
             for album in album_list:
+                # 添加听状态标识
                 album['is_listened'] = album['id'] in user_listened_source_ids
+
+                # 解析JSON字段（和搜索接口保持一致）
+                main_type = safe_json_loads(album.get('main_type')) or []
+                tags = safe_json_loads(album.get('tags')) or []
+                tracks = safe_json_loads(album.get('tracks')) or []
+
+                # 获取标签统计信息
+                album_tag_stats = get_album_tag_stats(album['id'], cursor) if 'get_album_tag_stats' in globals() else []
+
+                # 格式化创建时间
+                create_time_str = album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album.get('create_time') else ''
+
+                # 组装返回数据（和搜索接口字段一致）
+                result_item = {
+                    "id": album['id'],
+                    "album_name": album['album_name'],
+                    "cover_img": album['cover_img'],
+                    "singer": album['singer'],
+                    "release_year": album['release_year'],
+                    "main_type": main_type,
+                    "tags": tags,
+                    "tracks": tracks,
+                    "album_intro": album.get('album_intro', '') or '',
+                    "duration_type": album.get('duration_type', 'LP') or 'LP',
+                    "my_score": album['my_score'],
+                    "create_user": album['create_user'],
+                    "create_user_name": album.get('create_user_name') or "未知用户",
+                    "create_time": create_time_str,
+                    "tag_statistics": album_tag_stats,
+                    "is_listened": album['is_listened']
+                }
+                result_list.append(result_item)
 
             # 构造返回数据
             return jsonify({
                 "code": 200,
                 "msg": "获取专辑列表成功",
                 "data": {
-                    "list": album_list,
+                    "list": result_list,
                     "pagination": {
                         "total": total,
                         "page": page,

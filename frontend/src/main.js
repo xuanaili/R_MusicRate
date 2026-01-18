@@ -75,7 +75,7 @@ const router = new VueRouter({
 
 // ========== 新增：全局路由守卫 ==========
 router.beforeEach((to, from, next) => {
-  const authRequired = ['MusicList', 'AddAlbum', 'albumDetail', 'SearchAlbumPool', 'AlbumPoolDetail', 'EditPoolAlbum']
+  const authRequired = ['WebHome','MusicList', 'AddAlbum', 'albumDetail', 'SearchAlbumPool', 'AlbumPoolDetail', 'EditPoolAlbum']
   const hasToken = !!localStorage.getItem('token')
   if (authRequired.includes(to.name) && !hasToken) {
     if (from.name !== 'Login') {

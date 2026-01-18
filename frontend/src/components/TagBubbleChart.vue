@@ -32,24 +32,21 @@
         其他
       </div>
 
-      <!-- 过滤标签弹窗 -->
+      <!-- 过滤标签弹窗 - 修改class名称以复用样式 -->
       <div
         v-if="showFilteredTags && filteredOutTags.length > 0"
-        class="filtered-tags-popup"
+        class="tag-options-list filtered-tags-popup"
         @click.stop
       >
-        <div class="popup-content">
-          <div
-            class="tag-item"
-            v-for="(tag, idx) in filteredOutTags"
-            :key="idx"
-            :title="tag.tag.match(/【(.*?)】/)?.[1] || tag.tag"
-            @click="handleTagClick(tag.tag)"
-            style="cursor: pointer;"
-          >
-            <span class="tag-name">{{ tag.tag.split('【')[0].trim() || tag.tag }}</span>
-            <span class="tag-percent">{{ tag.percent }}%</span>
-          </div>
+        <div
+          class="tag-option"
+          v-for="(tag, idx) in filteredOutTags"
+          :key="idx"
+          :title="tag.tag.match(/【(.*?)】/)?.[1] || tag.tag"
+          @click="handleTagClick(tag.tag)"
+        >
+          <span class="tag-name">{{ tag.tag.split('【')[0].trim() || tag.tag }}</span>
+          <span class="tag-percent">{{ tag.percent }}%</span>
         </div>
       </div>
 
@@ -78,6 +75,7 @@
 </template>
 
 <script>
+// script部分代码保持不变，这里省略以突出重点
 import axios from 'axios'
 import AddTag from '@/components/sidebar/AddTag.vue' // 路径和你的保持一致
 
@@ -283,82 +281,56 @@ export default {
   border: none !important;
 }
 
-/* 过滤标签按钮样式 */
+/* 过滤标签按钮样式 - 微调以匹配整体风格 */
 .filtered-tags-btn {
   position: absolute;
   right: 10px;
   bottom: 10px;
-  padding: 4px 12px;
-  background-color: #f0f0f0;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  font-size: 12px;
-  color: #666;
+  padding: 6px 10px;
+  color: v-bind(mainColorDarkDouble) !important;
+  font-size: 14px;
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.2s;
+  transition: background 0.2s;
   z-index: 101;
+  border-radius: 4px;
 }
 
 .filtered-tags-btn:hover {
-  background-color: #e8e8e8;
+  background: rgba(0,0,0,0.05) !important;
 }
 
-/* 过滤标签弹窗样式 */
+/* 过滤标签弹窗样式 - 完全复用可选标签列表样式 */
 .filtered-tags-popup {
   position: absolute;
   right: 10px;
   bottom: 40px;
-  width: 280px; /* 增大弹窗宽度，适配长标签 */
-  background-color: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  width: 280px;
+  max-height:200px;
   z-index: 101;
+  gap:5px;
+  padding:5px;
 }
 
-.popup-header {
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #333;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.popup-content {
-  max-height: 150px;
-  overflow-y: auto;
-  padding: 8px 12px;
-}
-
-.tag-item {
+/* 复用可选标签的item样式 */
+.tag-option {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
-  font-size: 12px;
-  border-bottom: 1px dashed #f5f5f5;
-  /* 新增：悬停高亮效果，提升交互体验 */
-  transition: background-color 0.2s;
+  padding:6px 10px;
+  cursor:pointer;
+  font-size:14px;
+  border-radius:4px;
+  transition: background 0.2s;
+	color: v-bind(mainColorDarkDouble) !important;
 }
 
-/* 新增：tag-item 悬停样式 */
-.tag-item:hover {
-  background-color: #f8f8f8;
-}
-
-.tag-item:last-child {
-  border-bottom: none;
+.tag-option:hover {
+  background: rgba(0,0,0,0.05) !important;
+  color: v-bind(mainColor) !important;
 }
 
 .tag-name {
-  color: #666;
-  /* 关键修改：移除省略号相关属性 */
-  /* max-width: 120px; */
-  /* overflow: hidden; */
-  /* text-overflow: ellipsis; */
-  /* white-space: nowrap; */
-  /* 新增：允许换行，限制最大宽度 */
   max-width: 200px;
   word-wrap: break-word;
   white-space: normal;
@@ -366,9 +338,8 @@ export default {
 }
 
 .tag-percent {
-  color: #999;
+  color: v-bind(mainColor) !important;
   font-weight: 500;
-  /* 新增：百分比数字右对齐，固定宽度 */
   min-width: 40px;
   text-align: right;
   margin-left: 8px;
@@ -407,11 +378,8 @@ export default {
   transition: transform 0.2s !important;
   z-index: 99 !important;
   cursor: pointer;
-  /* 关键修复：强制宽高一致，padding 计入宽高内 */
   box-sizing: border-box !important;
-  /* 移除 min-width，避免撑开宽高 */
   padding: 0 8px;
-  /* 强制文字不超出气泡 */
   overflow: hidden;
 }
 
@@ -424,16 +392,9 @@ export default {
   font-weight: 600 !important;
   margin-bottom: 4px !important;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3) !important;
-  /* 关键修改：移除省略号相关属性 */
-  /* white-space: nowrap; */
-  /* max-width: 90%; */
-  /* overflow: hidden; */
-  /* text-overflow: ellipsis; */
-  /* 新增：允许换行 */
   white-space: normal;
   text-align: center;
   line-height: 1.4;
-  /* 限制标签最大宽度，防止超出气泡 */
   max-width: calc(100% - 16px);
 }
 
@@ -453,5 +414,15 @@ export default {
   background: transparent !important;
   border-radius: 6px;
   border: none !important;
+}
+
+/* 复用滚动条样式 */
+.filtered-tags-popup::-webkit-scrollbar {
+  width:4px;
+}
+
+.filtered-tags-popup::-webkit-scrollbar-thumb {
+  background: v-bind(mainColorDarkDouble);
+  border-radius:2px;
 }
 </style>

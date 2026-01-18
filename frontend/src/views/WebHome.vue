@@ -261,15 +261,30 @@ export default {
         window.location.href = '/#/login'
       }
     },
-    setActiveTab() {
-      if (window.targetTab) {
-        this.activeMainTab = window.targetTab
-        // ✅ 优化：切换主tab时自动选中对应默认子tab
-        if(window.targetTab === 'mymusic') this.activeSubTab = 'albumList'
-        if(window.targetTab === 'searchmusic') this.activeSubTab = 'albumPool'
-        window.targetTab = null
-      }
-    },
+// 1. 修改 setActiveTab 方法
+setActiveTab() {
+  // 优先读localStorage的状态（最稳定）
+  const targetMainTab = localStorage.getItem('targetMainTab');
+  const targetSubTab = localStorage.getItem('targetSubTab');
+
+  if (targetMainTab) {
+    this.activeMainTab = targetMainTab;
+    // 读取子Tab状态
+    this.activeSubTab = targetSubTab || 'recommend';
+    // 用完就删，避免下次加载生效
+    localStorage.removeItem('targetMainTab');
+    localStorage.removeItem('targetSubTab');
+  }
+  // 兼容原有window变量逻辑
+  else if (window.targetTab) {
+    this.activeMainTab = window.targetTab;
+    if(window.targetTab === 'mymusic') this.activeSubTab = 'albumList';
+    if(window.targetTab === 'searchmusic') this.activeSubTab = 'albumPool';
+    if(window.targetTab === 'discover') this.activeSubTab = window.targetSubTab || 'recommend';
+    window.targetTab = null;
+    window.targetSubTab = null;
+  }
+},
     getCoverBgUrl(url) {
       this.coverBgUrl = url
     },
