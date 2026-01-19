@@ -13,9 +13,6 @@ import pymysql
 from mutagen.mp3 import MP3
 from mutagen import MutagenError
 
-from ..utils.audio_resource import parse_audio_metadata, merge_audio_files
-
-
 def register_audio_routes(app):
     """注册专辑音频资源相关路由"""
 
@@ -302,118 +299,7 @@ def register_audio_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"查询失败：{str(e)}"}), 500
 
-    # ========== 新增：1. 音频解析接口（接收多文件，解析元数据） ==========
-    @app.route('/api/audio/unlock/parse', methods=['POST', 'OPTIONS'])
-    @login_required
-    def parse_audio_files():
-        try:
-            if request.method == 'OPTIONS':
-                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
 
-            current_user_id = get_current_user_id()
-            if not current_user_id:
-                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
-            current_user_id = int(current_user_id)
-
-            # 校验管理员权限
-            db = get_db()
-            cursor = db.cursor(pymysql.cursors.DictCursor)
-            cursor.execute('SELECT is_admin FROM users WHERE user_id = %s', (current_user_id,))
-            user_info = cursor.fetchone()
-            if not user_info or user_info['is_admin'] != 1:
-                cursor.close()
-                return jsonify({"code": 403, "msg": "仅管理员可解析音频！"}), 403
-
-            # 获取上传的音频文件
-            audio_files = request.files.getlist('audio_files')
-            if not audio_files or len(audio_files) == 0:
-                cursor.close()
-                return jsonify({"code": 400, "msg": "请上传至少一个音频文件！"}), 400
-
-            # 临时保存上传的文件
-            temp_files = []
-            songs_info = []
-            total_duration = 0
-
-            for idx, file in enumerate(audio_files):
-                # 校验文件格式
-                filename = file.filename.strip()
-                ext = filename.lower().split('.')[-1]
-                if ext not in ['mp3', 'flac', 'wav', 'm4a']:
-                    continue
-
-                # 生成临时文件名
-                temp_filename = f"temp_{uuid.uuid4().hex[:8]}.{ext}"
-                temp_path = os.path.join(AUDIO_UPLOAD_FOLDER, 'temp', temp_filename)
-
-                # 创建临时目录
-                os.makedirs(os.path.dirname(temp_path), exist_ok=True)
-
-                # 保存临时文件
-                file.save(temp_path)
-                temp_files.append(temp_path)
-
-                # 解析元数据
-                metadata = parse_audio_metadata(temp_path)
-                total_duration += metadata['duration']
-                songs_info.append({
-                    'index': idx + 1,
-                    'title': metadata['title'],
-                    'artist': metadata['artist'],
-                    'duration': metadata['duration'],
-                    'duration_format': f"{metadata['duration'] // 60}:{metadata['duration'] % 60:02d}"
-                })
-
-            if len(temp_files) == 0:
-                cursor.close()
-                return jsonify({"code": 400, "msg": "没有有效的音频文件！"}), 400
-
-            # 合并音频文件
-            merged_filename = f"merged_{uuid.uuid4().hex[:8]}.mp3"
-            merged_path = os.path.join(AUDIO_UPLOAD_FOLDER, merged_filename)
-
-            if not merge_audio_files(temp_files, merged_path):
-                # 清理临时文件
-                for temp_file in temp_files:
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
-                cursor.close()
-                return jsonify({"code": 500, "msg": "音频合并失败！"}), 500
-
-            # 清理临时文件
-            for temp_file in temp_files:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
-
-            # 生成合并后音频的URL
-            merged_url = f"{AUDIO_BASE_URL}{merged_filename}"
-
-            # 解析合并后音频的时长
-            merged_duration = 0
-            try:
-                audio = MP3(merged_path)
-                merged_duration = int(audio.info.length)
-            except MutagenError as e:
-                print(f"⚠️ 合并音频时长解析失败：{str(e)}，使用累加值")
-                merged_duration = total_duration
-
-            cursor.close()
-
-            return jsonify({
-                "code": 200,
-                "msg": f"成功解析{len(songs_info)}首曲目并合并",
-                "data": {
-                    "mp3_url": merged_url,
-                    "mp3_duration": merged_duration,
-                    "songs": songs_info,
-                    "total_songs": len(songs_info),
-                    "total_duration": total_duration
-                }
-            })
-        except Exception as e:
-            print(f"❌ 音频解析合并出错：{str(e)}")
-            print(traceback.format_exc())
-            return jsonify({"code": 500, "msg": f"解析失败：{str(e)}"}), 500
 
     # ========== 新增：2. 上传合并后的音频到专辑池 ==========
     @app.route('/api/album/pool/audio/upload/merged', methods=['POST', 'OPTIONS'])
