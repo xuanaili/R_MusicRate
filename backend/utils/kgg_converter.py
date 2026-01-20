@@ -4,14 +4,12 @@ import subprocess
 import time
 from pathlib import Path
 import logging
-import glob
-import re
-from mutagen import File
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, APIC, TRCK, ID3NoHeaderError
 from mutagen.oggvorbis import OggVorbis
 import base64
 from io import BytesIO
 from PIL import Image
+
+from backend.utils.unlock import add_mp3_metadata, ensure_dir_exists, get_ffmpeg_exe
 
 # ===================== 配置区域 =====================
 # 请根据你的实际路径配置
@@ -34,38 +32,9 @@ logger = logging.getLogger(__name__)
 
 
 # ===================== 工具函数 =====================
-def ensure_dir_exists(dir_path: str | Path) -> bool:
-    """确保目录存在，不存在则创建"""
-    try:
-        dir_path = Path(dir_path)
-        dir_path.mkdir(parents=True, exist_ok=True)
-        return True
-    except Exception as e:
-        logger.error(f"创建目录失败 {dir_path}: {str(e)}")
-        return False
 
 
-def get_ffmpeg_exe():
-    """获取有效的FFmpeg可执行文件路径"""
-    global FFMPEG_PATH
-    if FFMPEG_PATH and os.path.exists(FFMPEG_PATH):
-        return FFMPEG_PATH
 
-    # 检查常见路径
-    possible_paths = [
-        r"tools/ffmpeg/ffmpeg.exe",
-        r"U:\project\python\AudioConnect\tools\ffmpeg\ffmpeg.exe",
-        r"G:\project\python\AudioConnect\ffmpeg\ffmpeg.exe",
-        r"C:\ffmpeg\bin\ffmpeg.exe",
-        "ffmpeg.exe"
-    ]
-
-    for path in possible_paths:
-        if os.path.exists(path):
-            FFMPEG_PATH = path
-            return path
-
-    raise FileNotFoundError("未找到FFmpeg可执行文件！")
 
 
 def run_command(cmd: list, timeout: int = 60, cwd: str = None) -> tuple[bool, str]:
@@ -204,32 +173,6 @@ def get_ogg_metadata(ogg_file: Path) -> dict:
         }
 
 
-def add_mp3_metadata(mp3_file: Path, metadata: dict):
-    """为MP3文件添加元数据"""
-    try:
-        try:
-            audio = ID3(mp3_file)
-        except ID3NoHeaderError:
-            audio = ID3()
-
-        audio.delete()
-        audio.add(TIT2(encoding=3, text=metadata["title"]))
-        audio.add(TPE1(encoding=3, text=metadata["artist"]))
-        audio.add(TALB(encoding=3, text=metadata["album"]))
-
-        # 添加封面
-        if metadata.get("cover"):
-            audio.add(APIC(
-                encoding=3,
-                mime="image/jpeg",
-                type=3,
-                desc="Cover",
-                data=metadata["cover"]
-            ))
-
-        audio.save(mp3_file, v2_version=4)
-    except Exception as e:
-        logger.warning(f"添加MP3元数据失败: {str(e)}")
 
 
 def ogg_to_mp3(ogg_file: Path, output_dir: Path) -> tuple[bool, Path | None]:

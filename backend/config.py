@@ -40,6 +40,7 @@ if not os.path.exists(AUDIO_UPLOAD_FOLDER):
 AUDIO_BASE_URL = f"http://{HOST}:{PORT}/tracks/"
 
 # ================= 常量配置 =================
+# ================= 常量配置 =================
 # 分页默认值
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 10
@@ -48,3 +49,35 @@ VALID_SORT_FIELDS = ['album_name', 'release_year', 'singer', 'my_score','created
 # 默认管理员账号
 DEFAULT_ADMIN_USER = "admin"
 DEFAULT_ADMIN_PWD = "123456"
+
+# ================= NCM解密配置（新增） =================
+# NCM临时上传目录（存放前端上传的NCM文件）
+import tempfile
+from pathlib import Path
+# 基于项目目录创建ncm_temp文件夹
+NCM_UPLOAD_TEMP_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "backend/data/ncm_temp"
+)
+# 自动创建目录
+if not os.path.exists(NCM_UPLOAD_TEMP_DIR):
+    os.makedirs(NCM_UPLOAD_TEMP_DIR)
+
+# NCM解密后MP3临时目录（也可复用AUDIO_UPLOAD_FOLDER）
+NCM_DECRYPT_TEMP_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "backend/data/ncm_decrypt_temp"
+)
+if not os.path.exists(NCM_DECRYPT_TEMP_DIR):
+    os.makedirs(NCM_DECRYPT_TEMP_DIR)
+
+# NCM文件大小限制（200MB）
+NCM_MAX_FILE_SIZE = 200 * 1024 * 1024
+# 临时文件过期时间（小时）
+NCM_TEMP_FILE_EXPIRE_HOURS = 24
+
+
+
+
+
+

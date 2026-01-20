@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 
 
 from backend.utils.kgg_converter import kgg_to_mp3, batch_convert_kgg_to_mp3
+from backend.utils.ncm_unlock import batch_convert_ncm_to_mp3
 from backend.utils.unlock import allowed_file, get_audio_metadata, get_simple_album_id, upload_cover_to_imgbed, \
     extract_album_cover, merge_audio_files, upload_merged_audio, format_duration
 
@@ -163,167 +164,7 @@ def register_unlock_routes(app):
                 'msg': f'解析失败：{str(e)}'
             }), 200
 
-    # ========== 新增：KGG转MP3并解析接口 ==========
-    @app.route('/api/audio/unlock/convert-kgg', methods=['POST', 'OPTIONS'])
-    def convert_kgg_to_mp3_and_parse():
-        """处理KGG文件，转换为MP3后执行解析流程"""
-        try:
-            # 检查是否有文件上传
-            if 'kgg_files' not in request.files:
-                return jsonify({
-                    'code': 400,
-                    'msg': '请上传KGG格式文件'
-                }), 200
-
-            files = request.files.getlist('kgg_files')
-            if not files:
-                return jsonify({
-                    'code': 400,
-                    'msg': '请选择至少一个KGG文件'
-                }), 200
-
-            # 验证文件格式
-            kgg_files = []
-            for file in files:
-                if file and file.filename.endswith('.kgg'):
-                    kgg_files.append(file)
-                else:
-                    return jsonify({
-                        'code': 400,
-                        'msg': f'文件 {file.filename} 不是KGG格式'
-                    }), 200
-
-            # 创建临时目录
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_dir_path = Path(temp_dir)
-                mp3_files = []
-
-                # 转换所有KGG文件到MP3
-                for kgg_file in kgg_files:
-                    # 保存KGG文件
-                    filename = secure_filename(kgg_file.filename)
-                    kgg_path = temp_dir_path / filename
-                    kgg_file.save(kgg_path)
-
-                    # 转换为MP3
-                    success, mp3_path = kgg_to_mp3(kgg_path, temp_dir_path)
-                    if not success or not mp3_path:
-                        return jsonify({
-                            'code': 500,
-                            'msg': f'KGG文件 {filename} 转换失败'
-                        }), 200
-
-                    mp3_files.append(str(mp3_path))
-
-                # ========== 复用原有的解析逻辑 ==========
-                audio_files = mp3_files
-                file_metadatas = []
-                temp_cover_files = []
-
-                # 提取MP3元数据
-                for mp3_path in audio_files:
-                    file_ext = 'mp3'
-                    metadata = get_audio_metadata(mp3_path, file_ext)
-                    file_metadatas.append(metadata)
-
-                    if metadata['cover_img'] and os.path.exists(metadata['cover_img']):
-                        temp_cover_files.append(metadata['cover_img'])
-
-                if not file_metadatas:
-                    return jsonify({
-                        'code': 400,
-                        'msg': '转换后的MP3文件无效'
-                    }), 200
-
-                # 按曲目编号排序
-                file_metadatas.sort(key=lambda x: int(x['track'].split('/')[0]) if x['track'].isdigit() else 0)
-
-                # 构建解析结果
-                parse_result = {
-                    'album_name': file_metadatas[0]['album'],
-                    'album_singer': file_metadatas[0]['artist'],
-                    'mp3_duration': '',
-                    'cover_img': '',
-                    'mp3_url': '',
-                    'album_id': '',
-                    'songs': []
-                }
-
-                # 获取专辑ID
-                album_id = get_simple_album_id()
-                parse_result['album_id'] = album_id
-
-                # 提取并上传封面
-                cover_img_url = ""
-                for metadata in file_metadatas:
-                    if metadata['cover_img']:
-                        cover_img_url = upload_cover_to_imgbed(metadata['cover_img'])
-                        if cover_img_url:
-                            break
-
-                if not cover_img_url:
-                    cover_path = extract_album_cover(audio_files, temp_dir)
-                    if cover_path:
-                        cover_img_url = upload_cover_to_imgbed(cover_path)
-
-                parse_result['cover_img'] = cover_img_url
-
-                # 合并音频文件
-                merge_file_path = merge_audio_files(
-                    audio_files=audio_files,
-                    output_dir=temp_dir,
-                    album_name=parse_result['album_name'],
-                    artist=parse_result['album_singer'],
-                    album_id=album_id
-                )
-
-                # 上传合并后的音频
-                if merge_file_path and os.path.exists(merge_file_path):
-                    upload_result = upload_merged_audio(
-                        merge_file_path=merge_file_path,
-                        album_id=album_id,
-                        artist=parse_result['album_singer'],
-                        album_name=parse_result['album_name']
-                    )
-                    if upload_result['code'] == 200:
-                        parse_result['mp3_url'] = upload_result['data']['mp3_url']
-                        parse_result['mp3_duration'] = upload_result['data']['mp3_duration']
-
-                # 构建歌曲列表
-                total_duration = 0
-                for idx, metadata in enumerate(file_metadatas):
-                    timestamp = format_duration(total_duration)
-                    parse_result['songs'].append({
-                        'name': metadata['title'] or f'未知曲目{idx + 1}',
-                        'duration': timestamp,
-                        'file_duration': format_duration(metadata['duration']),
-                        'track_number': idx + 1
-                    })
-                    total_duration += metadata['duration']
-
-                # 清理临时文件
-                for temp_cover in temp_cover_files:
-                    try:
-                        if os.path.exists(temp_cover):
-                            os.remove(temp_cover)
-                    except:
-                        pass
-
-                return jsonify({
-                    'code': 200,
-                    'msg': 'KGG文件转换并解析成功！',
-                    'data': parse_result
-                }), 200
-
-        except Exception as e:
-            print(f"❌ KGG转换解析出错：{str(e)}")
-            print(traceback.format_exc())
-            return jsonify({
-                'code': 500,
-                'msg': f'KGG处理失败：{str(e)}'
-            }), 200
-
-    # ========== 新增1：仅转换KGG为MP3（不解析） ==========
+    # ========== 仅转换KGG为MP3（不解析） ==========
     @app.route('/api/audio/unlock/convert-kgg-only', methods=['POST', 'OPTIONS'])
     def convert_kgg_only():
         """仅将KGG文件转换为MP3并返回文件列表，不进行解析"""
@@ -416,7 +257,123 @@ def register_unlock_routes(app):
                 'msg': f'KGG转换失败：{str(e)}'
             }), 200
 
-    # ========== 新增2：接收排序后的MP3文件并解析 ==========
+    # ========== 仅转换NCM为MP3（不解析）（对齐KGG接口风格） ==========
+    @app.route('/api/audio/unlock/convert-ncm-only', methods=['POST', 'OPTIONS'])
+    def convert_ncm_only():
+        """仅将NCM文件转换为MP3并返回文件列表，不进行解析"""
+        try:
+            # 1. 检查文件参数（对齐KGG接口的参数名和提示文案）
+            if 'ncm_files' not in request.files:
+                return jsonify({
+                    'code': 400,
+                    'msg': '请上传NCM格式文件'
+                }), 200
+
+            files = request.files.getlist('ncm_files')
+            if not files:
+                return jsonify({
+                    'code': 400,
+                    'msg': '请选择至少一个NCM文件'
+                }), 200
+
+            # 2. 验证文件格式（替换为NCM格式检查）
+            ncm_files = []
+            for file in files:
+                if file and file.filename.endswith('.ncm'):
+                    ncm_files.append(file)
+                else:
+                    return jsonify({
+                        'code': 400,
+                        'msg': f'文件 {file.filename} 不是NCM格式'
+                    }), 200
+
+            # 3. 创建临时目录（逻辑和KGG接口完全一致）
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_dir_path = Path(temp_dir)
+                uploaded_ncm_paths = []
+
+                # 4. 保存上传的NCM文件（变量名替换为ncm相关）
+                for ncm_file in ncm_files:
+                    filename = secure_filename(ncm_file.filename)
+                    ncm_path = temp_dir_path / filename
+                    ncm_file.save(ncm_path)
+                    uploaded_ncm_paths.append(ncm_path)
+
+                # 5. 批量转换NCM到MP3（调用对齐风格的ncm转换函数）
+                success, mp3_files = batch_convert_ncm_to_mp3(uploaded_ncm_paths, temp_dir_path)
+
+                print(mp3_files)
+                if not success or len(mp3_files) == 0:
+                    return jsonify({
+                        'code': 500,
+                        'msg': 'NCM文件转换失败'
+                    }), 200
+
+                # 6. 准备返回的MP3文件信息（逻辑和KGG接口完全一致）
+                mp3_files_info = []
+                for mp3_file in mp3_files:
+                    # 读取文件内容为Base64
+                    with open(mp3_file, 'rb') as f:
+                        file_data = f.read()
+                        base64_data = base64.b64encode(file_data).decode('utf-8')
+
+                    # 提取基础元数据（复用同一套元数据提取函数）
+                    try:
+                        metadata = get_audio_metadata(str(mp3_file), 'mp3')
+                    except:
+                        metadata = {
+                            'title': mp3_file.stem,
+                            'artist': '未知艺术家',
+                            'album': '未知专辑',
+                            'track': '0',  # 确保track字段存在，避免排序报错
+                            'duration': 0
+                        }
+
+                    mp3_files_info.append({
+                        'filename': mp3_file.name,
+                        'file_size': os.path.getsize(mp3_file),
+                        'base64_data': base64_data,
+                        'metadata': metadata,
+                        'order': len(mp3_files_info) + 1  # 这个只是标记，排序靠下面的逻辑
+                    })
+
+                # ========== 关键修改：按track字段排序 ==========
+                def get_track_number(item):
+                    """提取track编号并转换为数字，用于排序"""
+                    try:
+                        # 处理类似 "1/10" 这种格式，只取前面的数字
+                        track_str = item['metadata']['track'].split('/')[0].strip()
+                        return int(track_str) if track_str else 999  # 无track的放最后
+                    except (ValueError, KeyError):
+                        # 转换失败或无track字段的，默认排最后
+                        return 999
+
+                # 按track编号升序排序
+                mp3_files_info.sort(key=get_track_number)
+
+                # 可选：重新更新order字段，和排序后的顺序一致
+                for idx, item in enumerate(mp3_files_info):
+                    item['order'] = idx + 1
+
+            # 7. 返回结果（提示文案替换为NCM相关，结构完全一致）
+            return jsonify({
+                'code': 200,
+                'msg': f'成功转换 {len(mp3_files)} 个NCM文件为MP3',
+                'data': {
+                    'mp3_files': mp3_files_info  # 返回排序后的列表
+                }
+            }), 200
+
+        # 8. 异常处理（对齐KGG接口的日志格式和返回结构）
+        except Exception as e:
+            print(f"❌ NCM转换出错：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({
+                'code': 500,
+                'msg': f'NCM转换失败：{str(e)}'
+            }), 200
+
+    # ========== 接收排序后的MP3文件并解析 ==========
     @app.route('/api/audio/unlock/parse-sorted-mp3', methods=['POST', 'OPTIONS'])
     def parse_sorted_mp3():
         """接收前端排序后的MP3文件（Base64），执行解析流程"""

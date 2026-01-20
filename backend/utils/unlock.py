@@ -1,3 +1,6 @@
+from pathlib import Path
+import logging
+from mutagen.id3 import ID3, TIT2, TPE1, TALB, APIC, TRCK, ID3NoHeaderError
 from flask import request, jsonify, Blueprint
 import json
 import traceback
@@ -18,6 +21,15 @@ import pymysql
 
 # 导入配置（确保路径正确）
 from backend.config import UPLOAD_FOLDER, COVER_BASE_URL, AUDIO_BASE_URL, AUDIO_UPLOAD_FOLDER, MYSQL_CONFIG
+
+
+# 日志配置
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
 # ✅ 修复1：获取当前文件的绝对路径，拼接FFmpeg路径（关键！）
 # 获取unlock.py所在目录
@@ -40,6 +52,39 @@ print(f"FFprobe路径: {FFPROBE_PATH} (存在: {os.path.exists(FFPROBE_PATH)})")
 
 # 允许的音频格式
 ALLOWED_EXTENSIONS = {'mp3', 'ogg', 'flac', 'wav', 'm4a', 'mp4'}
+
+def ensure_dir_exists(dir_path: str | Path) -> bool:
+    """确保目录存在，不存在则创建"""
+    try:
+        dir_path = Path(dir_path)
+        dir_path.mkdir(parents=True, exist_ok=True)
+        return True
+    except Exception as e:
+        logger.error(f"创建目录失败 {dir_path}: {str(e)}")
+        return False
+
+
+def get_ffmpeg_exe():
+    """获取有效的FFmpeg可执行文件路径"""
+    global FFMPEG_PATH
+    if FFMPEG_PATH and os.path.exists(FFMPEG_PATH):
+        return FFMPEG_PATH
+
+    # 检查常见路径
+    possible_paths = [
+        r"tools/ffmpeg/ffmpeg.exe",
+        r"U:\project\python\AudioConnect\tools\ffmpeg\ffmpeg.exe",
+        r"G:\project\python\AudioConnect\ffmpeg\ffmpeg.exe",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+        "ffmpeg.exe"
+    ]
+
+    for path in possible_paths:
+        if os.path.exists(path):
+            FFMPEG_PATH = path
+            return path
+
+    raise FileNotFoundError("未找到FFmpeg可执行文件！")
 
 
 # ✅ 新增：简单的序号生成函数（统计文件数+1）
@@ -120,6 +165,32 @@ def get_duration_with_ffprobe(file_path):
         print(f"ffprobe提取时长失败: {e}")
         return 0
 
+def add_mp3_metadata(mp3_file: Path, metadata: dict):
+    """为MP3文件添加元数据"""
+    try:
+        try:
+            audio = ID3(mp3_file)
+        except ID3NoHeaderError:
+            audio = ID3()
+
+        audio.delete()
+        audio.add(TIT2(encoding=3, text=metadata["title"]))
+        audio.add(TPE1(encoding=3, text=metadata["artist"]))
+        audio.add(TALB(encoding=3, text=metadata["album"]))
+
+        # 添加封面
+        if metadata.get("cover"):
+            audio.add(APIC(
+                encoding=3,
+                mime="image/jpeg",
+                type=3,
+                desc="Cover",
+                data=metadata["cover"]
+            ))
+
+        audio.save(mp3_file, v2_version=4)
+    except Exception as e:
+        logger.warning(f"添加MP3元数据失败: {str(e)}")
 
 def get_audio_metadata(file_path, file_ext):
     """提取音频文件元数据（优化封面提取）"""
@@ -278,7 +349,7 @@ def upload_cover_to_imgbed(cover_path):
         return ""
 
 
-# ✅ 简化：合并音频文件时使用简单序号生成文件名
+# 合并音频文件
 def merge_audio_files(audio_files, output_dir, album_name, artist, album_id):
     """
     合并多个音频文件为一个整轨MP3
@@ -424,3 +495,52 @@ def upload_merged_audio(merge_file_path, album_id, artist, album_name):
         print(f"❌ 上传合并音频失败：{e}")
         return {"code": 500, "msg": f"上传失败：{str(e)}", "data": None}
 
+
+def write_cover_to_mp3(mp3_file_path: str | Path, cover_data: bytes) -> str:
+    """
+    直接将封面图片写入MP3文件的ID3标签，并返回临时封面文件路径（供图床上传使用）
+
+    Args:
+        mp3_file_path: MP3文件路径
+        cover_data: 封面图片二进制数据
+
+    Returns:
+        str: 临时封面文件路径（用于后续上传到图床），失败返回空字符串
+    """
+    try:
+        mp3_file_path = Path(mp3_file_path)
+        if not mp3_file_path.exists():
+            print(f"MP3文件不存在：{mp3_file_path}")
+            return ""
+
+        # 第一步：将封面数据保存为临时文件（供图床上传）
+        temp_cover_path = os.path.join(os.path.dirname(str(mp3_file_path)), f"temp_cover_{uuid.uuid4()}.jpg")
+        with open(temp_cover_path, 'wb') as f:
+            f.write(cover_data)
+
+        # 第二步：写入MP3文件
+        audio = ID3(str(mp3_file_path))
+
+        # 清空原有封面
+        for tag in audio.keys():
+            if tag.startswith('APIC'):
+                del audio[tag]
+
+        # 添加新封面
+        audio.add(APIC(
+            encoding=3,  # UTF-8
+            mime='image/jpeg',
+            type=3,  # 3=封面
+            desc='Cover',
+            data=cover_data
+        ))
+
+        # 保存修改
+        audio.save(v2_version=4)
+        print(f"封面已成功写入MP3文件：{mp3_file_path.name}")
+
+        return temp_cover_path  # 返回临时文件路径，供图床上传使用
+
+    except Exception as e:
+        print(f"写入封面到MP3失败：{e}")
+        return ""

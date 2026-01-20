@@ -17,7 +17,7 @@
         <!-- 步骤导航 -->
         <div class="step-nav">
           <div :class="{active: currentStep === 1}">1. 选择文件</div>
-          <div :class="{active: currentStep === 2}">2. 转换KGG</div>
+          <div :class="{active: currentStep === 2}">2. 转换音频</div>
           <div :class="{active: currentStep === 3}">3. 调整顺序</div>
           <div :class="{active: currentStep === 4}">4. 解析音频</div>
         </div>
@@ -34,7 +34,7 @@
             <button
               :class="{active: currentMode === 'kgg'}"
               @click="currentMode = 'kgg'">
-              KGG文件处理
+              加密音频处理
             </button>
           </div>
 
@@ -44,7 +44,7 @@
                @dragover="handleDragOver"
                @click="chooseFiles">
     <span v-if="!fileList.length">
-      {{ currentMode === 'kgg' ? '拖拽KGG/NCM文件到这里，或点击上传' : '拖拽音频文件到这里，或点击批量上传（支持MP3/OGG/FLAC/NCM/KGG等）' }}
+      {{ currentMode === 'kgg' ? '拖拽NCM/KGG文件到这里，或点击上传' : '拖拽音频文件到这里，或点击批量上传（支持MP3/OGG/FLAC/NCM/KGG等）' }}
     </span>
             <div v-else class="file-list">
               <div v-for="(file, index) in fileList" :key="index" class="file-item">
@@ -54,14 +54,14 @@
             </div>
           </div>
 
-  <!-- 修改文件输入的accept属性 -->
-  <input
-    type="file"
-    ref="fileInput"
-    :accept="currentMode === 'kgg' ? '.kgg,.ncm' : '.mp3,.ogg,.flac,.ncm,.kgg,.kwm'"
-    multiple
-    style="display: none"
-    @change="handleFileChange">
+          <!-- 修改文件输入的accept属性 -->
+          <input
+            type="file"
+            ref="fileInput"
+            :accept="currentMode === 'kgg' ? '.kgg,.ncm' : '.mp3,.ogg,.flac,.ncm,.kgg,.kwm'"
+            multiple
+            style="display: none"
+            @change="handleFileChange">
 
           <!-- 状态提示 -->
           <div class="parse-status">{{ parseStatus }}</div>
@@ -71,15 +71,15 @@
             class="unlock-parse-btn"
             @click="gotoNextStep"
             :disabled="!fileList.length || isUploading">
-            {{ currentMode === 'kgg' ? '开始转换KGG文件' : '直接解析音频文件' }}
+            {{ currentMode === 'kgg' ? '开始转换加密音频' : '直接解析音频文件' }}
           </button>
         </div>
 
-        <!-- 步骤2：转换KGG -->
+        <!-- 步骤2：转换加密音频（KGG/NCM） -->
         <div v-if="currentStep === 2" class="step-content">
           <div class="conversion-status">
             <div v-if="isConverting" class="loading">
-              <span>正在转换KGG文件...</span>
+              <span>正在转换{{ convertFileType }}文件...</span>
               <div class="spinner"></div>
             </div>
             <div v-else-if="convertResult.code === 200" class="success">
@@ -94,9 +94,9 @@
           <div class="step-buttons">
             <button class="prev-btn" @click="gotoPrevStep">返回</button>
             <button
-              class="next-btn"
-              @click="gotoNextStep"
-              :disabled="!convertResult.code || convertResult.code !== 200">
+                class="next-btn"
+                @click="gotoNextStep"
+                :disabled="!convertResult.code || convertResult.code !== 200">
               进入排序环节
             </button>
           </div>
@@ -112,15 +112,15 @@
           <!-- 拖拽排序区域 -->
           <div class="sortable-list">
             <div
-              v-for="(file, index) in sortedMp3Files"
-              :key="file.filename + index"
-              class="sortable-item"
-              :style="{opacity: isDragging && draggedIndex === index ? 0.5 : 1}"
-              draggable="true"
-              @dragstart="handleDragStart(index)"
-              @dragover="handleDragOverSort($event)"
-              @drop="handleDropSort(index)"
-              @dragend="handleDragEnd">
+                v-for="(file, index) in sortedMp3Files"
+                :key="file.filename + index"
+                class="sortable-item"
+                :style="{opacity: isDragging && draggedIndex === index ? 0.5 : 1}"
+                draggable="true"
+                @dragstart="handleDragStart(index)"
+                @dragover="handleDragOverSort($event)"
+                @drop="handleDropSort(index)"
+                @dragend="handleDragEnd">
               <div class="item-handle">☰</div>
               <div class="item-info">
                 <div class="item-name">{{ file.metadata.title || file.filename }}</div>
@@ -134,9 +134,9 @@
           <div class="step-buttons">
             <button class="prev-btn" @click="gotoPrevStep">返回</button>
             <button
-              class="next-btn"
-              @click="parseSortedFiles"
-              :disabled="isUploading || sortedMp3Files.length === 0">
+                class="next-btn"
+                @click="parseSortedFiles"
+                :disabled="isUploading || sortedMp3Files.length === 0">
               {{ isUploading ? '解析中...' : '解析排序后的音频' }}
             </button>
           </div>
@@ -195,12 +195,13 @@ export default {
       isUploading: false,  // 是否正在处理
 
       // 模式和步骤
-      currentMode: 'normal', // normal:常规解析, kgg:KGG处理
-      currentStep: 1,       // 1:选择文件 2:转换KGG 3:调整顺序 4:解析完成
+      currentMode: 'normal', // normal:常规解析, kgg:加密音频处理(KGG/NCM)
+      currentStep: 1,       // 1:选择文件 2:转换音频 3:调整顺序 4:解析完成
 
-      // KGG转换结果
+      // 转换结果
       isConverting: false,
-      convertResult: {},    // KGG转换结果
+      convertResult: {},    // 转换结果
+      convertFileType: '',  // 当前转换的文件类型（KGG/NCM）
       sortedMp3Files: [],   // 排序后的MP3文件
 
       // 拖拽排序
@@ -208,14 +209,13 @@ export default {
       draggedIndex: -1,
 
       // 解析结果
-      parseResult: {},       // 最终解析结果
-
+      parseResult: {},      // 最终解析结果
 
       allowedExts: {
-      kgg: '.kgg',
-      ncm: '.ncm',
-      normal: '.mp3,.ogg,.flac,.ncm,.kgg,.kwm'
-    }
+        kgg: '.kgg',
+        ncm: '.ncm',
+        normal: '.mp3,.ogg,.flac,.ncm,.kgg,.kwm'
+      }
     }
   },
   watch: {
@@ -241,6 +241,7 @@ export default {
       this.currentStep = 1;
       this.isConverting = false;
       this.convertResult = {};
+      this.convertFileType = '';
       this.sortedMp3Files = [];
       this.isDragging = false;
       this.draggedIndex = -1;
@@ -264,8 +265,8 @@ export default {
     gotoNextStep() {
       if (this.currentStep === 1) {
         if (this.currentMode === 'kgg') {
-          // KGG模式：先转换
-          this.convertKggFiles();
+          // 加密音频模式：先转换（自动判断KGG/NCM）
+          this.convertEncryptedFiles();
         } else {
           // 常规模式：直接解析
           this.uploadAndParseNormal();
@@ -290,54 +291,54 @@ export default {
       e.preventDefault();
     },
 
-// 修改handleDrop方法
-handleDrop(e) {
-  e.preventDefault();
+    // 修改handleDrop方法
+    handleDrop(e) {
+      e.preventDefault();
 
-  // 根据模式筛选文件
-  let files = [];
-  if (this.currentMode === 'kgg') {
-    // KGG/NCM模式
-    files = Array.from(e.dataTransfer.files).filter(file =>
-      file.name.endsWith('.kgg') || file.name.endsWith('.ncm')
-    );
-  } else {
-    // 常规模式接受多种音频格式
-    const audioTypes = ['audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/wav', 'audio/mp4', 'audio/x-m4a'];
-    files = Array.from(e.dataTransfer.files).filter(file =>
-      audioTypes.includes(file.type) ||
-      ['.mp3', '.ogg', '.flac', '.ncm', '.kgg', '.kwm'].some(ext => file.name.endsWith(ext))
-    );
-  }
+      // 根据模式筛选文件
+      let files = [];
+      if (this.currentMode === 'kgg') {
+        // 加密音频模式（KGG/NCM）
+        files = Array.from(e.dataTransfer.files).filter(file =>
+            file.name.endsWith('.kgg') || file.name.endsWith('.ncm')
+        );
+      } else {
+        // 常规模式接受多种音频格式
+        const audioTypes = ['audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/wav', 'audio/mp4', 'audio/x-m4a'];
+        files = Array.from(e.dataTransfer.files).filter(file =>
+            audioTypes.includes(file.type) ||
+            ['.mp3', '.ogg', '.flac', '.ncm', '.kgg', '.kwm'].some(ext => file.name.endsWith(ext))
+        );
+      }
 
-  if (files.length) {
-    this.fileList = files;
-    this.parseStatus = `已选择 ${files.length} 个文件`;
-  } else {
-    this.parseStatus = this.currentMode === 'kgg'
-      ? '❌ 请选择有效的KGG/NCM文件'
-      : '❌ 请选择有效的音频文件';
-  }
-},
+      if (files.length) {
+        this.fileList = files;
+        this.parseStatus = `已选择 ${files.length} 个文件`;
+      } else {
+        this.parseStatus = this.currentMode === 'kgg'
+            ? '❌ 请选择有效的NCM/KGG文件'
+            : '❌ 请选择有效的音频文件';
+      }
+    },
 
     // 选择文件
     chooseFiles() {
       this.$refs.fileInput.click();
     },
 
-// 修改chooseFiles相关的文件选择器
-handleFileChange(e) {
-  const files = Array.from(e.target.files);
-  if (files.length) {
-    this.fileList = files;
-    this.parseStatus = `已选择 ${files.length} 个文件`;
-  } else {
-    this.parseStatus = this.currentMode === 'kgg'
-      ? '❌ 请选择有效的KGG/NCM文件'
-      : '❌ 请选择有效的音频文件';
-  }
-  e.target.value = '';
-},
+    // 修改chooseFiles相关的文件选择器
+    handleFileChange(e) {
+      const files = Array.from(e.target.files);
+      if (files.length) {
+        this.fileList = files;
+        this.parseStatus = `已选择 ${files.length} 个文件`;
+      } else {
+        this.parseStatus = this.currentMode === 'kgg'
+            ? '❌ 请选择有效的NCM/KGG文件'
+            : '❌ 请选择有效的音频文件';
+      }
+      e.target.value = '';
+    },
 
     // 移除单个文件
     removeFile(index) {
@@ -349,20 +350,48 @@ handleFileChange(e) {
       }
     },
 
-    // ========== KGG转换逻辑 ==========
-    async convertKggFiles() {
+    // ========== 加密音频转换逻辑（支持KGG/NCM） ==========
+    async convertEncryptedFiles() {
+      // 判断文件类型（统一处理KGG/NCM）
+      const fileExts = this.fileList.map(file => {
+        const ext = file.name.split('.').pop().toLowerCase();
+        return ext === 'kgg' || ext === 'ncm' ? ext : '';
+      });
+
+      // 检查是否混合了不同类型
+      const hasKgg = fileExts.includes('kgg');
+      const hasNcm = fileExts.includes('ncm');
+
+      if (hasKgg && hasNcm) {
+        this.parseStatus = '❌ 暂不支持同时上传KGG和NCM文件，请分开上传';
+        return;
+      }
+
+      if (!hasKgg && !hasNcm) {
+        this.parseStatus = '❌ 请选择有效的KGG或NCM文件';
+        return;
+      }
+
+      // 设置当前转换类型
+      this.convertFileType = hasKgg ? 'KGG' : 'NCM';
       this.isConverting = true;
-      this.parseStatus = '正在转换KGG文件...';
+      this.parseStatus = `正在转换${this.convertFileType}文件...`;
 
       try {
         // 创建FormData对象
         const formData = new FormData();
+        const formKey = hasKgg ? 'kgg_files' : 'ncm_files';
         this.fileList.forEach(file => {
-          formData.append('kgg_files', file);
+          formData.append(formKey, file);
         });
 
-        // 调用KGG转换接口
-        const response = await this.$axios.post('/api/audio/unlock/convert-kgg-only', formData, {
+        // 选择对应的转换接口
+        const apiUrl = hasKgg
+            ? '/api/audio/unlock/convert-kgg-only'
+            : '/api/audio/unlock/convert-ncm-only';
+
+        // 调用转换接口
+        const response = await this.$axios.post(apiUrl, formData, {
           headers: {
             'Content-Type': 'multipart/form-data'
           },
@@ -377,10 +406,10 @@ handleFileChange(e) {
         this.currentStep = 2; // 进入转换结果步骤
 
       } catch (error) {
-        console.error('KGG转换失败:', error);
+        console.error(`${this.convertFileType}转换失败:`, error);
         this.convertResult = {
           code: 500,
-          msg: error.message || '转换失败，请重试'
+          msg: error.message || `${this.convertFileType}转换失败，请重试`
         };
       } finally {
         this.isConverting = false;
@@ -453,38 +482,38 @@ handleFileChange(e) {
       this.draggedIndex = -1;
     },
 
-// ========== 解析排序后的MP3 ==========
-async parseSortedFiles() {
-  this.isUploading = true;
+    // ========== 解析排序后的MP3 ==========
+    async parseSortedFiles() {
+      this.isUploading = true;
 
-  try {
-    // 调用解析接口 - 显式设置Content-Type
-    const response = await this.$axios.post(
-      '/api/audio/unlock/parse-sorted-mp3',
-      {
-        sorted_mp3_files: this.sortedMp3Files
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'  // 关键：添加这个请求头
-        },
-        timeout: 600000
+      try {
+        // 调用解析接口 - 显式设置Content-Type
+        const response = await this.$axios.post(
+            '/api/audio/unlock/parse-sorted-mp3',
+            {
+              sorted_mp3_files: this.sortedMp3Files
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json'  // 关键：添加这个请求头
+              },
+              timeout: 600000
+            }
+        );
+
+        this.parseResult = response.data;
+        this.currentStep = 4; // 进入解析完成步骤
+
+      } catch (error) {
+        console.error('排序MP3解析失败:', error);
+        this.parseResult = {
+          code: 500,
+          msg: error.message || '解析失败，请重试'
+        };
+      } finally {
+        this.isUploading = false;
       }
-    );
-
-    this.parseResult = response.data;
-    this.currentStep = 4; // 进入解析完成步骤
-
-  } catch (error) {
-    console.error('排序MP3解析失败:', error);
-    this.parseResult = {
-      code: 500,
-      msg: error.message || '解析失败，请重试'
-    };
-  } finally {
-    this.isUploading = false;
-  }
-}
+    }
   }
 }
 </script>
@@ -497,7 +526,7 @@ async parseSortedFiles() {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(2px);
   z-index: 9998;
   transition: all 0.3s;
@@ -523,8 +552,12 @@ async parseSortedFiles() {
 }
 
 @keyframes slideIn {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
 .unlock-parse-header {
@@ -584,7 +617,7 @@ async parseSortedFiles() {
   flex: 1;
   text-align: center;
   padding: 8px 0;
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 4px;
   font-size: 12px;
   color: #666;
@@ -697,7 +730,7 @@ async parseSortedFiles() {
   height: auto;
   padding: 10px;
   border-radius: 4px;
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .loading {
@@ -717,8 +750,12 @@ async parseSortedFiles() {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .success {
@@ -752,7 +789,7 @@ async parseSortedFiles() {
   gap: 8px;
   min-height: 300px;
   padding: 10px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
 }
 
@@ -760,14 +797,14 @@ async parseSortedFiles() {
   display: flex;
   align-items: center;
   padding: 10px;
-  background: rgba(255,255,255,0.3);
+  background: rgba(255, 255, 255, 0.3);
   border-radius: 4px;
   cursor: grab;
   transition: all 0.2s;
 }
 
 .sortable-item:hover {
-  background: rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .item-handle {
@@ -846,7 +883,7 @@ button:disabled {
 .parse-result {
   text-align: center;
   padding: 20px;
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 4px;
 }
 
