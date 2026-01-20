@@ -257,13 +257,12 @@ def register_unlock_routes(app):
                 'msg': f'KGG转换失败：{str(e)}'
             }), 200
 
-    # ========== 仅转换NCM为MP3（不解析）（对齐KGG接口风格） ==========
     @app.route('/api/audio/unlock/convert-ncm-only', methods=['POST', 'OPTIONS'])
     def convert_ncm_only():
-        """仅将NCM文件转换为MP3并返回文件列表，不进行解析"""
+        """仅将NCM文件转换为MP3并返回文件列表，不进行解析（适配你的图床函数）"""
         try:
-            # 1. 检查文件参数（对齐KGG接口的参数名和提示文案）
-            if 'ncm_files' not in request.files:
+            # 1. 检查文件参数
+            if 'ncm_files' not in request.files:  # 保持和原有接口一致的参数名
                 return jsonify({
                     'code': 400,
                     'msg': '请上传NCM格式文件'
@@ -276,7 +275,7 @@ def register_unlock_routes(app):
                     'msg': '请选择至少一个NCM文件'
                 }), 200
 
-            # 2. 验证文件格式（替换为NCM格式检查）
+            # 2. 验证文件格式
             ncm_files = []
             for file in files:
                 if file and file.filename.endswith('.ncm'):
@@ -287,20 +286,20 @@ def register_unlock_routes(app):
                         'msg': f'文件 {file.filename} 不是NCM格式'
                     }), 200
 
-            # 3. 创建临时目录（逻辑和KGG接口完全一致）
+            # 3. 创建临时目录
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_dir_path = Path(temp_dir)
                 uploaded_ncm_paths = []
 
-                # 4. 保存上传的NCM文件（变量名替换为ncm相关）
+                # 4. 保存上传的NCM文件
                 for ncm_file in ncm_files:
                     filename = secure_filename(ncm_file.filename)
                     ncm_path = temp_dir_path / filename
                     ncm_file.save(ncm_path)
                     uploaded_ncm_paths.append(ncm_path)
 
-                # 5. 批量转换NCM到MP3（调用对齐风格的ncm转换函数）
-                success, mp3_files = batch_convert_ncm_to_mp3(uploaded_ncm_paths, temp_dir_path)
+                # 5. 批量转换NCM到MP3（获取临时封面路径）
+                success, mp3_files, temp_cover_map = batch_convert_ncm_to_mp3(uploaded_ncm_paths, temp_dir_path)
 
                 print(mp3_files)
                 if not success or len(mp3_files) == 0:
@@ -309,7 +308,24 @@ def register_unlock_routes(app):
                         'msg': 'NCM文件转换失败'
                     }), 200
 
-                # 6. 准备返回的MP3文件信息（逻辑和KGG接口完全一致）
+                # 6. 使用你的图床函数上传封面
+                cover_url_map = {}  # 保存每个文件的封面URL
+                temp_cover_files = []  # 记录临时封面文件，用于后续清理
+
+                for mp3_file in mp3_files:
+                    mp3_path_str = str(mp3_file)
+                    if mp3_path_str in temp_cover_map and temp_cover_map[mp3_path_str]:
+                        temp_cover_path = temp_cover_map[mp3_path_str]
+                        temp_cover_files.append(temp_cover_path)
+
+                        # 使用你提供的图床上传函数
+                        cover_url = upload_cover_to_imgbed(temp_cover_path)
+                        if cover_url:
+                            cover_url_map[mp3_path_str] = cover_url
+                            print(f"封面上传成功：{cover_url}")
+                            break
+
+                # 7. 准备返回的MP3文件信息
                 mp3_files_info = []
                 for mp3_file in mp3_files:
                     # 读取文件内容为Base64
@@ -317,16 +333,23 @@ def register_unlock_routes(app):
                         file_data = f.read()
                         base64_data = base64.b64encode(file_data).decode('utf-8')
 
-                    # 提取基础元数据（复用同一套元数据提取函数）
+                    # 提取基础元数据
                     try:
                         metadata = get_audio_metadata(str(mp3_file), 'mp3')
+                        # 添加封面URL到元数据
+                        mp3_path_str = str(mp3_file)
+                        if mp3_path_str in cover_url_map:
+                            metadata['cover_url'] = cover_url_map[mp3_path_str]
+                            metadata['cover_img'] = temp_cover_map.get(mp3_path_str, "")  # 兼容原有逻辑
                     except:
                         metadata = {
                             'title': mp3_file.stem,
                             'artist': '未知艺术家',
                             'album': '未知专辑',
-                            'track': '0',  # 确保track字段存在，避免排序报错
-                            'duration': 0
+                            'track': '0',
+                            'duration': 0,
+                            'cover_url': '',
+                            'cover_img': ''
                         }
 
                     mp3_files_info.append({
@@ -334,37 +357,40 @@ def register_unlock_routes(app):
                         'file_size': os.path.getsize(mp3_file),
                         'base64_data': base64_data,
                         'metadata': metadata,
-                        'order': len(mp3_files_info) + 1  # 这个只是标记，排序靠下面的逻辑
+                        'order': len(mp3_files_info) + 1
                     })
 
-                # ========== 关键修改：按track字段排序 ==========
+                # 按track字段排序
                 def get_track_number(item):
-                    """提取track编号并转换为数字，用于排序"""
                     try:
-                        # 处理类似 "1/10" 这种格式，只取前面的数字
                         track_str = item['metadata']['track'].split('/')[0].strip()
-                        return int(track_str) if track_str else 999  # 无track的放最后
+                        return int(track_str) if track_str else 999
                     except (ValueError, KeyError):
-                        # 转换失败或无track字段的，默认排最后
                         return 999
 
-                # 按track编号升序排序
                 mp3_files_info.sort(key=get_track_number)
 
-                # 可选：重新更新order字段，和排序后的顺序一致
+                # 重新更新order字段
                 for idx, item in enumerate(mp3_files_info):
                     item['order'] = idx + 1
 
-            # 7. 返回结果（提示文案替换为NCM相关，结构完全一致）
+                # 清理临时封面文件
+                for temp_cover in temp_cover_files:
+                    try:
+                        if os.path.exists(temp_cover):
+                            os.remove(temp_cover)
+                    except:
+                        pass
+
+            # 8. 返回结果
             return jsonify({
                 'code': 200,
                 'msg': f'成功转换 {len(mp3_files)} 个NCM文件为MP3',
                 'data': {
-                    'mp3_files': mp3_files_info  # 返回排序后的列表
+                    'mp3_files': mp3_files_info
                 }
             }), 200
 
-        # 8. 异常处理（对齐KGG接口的日志格式和返回结构）
         except Exception as e:
             print(f"❌ NCM转换出错：{str(e)}")
             print(traceback.format_exc())
@@ -372,7 +398,6 @@ def register_unlock_routes(app):
                 'code': 500,
                 'msg': f'NCM转换失败：{str(e)}'
             }), 200
-
     # ========== 接收排序后的MP3文件并解析 ==========
     @app.route('/api/audio/unlock/parse-sorted-mp3', methods=['POST', 'OPTIONS'])
     def parse_sorted_mp3():

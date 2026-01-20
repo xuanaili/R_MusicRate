@@ -16,7 +16,7 @@ import requests
 import time
 import shutil
 
-from backend.utils.unlock import ensure_dir_exists
+from backend.utils.unlock import ensure_dir_exists, write_cover_to_mp3
 
 logging.basicConfig(
     level=logging.INFO,
@@ -375,29 +375,28 @@ def decrypt_ncm(file_path: str | Path, output_dir: str | Path = '.') -> Dict[str
 
 # ===================== 核心转换函数 =====================
 
-
-def batch_convert_ncm_to_mp3(ncm_files: list[Path], output_dir: Path) -> tuple[bool, list[Path]]:
+def batch_convert_ncm_to_mp3(ncm_files: list[Path], output_dir: Path) -> tuple[bool, list[Path], dict]:
     """
-    批量解密多个NCM文件
+    批量解密多个NCM文件（适配你的图床函数）
 
     Args:
         ncm_files: 需要解密的NCM文件路径列表
         output_dir: 解密文件的输出目录
 
     Returns:
-        tuple[bool, list[Path]]:
+        tuple[bool, list[Path], dict]:
             - 第一个值：是否至少成功解密一个文件
             - 第二个值：成功解密的文件路径列表
+            - 第三个值：临时封面文件路径映射 {文件路径: 临时封面路径}
     """
     try:
-        # 确保输出目录存在（复用目标函数的工具函数）
         ensure_dir_exists(output_dir)
         success_files = []
+        temp_cover_map = {}  # 保存每个文件的临时封面路径
 
-        # 检查输入的文件列表是否为空
         if not ncm_files:
             logger.warning("未传入任何需要解密的NCM文件")
-            return False, []
+            return False, [], temp_cover_map
 
         logger.info(f"\n找到 {len(ncm_files)} 个NCM文件，开始批量解密...\n")
 
@@ -405,9 +404,7 @@ def batch_convert_ncm_to_mp3(ncm_files: list[Path], output_dir: Path) -> tuple[b
         fail_count = 0
         failed_files = []
 
-        # 遍历处理每个NCM文件（核心逻辑完全保留）
         for idx, ncm_file in enumerate(ncm_files, 1):
-            # 过滤非NCM文件（和目标函数的文件类型检查逻辑对齐）
             if not ncm_file.name.lower().endswith('.ncm'):
                 logger.warning(f"跳过非NCM文件: {ncm_file.name}")
                 continue
@@ -417,12 +414,21 @@ def batch_convert_ncm_to_mp3(ncm_files: list[Path], output_dir: Path) -> tuple[b
             logger.info(f"{'=' * 50}")
 
             try:
-                # 解密单个文件
-                decrypt_ncm(ncm_file, output_dir)
+                # 解密单个文件并获取返回结果（包含封面数据）
+                decrypt_result = decrypt_ncm(ncm_file, output_dir)
                 success_count += 1
-                # 记录成功解密的文件路径（假设解密后为mp3格式，可根据实际调整）
-                decrypted_file = output_dir / ncm_file.with_suffix('.mp3').name
+
+                # 获取解密后的文件路径
+                decrypted_file = decrypt_result['output_file_path']
                 success_files.append(decrypted_file)
+
+                # 如果有封面数据，写入MP3并保存临时封面路径
+                if decrypt_result.get('cover'):
+                    temp_cover_path = write_cover_to_mp3(decrypted_file, decrypt_result['cover'])
+                    if temp_cover_path:
+                        temp_cover_map[str(decrypted_file)] = temp_cover_path
+                        logger.info(f"成功提取并写入封面：{ncm_file.name}")
+
                 logger.info(f"成功解密: {ncm_file.name} -> {decrypted_file.name}")
             except Exception as e:
                 logger.error(f"\n处理文件 {ncm_file.name} 失败：{e}")
@@ -430,7 +436,6 @@ def batch_convert_ncm_to_mp3(ncm_files: list[Path], output_dir: Path) -> tuple[b
                 failed_files.append(ncm_file.name)
                 continue
 
-        # 输出统计结果
         logger.info(f"\n{'=' * 50}")
         logger.info(f"批量解密完成！")
         logger.info(f"成功：{success_count} 个文件")
@@ -440,15 +445,10 @@ def batch_convert_ncm_to_mp3(ncm_files: list[Path], output_dir: Path) -> tuple[b
         logger.info(f"所有解密文件已保存到：{output_dir}")
         logger.info(f"{'=' * 50}")
 
-        # 注意：原函数的「清空源目录」逻辑已移除（因为输入改为文件列表，不再绑定固定源目录）
-        # 如果需要保留清空逻辑，可改为遍历传入的ncm_files进行删除
-
-        # 返回值和目标函数格式完全一致
-        return len(success_files) > 0, success_files
+        return len(success_files) > 0, success_files, temp_cover_map
 
     except Exception as e:
         logger.error(f"批量解密NCM失败: {str(e)}")
-        return False, []
-
+        return False, [], {}
 
 
