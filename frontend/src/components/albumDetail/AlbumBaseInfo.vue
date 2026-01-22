@@ -59,14 +59,6 @@
               :disabled="selectedMyTags.length >=5"
             >
           </div>
-          <button
-            class="save-tags-btn"
-            @click="handleSaveTags"
-            :disabled="!selectedMyTags.length"
-            :style="{backgroundColor: selectedMyTags.length ? mainColorDark : '#999'}"
-          >
-            保存
-          </button>
         </div>
 
         <!-- 第三列：标签下拉列表 -->
@@ -235,7 +227,7 @@ export default {
         this.filterTagOptions();
         this.tagSearchInput = '';
       }
-      console.log(this.album)
+      this.handleSaveTags()
     },
     // ✅✅✅ 核心新增：纯秒数 转 xxh xxmin 格式 【精准适配你的需求】
     formatListeningDuration() {
@@ -253,6 +245,7 @@ export default {
     removeMyTag(index) {
       this.selectedMyTags.splice(index, 1);
       this.filterTagOptions();
+      this.handleSaveTags();
     },
     handleSaveTags() {
       this.$emit('save-tags', this.selectedMyTags);
@@ -354,7 +347,7 @@ export default {
   padding: 20px;
   border-radius: 8px;
   margin-bottom: 0 !important;
-  min-height: 650px;
+  max-height: 88vh;
 	margin-top: 0 !important;
   align-self: flex-start;
   width: calc(100vw - 270px - 50px);
@@ -483,6 +476,9 @@ export default {
 
 .meta-value {
 	color: v-bind(mainColorDarkDouble) !important;
+  max-width: 80%;
+  height: 29px;
+  overflow-y: auto;
 }
 
 .my-tags-section-inline {
@@ -498,6 +494,8 @@ export default {
   gap: 8px;
   margin-bottom: 10px;
   min-height: 40px;
+  max-height: 195px;
+  overflow-y: auto;
 }
 
 .selected-tag {
@@ -723,7 +721,7 @@ export default {
 
 ::-webkit-scrollbar {
   width: 5px;
-  height: 5px;
+  height: 0px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;

@@ -791,7 +791,7 @@ export default {
 .review-content {
   width: 60%;
   box-sizing: border-box;
-  height: 700px;
+  height: 90vh;
   display: flex;
   flex-direction: column;
   justify-content: space-between;

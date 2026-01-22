@@ -12,7 +12,7 @@ const tagBallConfigList = [
   { tag: 'Afrobeats【非洲节奏】', minSize: 50, maxSize: 90, minRate: 160, maxRate: 320, numWeight: 1.3 },
 
   { tag: 'Afropiano【非洲钢琴】', minSize: 50, maxSize: 90, minRate: 160, maxRate: 320, numWeight: 1.3 },
-
+  { tag: 'Afroswing【非洲摇摆舞】', minSize: 50, maxSize: 90, minRate: 160, maxRate: 320, numWeight: 1.3 },
   { tag: 'Afro Jazz【非洲爵士乐】', minSize: 50, maxSize: 90, minRate: 160, maxRate: 320, numWeight: 1.3 },
    { tag: 'Alt Country【另类乡村】', minSize: 55, maxSize: 95, minRate: 140, maxRate: 280, numWeight: 1.4 },
    { tag: 'Alt Pop【另类流行】', minSize: 55, maxSize: 95, minRate: 140, maxRate: 280, numWeight: 1.4 },
@@ -60,6 +60,7 @@ const tagBallConfigList = [
   // ===== C 开头 =====
   { tag: 'Campus Folk【校园民谣】', minSize: 25, maxSize: 70, minRate: 280, maxRate: 480, numWeight: 0.8 },
   { tag: 'Cantopop【粤语流行】', minSize: 40, maxSize: 90, minRate: 200, maxRate: 400, numWeight: 1.1 },
+      { tag: 'Canción melódica【旋律歌曲】', minSize: 40, maxSize: 90, minRate: 200, maxRate: 400, numWeight: 1.1 },
   { tag: 'Chamber Folk【室内民谣】', minSize: 20, maxSize: 60, minRate: 320, maxRate: 520, numWeight: 0.7 },
   { tag: 'Chamber Jazz【室内爵士乐】', minSize: 25, maxSize: 65, minRate: 300, maxRate: 500, numWeight: 0.8 },
   { tag: 'Chamber Music【室内乐】', minSize: 20, maxSize: 55, minRate: 330, maxRate: 530, numWeight: 0.7 },
@@ -68,6 +69,8 @@ const tagBallConfigList = [
   { tag: 'Chillout【弛放音乐】', minSize: 20, maxSize: 60, minRate: 320, maxRate: 520, numWeight: 0.7 },
   { tag: 'Chinese Music【中国音乐】', minSize: 30, maxSize: 75, minRate: 240, maxRate: 440, numWeight: 0.9 },
   { tag: 'Chiptune【芯片音乐】', minSize: 35, maxSize: 80, minRate: 220, maxRate: 420, numWeight: 1.0 },
+
+      { tag: 'Christian Hip Hop【基督教嘻哈】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.2 },
   { tag: 'Christian Rock【基督教摇滚】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.2 },
   { tag: 'Cinematic Classical【影视古典】', minSize: 35, maxSize: 90, minRate: 200, maxRate: 400, numWeight: 1.1 },
   { tag: 'Classical Crossover【古典跨界】', minSize: 30, maxSize: 80, minRate: 230, maxRate: 430, numWeight: 0.9 },
@@ -97,6 +100,9 @@ const tagBallConfigList = [
 
   { tag: 'Dance Punk【朋克舞曲】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
   { tag: 'Darkwave【暗潮】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
+
+      { tag: 'Dark Ambient【黑暗气氛】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
+
   { tag: 'Delta Blues【三角洲蓝调】', minSize: 30, maxSize: 75, minRate: 240, maxRate: 440, numWeight: 0.9 },
   { tag: 'Death Metal【死亡金属】', minSize: 85, maxSize: 150, minRate: 50, maxRate: 160, numWeight: 3.2 },
   { tag: 'Deathgrind【死亡碾核】', minSize: 90, maxSize: 155, minRate: 40, maxRate: 150, numWeight: 3.5 },
@@ -201,6 +207,8 @@ const tagBallConfigList = [
   { tag: 'Indie Folk【独立民谣】', minSize: 30, maxSize: 80, minRate: 230, maxRate: 430, numWeight: 0.9 },
   { tag: 'Indie Pop【独立流行】', minSize: 40, maxSize: 90, minRate: 190, maxRate: 380, numWeight: 1.1 },
   { tag: 'Indie Rock【独立摇滚】', minSize: 50, maxSize: 105, minRate: 130, maxRate: 280, numWeight: 1.7 },
+
+      { tag: 'Indie Surf【独立冲浪】', minSize: 50, maxSize: 105, minRate: 130, maxRate: 280, numWeight: 1.7 },
   { tag: 'Industrial Hardcore【工业硬核】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
   { tag: 'Industrial HipHop【工业嘻哈】', minSize: 65, maxSize: 125, minRate: 90, maxRate: 230, numWeight: 2.1 },
   { tag: 'Industrial Metal【工业金属】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
@@ -241,7 +249,14 @@ const tagBallConfigList = [
   { tag: 'MPB【巴西流行音乐】', minSize: 40, maxSize: 90, minRate: 180, maxRate: 360, numWeight: 1.2 },
   { tag: 'Mexican Folk Music【墨西哥民谣】', minSize: 30, maxSize: 75, minRate: 240, maxRate: 440, numWeight: 0.9 },
   { tag: 'Mexican Music Hispanic【西班牙裔墨西哥音乐】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
+
+      { tag: 'Música cebolla【Música cebolla】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
+
+
+
   // ===== N 开头 =====
+      { tag: 'Neoclassical Darkwave【新古典暗波】', minSize: 25, maxSize: 65, minRate: 300, maxRate: 500, numWeight: 0.8 },
+
   { tag: 'Neo Medieval Folk【新中世纪民谣】', minSize: 25, maxSize: 65, minRate: 300, maxRate: 500, numWeight: 0.8 },
   { tag: 'Neo Psychedelia【新迷幻】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
   { tag: 'Neo Prog【新前卫摇滚】', minSize: 65, maxSize: 125, minRate: 90, maxRate: 230, numWeight: 2.1 },
@@ -268,6 +283,7 @@ const tagBallConfigList = [
   { tag: 'Pop Rock【流行摇滚】', minSize: 50, maxSize: 105, minRate: 140, maxRate: 290, numWeight: 1.6 },
   { tag: 'Pop Soul【流行灵魂乐】', minSize: 45, maxSize: 95, minRate: 170, maxRate: 340, numWeight: 1.3 },
 
+  { tag: 'Post Dubstep【后Dubstep】', minSize: 80, maxSize: 150, minRate: 50, maxRate: 180, numWeight: 3 },
   { tag: 'Post Hardcore【后硬核】', minSize: 80, maxSize: 150, minRate: 50, maxRate: 180, numWeight: 3 },
   { tag: 'Post Industrial【后工业音乐】', minSize: 70, maxSize: 130, minRate: 80, maxRate: 200, numWeight: 2.5 },
   { tag: 'Post Metal【后金属】', minSize: 75, maxSize: 135, minRate: 70, maxRate: 190, numWeight: 2.7 },
@@ -323,6 +339,7 @@ const tagBallConfigList = [
   { tag: 'Sludge Metal【泥浆金属】', minSize: 80, maxSize: 145, minRate: 55, maxRate: 175, numWeight: 3.0 },
   { tag: 'Slowcore【慢核】', minSize: 30, maxSize: 80, minRate: 230, maxRate: 430, numWeight: 0.9 },
   { tag: 'Smooth Soul【平滑灵魂乐】', minSize: 40, maxSize: 90, minRate: 190, maxRate: 380, numWeight: 1.1 },
+      { tag: 'Smooth Jazz【平滑爵士】', minSize: 40, maxSize: 90, minRate: 190, maxRate: 380, numWeight: 1.1 },
   { tag: 'Soft Rock【软摇滚】', minSize: 40, maxSize: 90, minRate: 190, maxRate: 380, numWeight: 1.1 },
   { tag: 'Sound Collage【声音拼贴】', minSize: 35, maxSize: 85, minRate: 210, maxRate: 410, numWeight: 1.0 },
   { tag: 'Soundtrack【原声音乐】', minSize: 35, maxSize: 90, minRate: 200, maxRate: 400, numWeight: 1.1 },

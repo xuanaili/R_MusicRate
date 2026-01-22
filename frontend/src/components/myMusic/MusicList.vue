@@ -203,8 +203,8 @@ export default {
       loading: false,
       // 分页参数
       page: 1,
-      pageSize: 10,
-      pageSizeOptions: [5, 10, 20, 50],
+      pageSize: 50,
+      pageSizeOptions: [10, 20, 50,100],
       pagination: {
         total: 0,
         page: 1,
@@ -212,8 +212,8 @@ export default {
         total_pages: 0
       },
       // 排序参数 默认添加时间+降序
-      sortBy: 'created_at',
-      sortOrder: 'desc',
+      sortBy: 'my_score',
+      sortOrder: 'asc',
       // ✅ ✅ ✅ 核心新增：添加 听取时间 排序选项
       sortByMap: {
         album_name: '专辑名称',

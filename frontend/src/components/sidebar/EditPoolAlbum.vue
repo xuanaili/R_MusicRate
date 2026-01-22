@@ -443,8 +443,6 @@ export default {
             this.loading = false;
             if (res.data.code === 200) {
               this.syncResult = res.data;
-              const syncCount = res.data.data?.sync_count || 0;
-              alert(`修改专辑成功！\n已同步更新 ${syncCount} 条用户数据（仅同步开启且未自定义的专辑）`);
               this.handleClose(true); // 传参表示修改成功
             } else {
               this.errorMsg = '修改失败：' + res.data.msg;

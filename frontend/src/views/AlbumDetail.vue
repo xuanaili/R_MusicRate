@@ -2253,7 +2253,7 @@ handleToggleMeteorPlay(val) {
 .layout-container {
   display: flex;
   width: 100%;
-  min-height: 100vh;
+  height: 98vh;
   font-family: "Microsoft YaHei", "SimHei", "Arial", sans-serif;
   line-height: 1.8;
   color: #333;
@@ -2330,13 +2330,13 @@ handleToggleMeteorPlay(val) {
   flex: 1;
   margin-left: 200px;
   padding: 30px;
-  padding-bottom: 140px !important;
+  //padding-bottom: 140px !important;
   overflow-y: auto;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   z-index: 2;
-  min-height: 100vh;
+  height: 99vh;
 }
 
 h1 {
@@ -2389,7 +2389,7 @@ h4 {
   cursor: pointer;
   position: absolute;
   left: 0;
-  bottom: 0;
+  bottom: 3px;
   transform: translateY(-10px);
   z-index: 10;
 }
@@ -2459,10 +2459,11 @@ h4 {
 
 .progress-bar {
   flex: 1;
-  height: 5px;
+  height: 3px;
   cursor: pointer;
   accent-color: v-bind(albumMainColorDark);
   min-width: unset;
+  z-index: 9999;
 }
 
 .time-text {

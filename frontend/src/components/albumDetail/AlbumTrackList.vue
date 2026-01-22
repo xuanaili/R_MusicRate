@@ -656,7 +656,7 @@ export default {
 .tab-content {
   position: relative;
   width: 100%;
-  height: 100vh;
+  height: 90vh;
   box-sizing: border-box;
   padding: 10px;
   display: flex;
@@ -1146,5 +1146,10 @@ export default {
   width: 50px;
   text-align: center;
   flex-shrink: 0;
+}
+
+
+.root-container{
+  height: 88vh;
 }
 </style>
