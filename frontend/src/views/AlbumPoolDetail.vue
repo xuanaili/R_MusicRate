@@ -274,25 +274,36 @@ export default {
             this.recentUsers = [];
           });
     },
+    // 核心修改：替换copyAlbum方法，和父组件逻辑完全一致
     copyAlbum() {
-      if (!confirm('确定复制该公共专辑为你的私有副本吗？')) return;
+      if (!this.currentAlbumId) return;
+
       this.$axios({
         url: `/api/album/pool/copy/${this.currentAlbumId}`,
         method: 'POST',
         headers: {'Authorization': `Bearer ${localStorage.getItem('token') || ''}`}
       })
-          .then(res => {
-            if (res.data.code === 200) {
-              alert('复制成功！跳转到我的专辑列表');
-              this.$router.push('/webhome');
-            } else {
-              alert('复制失败：' + res.data.msg);
-            }
+      .then(res => {
+        const { code, data, msg } = res.data;
+        if (code === 200) {
+          // 新增成功：跳转到webhome并切换到mymusic标签
+          this.$router.push(`/webhome`).then(() => {
+            // 找到WebHome组件实例，切换到"我的音乐"标签
+            const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
+            if (webHomeVm) webHomeVm.activeMainTab = 'mymusic'
           })
-          .catch(err => {
-            console.error('复制失败：', err);
-            alert('复制失败！');
-          });
+        } else if (code === 409 && data) {
+          // 409冲突：专辑已存在，跳转到详情页
+          const duplicateAlbumId = Number(data) || data;
+          this.$router.push(`/album/detail/${duplicateAlbumId}?id=${duplicateAlbumId}`);
+        } else {
+          alert('添加失败：' + msg);
+        }
+      })
+      .catch(err => {
+        console.error('添加失败：', err);
+        alert('添加失败！');
+      });
     },
     // ✅ 关闭编辑侧边栏回调，修改成功则刷新当前页面数据
     handleEditClose(isSuccess) {

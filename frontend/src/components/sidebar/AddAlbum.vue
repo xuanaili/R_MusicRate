@@ -384,7 +384,6 @@ handleAutoParseSuccess(parseResult) {
   }));
   this.album.songs = formatSongs;
 
-  alert(`音频解析成功！共识别到 ${formatSongs.length} 首单曲，专辑信息已自动填充 ✔️${parseResult.mp3_url ? '\n已生成整轨MP3文件' : ''}`);
 }
   }
 };

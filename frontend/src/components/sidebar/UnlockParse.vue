@@ -278,6 +278,15 @@ export default {
         audioExts.some(ext => file.name.endsWith(ext))
       );
 
+
+        // 新增：打印上传的原始文件名（看控制台）
+  console.log("前端获取的原始文件列表：", files.map(f => ({
+    name: f.name,
+    size: f.size,
+    type: f.type
+  })));
+
+
       if (files.length) {
         this.fileList = files;
         this.parseStatus = `已选择 ${files.length} 个文件`;

@@ -439,8 +439,8 @@ export default {
   border-radius: 8px;
   border: none;
   box-sizing: border-box;
-  height: 700px;
-  max-height: 700px;
+  height: 660px;
+  /* max-height: 700px; */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -791,7 +791,7 @@ export default {
 .review-content {
   width: 60%;
   box-sizing: border-box;
-  height: 90vh;
+  height: 88vh;
   display: flex;
   flex-direction: column;
   justify-content: space-between;

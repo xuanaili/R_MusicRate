@@ -366,7 +366,7 @@ def decrypt_ncm(file_path: str | Path, output_dir: str | Path = '.') -> Dict[str
 
     output_file.write_bytes(result['audio_data'])
     print(f"\n解密完成：{output_file}")
-    print(f"封面是否写入：{result['cover']}")
+    # print(f"封面是否写入：{result['cover']}")
 
     # 关键修改2：将实际输出的文件路径存入结果，方便外部调用获取
     result['output_file_path'] = output_file
@@ -403,7 +403,6 @@ def batch_convert_ncm_to_mp3(ncm_files: list[Path], output_dir: Path) -> tuple[b
         success_count = 0
         fail_count = 0
         failed_files = []
-
         for idx, ncm_file in enumerate(ncm_files, 1):
             if not ncm_file.name.lower().endswith('.ncm'):
                 logger.warning(f"跳过非NCM文件: {ncm_file.name}")

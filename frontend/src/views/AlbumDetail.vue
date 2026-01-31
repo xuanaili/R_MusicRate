@@ -2253,7 +2253,7 @@ handleToggleMeteorPlay(val) {
 .layout-container {
   display: flex;
   width: 100%;
-  height: 98vh;
+  height: 97vh;
   font-family: "Microsoft YaHei", "SimHei", "Arial", sans-serif;
   line-height: 1.8;
   color: #333;
@@ -2330,13 +2330,13 @@ handleToggleMeteorPlay(val) {
   flex: 1;
   margin-left: 200px;
   padding: 30px;
-  //padding-bottom: 140px !important;
+  /*padding-bottom: 140px !important;*/
   overflow-y: auto;
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   z-index: 2;
-  height: 99vh;
+  height: 98vh;
 }
 
 h1 {

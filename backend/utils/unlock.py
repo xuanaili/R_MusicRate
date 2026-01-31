@@ -8,7 +8,6 @@ import os
 import re
 import tempfile
 import shutil
-from werkzeug.utils import secure_filename
 from mutagen.easyid3 import EasyID3
 from mutagen.oggvorbis import OggVorbis
 from mutagen.flac import FLAC
@@ -544,3 +543,32 @@ def write_cover_to_mp3(mp3_file_path: str | Path, cover_data: bytes) -> str:
     except Exception as e:
         print(f"写入封面到MP3失败：{e}")
         return ""
+
+
+# 替换werkzeug的secure_filename，保留中文/合法字符
+def secure_filename(filename: str) -> str:
+    """
+    安全的文件名处理函数：
+    1. 保留中文、字母、数字、-、_、.
+    2. 仅替换Windows系统非法字符
+    3. 处理首尾空白字符
+    """
+    if not filename:
+        return "unknown_file"
+
+    # 要清理的Windows非法字符
+    illegal_chars = r'\/:*?"<>|'
+    for char in illegal_chars:
+        filename = filename.replace(char, '_')
+
+    # 去除首尾空白字符
+    filename = filename.strip()
+
+    # 处理空文件名（防止全是非法字符的情况）
+    if not filename:
+        return "unknown_file"
+
+    # 处理连续的点/下划线（可选）
+    filename = filename.replace('..', '.').replace('__', '_')
+
+    return filename

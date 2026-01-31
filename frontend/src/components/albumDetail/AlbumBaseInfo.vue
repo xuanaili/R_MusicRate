@@ -347,7 +347,7 @@ export default {
   padding: 20px;
   border-radius: 8px;
   margin-bottom: 0 !important;
-  max-height: 88vh;
+  max-height: 87vh;
 	margin-top: 0 !important;
   align-self: flex-start;
   width: calc(100vw - 270px - 50px);
@@ -378,6 +378,7 @@ export default {
   border-bottom: none !important;
 	color: v-bind(mainColorDarkDouble) !important;
   font-weight: 600;
+  left:5px;
 }
 
 .section-title::after {
@@ -710,7 +711,7 @@ export default {
   display: flex;
   flex-direction: column;
   height: 300px;
-  margin-top: -40px;
+  margin-top: -26px;
   width: 100%;
   background: transparent !important;
   border: none !important;

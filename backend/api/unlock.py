@@ -6,13 +6,13 @@ import json
 import traceback
 import os
 import tempfile
-from werkzeug.utils import secure_filename
+
 
 
 from backend.utils.kgg_converter import kgg_to_mp3, batch_convert_kgg_to_mp3
 from backend.utils.ncm_unlock import batch_convert_ncm_to_mp3
 from backend.utils.unlock import allowed_file, get_audio_metadata, get_simple_album_id, upload_cover_to_imgbed, \
-    extract_album_cover, merge_audio_files, upload_merged_audio, format_duration
+    extract_album_cover, merge_audio_files, upload_merged_audio, format_duration, secure_filename
 
 
 def register_unlock_routes(app):
@@ -299,6 +299,7 @@ def register_unlock_routes(app):
                     uploaded_ncm_paths.append(ncm_path)
 
                 # 5. 批量转换NCM到MP3（获取临时封面路径）
+
                 success, mp3_files, temp_cover_map = batch_convert_ncm_to_mp3(uploaded_ncm_paths, temp_dir_path)
 
                 if not success or len(mp3_files) == 0:
@@ -710,3 +711,4 @@ def register_unlock_routes(app):
                 'code': 500,
                 'msg': f'解析失败：{str(e)}'
             }), 200
+
