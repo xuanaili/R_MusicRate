@@ -73,7 +73,9 @@ def register_album_routes(app):
 
             # 执行查询（保持原有逻辑不变）
             cursor.execute(base_sql, tuple(sql_params))
-            all_albums = cursor.fetchall()
+            # ========== 核心修复：强制转为列表，避免tuple导致的sort报错 ==========
+            all_albums = list(cursor.fetchall())  # 关键修改：加list()强制转列表
+            # ========== 核心修复结束 ==========
             total = len(all_albums)
             cursor.close()
 

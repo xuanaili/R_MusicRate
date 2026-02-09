@@ -394,6 +394,35 @@ def create_album_singers():
         print(f"❌ 创建album_singers表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
+
+
+def create_album_lyric():
+    """创建专辑歌词表（兼容MySQL所有版本：TEXT替代JSON，移除默认值）"""
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+CREATE TABLE IF NOT EXISTS album_lyric (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    album_pool_id INT NOT NULL COMMENT '搜索池专辑ID',
+    lyric_text TEXT NOT NULL COMMENT '歌词内容',
+    lyric_translate TEXT NOT NULL COMMENT '翻译的歌词内容，比如{CN:text，EN:text这种}',
+    create_user_id VARCHAR(50) NOT NULL COMMENT '创建用户ID',
+    create_time DATETIME NOT NULL COMMENT '创建时间',
+    update_time DATETIME NOT NULL COMMENT '更新时间',
+    INDEX idx_album_pool_id (album_pool_id),
+    INDEX idx_create_user (create_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑歌词表';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ album_lyric表 创建/检查成功！")
+    except Exception as e:
+        db.rollback()
+        print(f"❌ 创建album_lyric表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
 # ========== ✅✅✅ 核心：初始化所有基础表 ==========
 def init_base_tables():
     """初始化基础表"""
@@ -410,6 +439,7 @@ def init_base_tables():
         create_album_tags()
         create_album_singers()
 
+        create_album_lyric()
         print("✅ MySQL基础表初始化成功！")
         init_default_admin()
     except Exception as e:

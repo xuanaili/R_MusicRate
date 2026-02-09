@@ -17,8 +17,13 @@
       <div class="sidebar-menu">
         <div class="menu-item" :class="{active: activeTab === 'base'}" :style="activeTab==='base'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'base'">基础信息</div>
         <div class="menu-item" :class="{active: activeTab === 'tracks'}" :style="activeTab==='tracks'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'tracks'">曲目列表</div>
+                 <div class="menu-item" :class="{active: activeTab === 'lyric'}" :style="activeTab==='lyric'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'lyric'">歌词展示</div>
         <div class="menu-item" :class="{active: activeTab === 'review'}" :style="activeTab==='review'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'review'">听后感</div>
         <div class="menu-item" :class="{active: activeTab === 'comments'}" :style="activeTab==='comments'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'comments'">平台评论</div>
+
+
+
+
       </div>
     </aside>
 
@@ -102,6 +107,31 @@
           @delete-comment="deletePublicComment"
           @update-comment-content="(val) => newCommentContent = val"
       />
+
+
+
+      <!-- 新增：歌词展示组件 -->
+<AlbumLyricViewer
+  v-if="activeTab === 'lyric'"
+  :album="album"
+          :tracks="album.tracks || ['未知曲目']"
+        :tracks-time="album.tracks_time || []"
+
+        :favourite_tracks="album.favourite_tracks"
+        :favourite_tracks_time="album.favourite_tracks_time"
+  :lyrics="{
+    lyric_text: album.lyric_text || '',
+    lyric_translate: album.lyric_translate || ''
+  }"
+  :current-time="currentTime"
+  :is-playing="isPlaying"
+  :main-color="albumMainColor"
+  :main-color-dark="albumMainColorDark"
+  :main-color-dark-double="albumMainColorDarkDouble"
+  :is-admin="isAdmin"
+  @jump-to-time="handleTrackJump"
+  @update:lyrics="updateAlbumLyrics"
+/>
     </main>
 
     <!-- 播放列表组件传参完整，双向绑定+防抖保存 -->
@@ -126,6 +156,8 @@
         @update:activeTabIndex="val => activeTabIndex = val"
         @trigger-upload-duration="pauseListeningTimer"
     />
+
+
 
     <!-- 底部播放器区域 核心重构：精准坐标对齐+透明背景 -->
     <div class="full-player-wrapper">
@@ -214,6 +246,8 @@ import AlbumReviewEditor from '@/components/albumDetail/AlbumReviewEditor'
 import AlbumCommentSection from '@/components/albumDetail/AlbumCommentSection'
 import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
 // 核心新增：引入评分计算工具函数
+
+import AlbumLyricViewer from '@/components/albumDetail/AlbumLyricViewer'
 import {calculateAlbumTotalScore} from '@/utils/scoreCalc.js'
 // ✅✅✅ 整合新增：引入全局配置文件 (小球动画配置)
 
@@ -225,7 +259,8 @@ export default {
     AlbumReviewEditor,
     AlbumCommentSection,
     PlayerPlaylist,
-    AlbumAudioUpload
+    AlbumAudioUpload,
+    AlbumLyricViewer
   },
   data() {
     return {
@@ -249,6 +284,10 @@ export default {
         album_intro: '',
         tags: [],
         main_type: [],
+         lyrics: [],
+          // 补充歌词字段初始化
+  lyric_text: '',       // 原版歌词文本
+  lyric_translate: '{}' // 翻译歌词JSON字符串
       },
       activeTab: 'base',
       newCommentContent: '',
@@ -513,43 +552,45 @@ export default {
   },
 
   },
-  async created() {
-    if (!localStorage.getItem('token')) {
-      this.$router.push('/login');
-      return;
-    }
-    this.currentUserId = localStorage.getItem('user_id');
-    this.isAdmin = localStorage.getItem('is_admin') === '1';
+async created() {
+  if (!localStorage.getItem('token')) {
+    this.$router.push('/login');
+    return;
+  }
+  this.currentUserId = localStorage.getItem('user_id');
+  this.isAdmin = localStorage.getItem('is_admin') === '1';
 
-    const albumId = this.$route.params.id || this.$route.query.id;
-    if (!albumId) {
-      alert('未找到专辑ID！');
-      // 核心修改：跳转WebHome主页 + 强制激活【我的音乐】Tab
-      this.$router.push({path: '/webhome'}).then(() => {
-        // 跳转后主动修改WebHome的Tab激活状态为我的音乐
-        const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
-        if (webHomeVm) {
-          webHomeVm.activeMainTab = 'mymusic'
-        }
-      })
-      return;
-    }
+  const albumId = this.$route.params.id || this.$route.query.id;
+  if (!albumId) {
+    alert('未找到专辑ID！');
+    this.$router.push({path: '/webhome'}).then(() => {
+      const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
+      if (webHomeVm) {
+        webHomeVm.activeMainTab = 'mymusic'
+      }
+    })
+    return;
+  }
 
-    await this.getUserPlaylistData();
-    await this.getAlbumDetail(Number(albumId));
-    await this.getAlbumPoolRealId();
-    const savedBlockedIds = localStorage.getItem(`blocked_comments_${this.albumPoolId}`);
-    if (savedBlockedIds) {
-      this.blockedCommentIds = JSON.parse(savedBlockedIds);
-    }
-    this.checkUserComment();
-    this.getPublicComments();
-    if (this.album.source_pool_id) await this.getAlbumAudioInfo().catch(() => console.log('音频加载失败'));
-    this.currentAlbumId = -1; // 初始化默认值：无播放，下标为-1
-    this.currentTrackIndex = -1;
-    await this.getUserHasAudioAlbums();
-    this.autoPlayCurrentAlbumAudio();
-  },
+  await this.getUserPlaylistData();
+  await this.getAlbumDetail(Number(albumId));
+  await this.getAlbumPoolRealId();
+
+  // ====== 新增：加载歌词 ======
+  await this.getAlbumLyrics();
+
+  const savedBlockedIds = localStorage.getItem(`blocked_comments_${this.albumPoolId}`);
+  if (savedBlockedIds) {
+    this.blockedCommentIds = JSON.parse(savedBlockedIds);
+  }
+  this.checkUserComment();
+  this.getPublicComments();
+  if (this.album.source_pool_id) await this.getAlbumAudioInfo().catch(() => console.log('音频加载失败'));
+  this.currentAlbumId = -1;
+  this.currentTrackIndex = -1;
+  await this.getUserHasAudioAlbums();
+  this.autoPlayCurrentAlbumAudio();
+},
   mounted() {
     // ✅✅✅ 整合新增：父组件挂载后初始化小球动画
     //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
@@ -1634,7 +1675,8 @@ async addSingleReview(content, finalScore) {
         is_customized: 0,
         album_intro: '',
         tags: [],
-        main_type: []
+        main_type: [],
+        lyrics: [],
       };
       this.audioSrc = '';
       this.fileName = '';
@@ -1799,6 +1841,72 @@ async prepareScore() {
         alert('删除公共评论失败！');
       });
     },
+
+
+
+
+
+
+
+
+
+
+// 更新专辑歌词（本地+服务器）
+updateAlbumLyrics(lyricsData) {
+  // 1. 更新本地数据
+  this.album.lyric_text = lyricsData.lyric_text;
+  this.album.lyric_translate = lyricsData.lyric_translate;
+
+  // 2. 保存到服务器
+  this.saveAlbumLyricsToServer(lyricsData);
+},
+
+// 保存歌词到服务器
+async saveAlbumLyricsToServer(lyricsData) {
+  if (!this.album.source_pool_id) {
+    this.$message?.error('无法获取专辑ID，保存失败！');
+    return;
+  }
+
+  try {
+    const res = await this.$axios.post(
+      `/api/album/lyric/save/${this.album.source_pool_id}`,
+      lyricsData,
+      { headers: { Authorization: localStorage.getItem('token') || '' } }
+    );
+
+    if (res.data.code !== 200) {
+      this.$message?.error(res.data.msg || '歌词保存到服务器失败！');
+    }
+  } catch (error) {
+    console.error('保存歌词到服务器失败：', error);
+    this.$message?.error('网络错误，歌词保存失败！');
+  }
+},
+
+
+// 获取专辑歌词
+async getAlbumLyrics() {
+  if (!this.album.source_pool_id) return;
+  try {
+    const res = await this.$axios.get(
+      `/api/album/lyric/get/${this.album.source_pool_id}`,
+      { headers: { Authorization: localStorage.getItem('token') || '' } }
+    );
+    if (res.data.code === 200 && res.data.data) {
+      // 更新专辑歌词数据
+      this.album.lyric_text = res.data.data.lyric_text || '';
+      this.album.lyric_translate = res.data.data.lyric_translate || '{}';
+    }
+  } catch (error) {
+    console.error('获取歌词失败：', error);
+    // 失败时使用空值兜底，避免报错
+    this.album.lyric_text = '';
+    this.album.lyric_translate = '{}';
+  }
+},
+
+
     // ✅✅✅ ======================== 以下是整合新增的【小球动画所有核心方法】 ========================
 
 
