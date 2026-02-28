@@ -332,7 +332,6 @@ export default {
           data: submitData
         });
         if (res.data.code === 200) {
-          alert("音乐风格添加成功！");
           this.handleClose();
         } else {
           this.errorMsg = res.data.msg;

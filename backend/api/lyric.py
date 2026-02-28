@@ -293,6 +293,119 @@ def register_lyric_routes(app):
             print(f"❌ 自动获取歌词出错：{traceback.format_exc()}")
             return jsonify({"code": 500, "msg": f"自动获取歌词失败：{str(e)}"}), 200
 
+    # ✅ 4. 解析网易云链接获取歌词接口
+    @app.route('/api/lyric/parse_netease_url', methods=['POST', 'OPTIONS'])
+    @login_required
+    def parse_netease_url_lyric():
+        """解析网易云音乐链接获取歌词"""
+        try:
+            data = request.get_json()
+            song_url = data.get('song_url', '').strip()
+
+            # 验证URL
+            if not song_url or not song_url.startswith('https://music.163.com/'):
+                return jsonify({
+                    "code": 400,
+                    "msg": "请输入有效的网易云音乐歌曲链接！"
+                }), 200
+
+            # 解析歌曲ID
+            song_id = None
+            # 匹配两种URL格式：带#和不带#的
+            patterns = [
+                r'song\?id=(\d+)',  # 匹配 ?id=xxx
+                r'song/id/(\d+)',  # 匹配 /id/xxx
+                r'#/song\?id=(\d+)',  # 匹配 #/song?id=xxx
+                r'song/(\d+)'  # 匹配 /song/xxx
+            ]
+
+            for pattern in patterns:
+                match = re.search(pattern, song_url)
+                if match:
+                    song_id = match.group(1)
+                    break
+
+            if not song_id:
+                return jsonify({
+                    "code": 400,
+                    "msg": "无法从链接中解析出歌曲ID，请检查链接格式！",
+                    "data": {"song_url": song_url}
+                }), 200
+
+            print(f"\n🔍 解析网易云链接成功，歌曲ID: {song_id}")
+
+            # 根据ID直接获取歌词（绕过搜索步骤）
+            def fetch_netease_lyric_by_id(song_id):
+                """通过歌曲ID直接获取网易云歌词"""
+                try:
+                    headers = {
+                        **HEADERS,
+                        'Referer': 'https://music.163.com/',
+                        'Host': 'music.163.com',
+                    }
+
+                    # 直接调用歌词接口
+                    lyric_url = f"https://music.163.com/api/song/lyric/v1?id={song_id}&lv=1&kv=1&tv=-1"
+                    lyric_response = SESSION.get(lyric_url, headers=headers, timeout=10)
+
+                    if lyric_response.status_code != 200:
+                        print(f"歌词接口返回非200状态码: {lyric_response.status_code}")
+                        return ""
+
+                    try:
+                        lyric_data = lyric_response.json()
+                    except json.JSONDecodeError:
+                        print(f"歌词接口返回非JSON内容: {lyric_response.text[:200]}")
+                        return ""
+
+                    # 解析歌词
+                    lyric_text = ""
+
+                    # 优先获取原版歌词
+                    if 'lrc' in lyric_data and lyric_data['lrc'].get('lyric'):
+                        lyric_text = lyric_data['lrc']['lyric']
+
+                    # 合并翻译歌词
+                    if 'tlyric' in lyric_data and lyric_data['tlyric'].get('lyric'):
+                        trans_lyric = lyric_data['tlyric']['lyric']
+                        if trans_lyric and trans_lyric != '[99:00.00]纯音乐，请欣赏\n':
+                            lyric_text += "\n\n【翻译】\n" + trans_lyric
+
+                    return clean_lyric(lyric_text, keep_timestamp=True) if lyric_text else ""
+                except Exception as e:
+                    print(f"通过ID获取网易云歌词错误: {str(e)}")
+                    return ""
+
+            # 获取歌词
+            lyric_text = fetch_netease_lyric_by_id(song_id)
+
+            if not lyric_text:
+                return jsonify({
+                    "code": 404,
+                    "msg": "未找到该歌曲的歌词！",
+                    "data": {
+                        "song_id": song_id,
+                        "song_url": song_url
+                    }
+                }), 200
+
+            return jsonify({
+                "code": 200,
+                "msg": "解析成功，获取歌词完成！",
+                "data": {
+                    "song_id": song_id,
+                    "song_url": song_url,
+                    "lyric_text": lyric_text,
+                    "lyric_length": len(lyric_text)
+                }
+            })
+
+        except Exception as e:
+            print(f"❌ 解析网易云链接出错：{traceback.format_exc()}")
+            return jsonify({
+                "code": 500,
+                "msg": f"解析链接失败：{str(e)}"
+            }), 200
     # ==================== 各平台歌词获取函数（修复增强版） ====================
 
     def fetch_qq_lyric(song_name, artist):
@@ -911,6 +1024,10 @@ def register_lyric_routes(app):
         return '\n'.join(unique_lines)
 
     return app  # 返回app实例，方便链式调用
+
+
+
+
 
 
 # 导出注册函数

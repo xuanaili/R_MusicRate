@@ -1,10 +1,8 @@
 <template>
   <div class="tab-content-container">
-    <!-- 左侧 40% 区域 - 日历统计小组件【固定高度+滚动+悬停弹窗】 -->
     <div class="calendar-statistics">
-      <!-- 日历头部：年月居左 + 左右箭头全部居右 + 三角箭头替换 -->
       <div class="calendar-header">
-        <span class="calendar-month">{{ currentYear }}年 {{ currentMonth < 10 ? '0' + currentMonth : currentMonth }}月</span>
+<span class="calendar-month">{{ formattedMonth }}</span>
         <div class="arrow-group">
           <button class="arrow-btn" @click="prevMonth" :style="{ color: mainColor }">
             ◀
@@ -14,7 +12,6 @@
           </button>
         </div>
       </div>
-      <!-- 星期头部 - 7列固定，和下方日期严格对齐 -->
       <div class="calendar-week">
         <div class="week-item">日</div>
         <div class="week-item">一</div>
@@ -24,7 +21,6 @@
         <div class="week-item">五</div>
         <div class="week-item">六</div>
       </div>
-      <!-- 日历主体 - ✅今日+选中日期 均为圆形高亮 + 数量角标改为圆角矩形 -->
       <div class="calendar-days">
         <div class="day-item empty" v-for="empty in emptyStartDays" :key="'empty'+empty"></div>
         <div
@@ -46,12 +42,10 @@
         </div>
       </div>
 
-      <!-- 点击高亮日期展示：当日听后感详情列表 -->
       <div class="day-detail-list" v-if="selectedDay && hasRecordOnDay(selectedDay)">
-        <h4 :style="{ color: mainColorDark, margin: '15px 0 10px 0', fontSize: '14px', fontWeight: 'bold' }">
-          {{ currentYear }}-{{ currentMonth <10 ? '0'+currentMonth : currentMonth }}-{{ selectedDay <10 ? '0'+selectedDay : selectedDay }} 听后感详情
-        </h4>
-        <!-- ✅ 核心修改：听后感详情滚动容器 新增专属样式 进度条居左+匹配可选标签样式 -->
+<h4 :style="{ color: mainColorDark, margin: '15px 0 10px 0', fontSize: '14px', fontWeight: 'bold' }">
+  {{ formattedSelectedDate }} 听后感详情
+</h4>
         <div class="detail-scroll-box">
           <div
             class="detail-item"
@@ -62,7 +56,6 @@
           >
             <div class="album-name">{{ item.albumName }} <span>{{item.singer}}</span></div>
             <div class="album-score">评分：<span>{{ item.score }}</span></div>
-            <!-- ✅ 新增时长容器，用于承载横线样式 -->
             <div class="detail-duration-wrapper">
             </div>
           </div>
@@ -167,6 +160,19 @@ export default {
     };
   },
   computed: {
+        // 格式化的年月显示
+    formattedMonth() {
+      const month = this.currentMonth < 10 ? '0' + this.currentMonth : this.currentMonth;
+      return `${this.currentYear}年 ${month}月`;
+    },
+    // 格式化的选中日期
+    formattedSelectedDate() {
+      const month = this.currentMonth < 10 ? '0' + this.currentMonth : this.currentMonth;
+      const day = this.selectedDay < 10 ? '0' + this.selectedDay : this.selectedDay;
+      return `${this.currentYear}-${month}-${day}`;
+    },
+
+
     sortedFeelingsList() {
       const feelings = (this.album.review || {}).feelings || [];
       return [...feelings].sort((a, b) => {
@@ -989,6 +995,9 @@ export default {
   opacity: 0.8;
   font-weight: 400;
 }
+
+
+
 
 /* 已移除加号按钮相关样式 */
 </style>

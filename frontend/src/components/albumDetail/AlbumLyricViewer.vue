@@ -1,5 +1,5 @@
 <template>
-  <!-- 模板部分保持不变 -->
+  <!-- 模板部分保持不变，仅添加一键获取按钮 -->
   <div class="lyric-detail-container">
     <!-- 主体内容：单栏布局 -->
     <div class="lyric-detail-main">
@@ -8,7 +8,6 @@
         <!-- 无歌词提示 -->
         <div v-if="!hasLyricContent" class="no-lyric-tip">
           暂无歌词数据
-          <!-- 新增：管理员显示上传/编辑歌词按钮 -->
           <button
             v-if="isAdmin"
             class="upload-lyric-btn no-lyric-upload-btn"
@@ -21,17 +20,14 @@
 
         <!-- 歌词展示区域 -->
         <div v-else class="lyrics-wrapper">
-          <!-- 固定显示的歌名（整合上传编辑歌词按钮） -->
+          <!-- 固定显示的歌名 -->
           <div class="fixed-track-title"
                @mouseenter="showUploadBtn = true"
                @mouseleave="showUploadBtn = false">
-            <!-- 单曲标题区域 - 可点击展开下拉列表（移除箭头） -->
             <div class="track-title-wrapper" @click="toggleTrackDropdown">
               <h2>{{ currentPlayingTrackName }}</h2>
-              <!-- 移除下拉箭头 -->
             </div>
 
-            <!-- 上传歌词按钮（仅管理员可见，悬停时显示） -->
             <button
               v-if="isAdmin && showUploadBtn"
               class="upload-lyric-btn"
@@ -41,7 +37,6 @@
               上传/编辑歌词
             </button>
 
-            <!-- 单曲列表下拉框 -->
             <div v-if="trackDropdownOpen" class="track-dropdown">
               <div
                   v-for="(track, index) in trackList"
@@ -57,15 +52,13 @@
             </div>
           </div>
 
-          <!-- 滚动的歌词内容 - 重构为网易云风格 -->
+          <!-- 滚动的歌词内容 -->
           <div
               class="lyrics-content"
               ref="lyricsContent"
               @scroll="handleManualScroll"
           >
-            <!-- 歌词渐变遮罩容器 -->
             <div class="lyric-scroll-container">
-              <!-- 整合版：原版+中文翻译歌词成对展示 -->
               <div class="lyric-section combined-lyric-section" v-if="combinedLyrics.length > 0">
                 <div
                     v-for="(item, index) in combinedLyrics"
@@ -76,7 +69,6 @@
                   }"
                     @click="handleLyricClick(item.time)"
                 >
-                  <!-- 原版歌词 -->
                   <div
                       class="original-lyric-item"
                       :style="getLyricItemStyle(index, highlightedCombinedIndex)"
@@ -85,7 +77,6 @@
                     <span class="lyric-time">{{ formatTime(item.time) }}</span>
                   </div>
 
-                  <!-- 中文翻译歌词（有内容时显示） -->
                   <div
                       v-if="item.cnText"
                       class="cn-lyric-item"
@@ -124,23 +115,45 @@
                 </select>
               </div>
 
-              <!-- 原版歌词输入框 - 新增自动获取歌词按钮 -->
+              <!-- 原版歌词输入框 - 添加ref用于绑定粘贴事件 -->
               <div class="lyric-input-group">
                 <div class="lyric-input-header">
                   <label class="lyric-input-label">
                     {{ trackList[selectedTrackIndex]?.name || '当前单曲' }} 原版歌词（绝对时间）
                   </label>
-                  <!-- 自动获取歌词按钮 -->
-                  <button
-                      class="auto-fetch-lyric-btn"
-                      :style="{backgroundColor: mainColorDark}"
-                      @click="showAutoFetchLyricModal = true"
-                      :disabled="!trackList[selectedTrackIndex]?.name"
-                  >
-                    <i class="icon-fetch">📝</i> 自动获取歌词
-                  </button>
+                  <div class="lyric-btn-group">
+                    <!-- 新增：一键获取所有歌词按钮 -->
+                    <button
+                      class="batch-fetch-lyric-btn"
+                      :style="{backgroundColor: mainColorDarkDouble}"
+                      @click="startBatchFetchLyrics"
+                      :disabled="!trackList.length || batchFetchLoading"
+                    >
+                      <i class="icon-batch-fetch">🔄</i>
+                      <span v-if="!batchFetchLoading">一键获取所有歌词</span>
+                      <span v-if="batchFetchLoading">处理中: {{batchFetchCurrent}}/{{batchFetchTotal}}</span>
+                    </button>
+
+                    <button
+                        class="auto-fetch-lyric-btn"
+                        :style="{backgroundColor: mainColorDark}"
+                        @click="showAutoFetchLyricModal = true"
+                        :disabled="!trackList[selectedTrackIndex]?.name"
+                    >
+                      <i class="icon-fetch">📝</i> 自动获取歌词
+                    </button>
+                    <button
+                        class="modal-save-all-btn"
+                        :style="{backgroundColor: mainColorDarkDouble}"
+                        @click="saveAndUploadAllLyrics"
+                    >
+                      保存并上传所有歌词
+                    </button>
+                  </div>
                 </div>
+                <!-- 关键修改：添加ref="originalLyricTextarea" -->
                 <textarea
+                    ref="originalLyricTextarea"
                     v-model="currentTrackLyricContent"
                     class="lyric-textarea"
                     placeholder="请按格式输入歌词：
@@ -148,16 +161,16 @@
 00:05 歌词第二句
 00:10 歌词第三句
 （时间格式：mm:ss 或 mm:ss.xx，使用绝对时间）"
+                    @change="handleLyricInputChange(currentTrackLyricContent)"
                 ></textarea>
               </div>
 
-              <!-- 翻译歌词输入框（固定为中文） -->
+              <!-- 翻译歌词输入框 -->
               <div class="lyric-input-group">
                 <div class="translate-lang-select-wrapper">
                   <label class="lyric-input-label">
                     {{ trackList[selectedTrackIndex]?.name || '当前单曲' }} 中文翻译歌词（可选，绝对时间）
                   </label>
-                  <!-- 固定为中文，隐藏语言选择器 -->
                   <select
                       v-model="currentTranslateLang"
                       class="translate-lang-select"
@@ -174,6 +187,7 @@
 00:05 第二句翻译
 00:10 第三句翻译
 （时间格式：mm:ss 或 mm:ss.xx，使用绝对时间）"
+                    @change="handleTranslateLyricInputChange(currentTrackTranslateContent)"
                 ></textarea>
               </div>
 
@@ -183,8 +197,7 @@
                 📌 提示：请输入绝对时间（从专辑开始的总时间），系统会自动按时间轴连续展示
               </div>
             </div>
-            <!-- 核心修改：合并两个按钮为一个 -->
-            <div class="lyric-modal-footer">
+            <div class="lyric-modal-footer" style="display: none;">
               <button
                   class="modal-cancel-btn"
                   @click="showUploadLyricModal = false"
@@ -210,7 +223,6 @@
               <span class="close-btn" @click="showAutoFetchLyricModal = false">×</span>
             </div>
             <div class="auto-fetch-modal-body">
-              <!-- 歌曲信息确认 -->
               <div class="song-info-group">
                 <label class="song-info-label">歌曲信息</label>
                 <div class="song-info-fields">
@@ -239,24 +251,29 @@
                         placeholder="可选，用于精准匹配"
                     />
                   </div>
+                  <div class="info-field">
+                    <span class="field-name">网易云链接：</span>
+                    <input
+                        v-model="fetchNeteaseUrl"
+                        class="info-input"
+                        placeholder="例如：https://music.163.com/#/song?id=3315852235"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <!-- 获取按钮 -->
               <button
                   class="fetch-lyric-btn"
                   :style="{backgroundColor: mainColorDark}"
                   @click="fetchLyrics"
-                  :disabled="fetchLoading || !fetchSongName.trim()"
+                  :disabled="fetchLoading || (!fetchSongName.trim() && !fetchNeteaseUrl.trim())"
               >
                 <span v-if="fetchLoading">获取中...</span>
                 <span v-else>点击获取歌词</span>
               </button>
 
-              <!-- 歌词选择区域 -->
               <div v-if="fetchResult" class="lyric-result-group">
                 <label class="lyric-result-label">选择歌词来源</label>
-                <!-- 歌词来源切换 -->
                 <div class="lyric-source-tabs">
                   <button
                       v-for="source in lyricSources"
@@ -271,7 +288,6 @@
                   </button>
                 </div>
 
-                <!-- 选中的歌词预览 -->
                 <div class="lyric-preview-container">
                   <textarea
                       v-model="selectedLyricContent"
@@ -281,7 +297,6 @@
                   ></textarea>
                 </div>
 
-                <!-- 填入按钮 -->
                 <button
                     class="fill-lyric-btn"
                     :style="{backgroundColor: mainColorDarkDouble}"
@@ -311,7 +326,6 @@
 export default {
   name: 'AlbumLyricViewer',
   props: {
-    // 原有props定义
     album: {
       type: Object,
       required: true,
@@ -375,29 +389,28 @@ export default {
         {value: 'EN', label: '英文'},
         {value: 'DE', label: '德语'}
       ],
-      currentTranslateLang: 'CN', // 默认改为中文
+      currentTranslateLang: 'CN',
       highlightedIndex: -1,
       highlightedTranslateIndex: -1,
-      highlightedCombinedIndex: -1, // 新增：整合版歌词高亮索引
+      highlightedCombinedIndex: -1,
       scrollTimer: null,
-      resetTimer: null,
+      // 1. 移除：删除resetTimer变量
       showUploadLyricModal: false,
       lyricTextareaContent: '',
       translateTextareaContent: '',
       localParsedLyrics: [],
-      localParsedTranslateLyrics: {}, // 修改：改为对象存储多语言翻译
-      combinedLyrics: [], // 新增：整合后的原版+中文歌词数组
+      localParsedTranslateLyrics: {},
+      combinedLyrics: [],
       isScrolling: false,
       showUploadBtn: false,
       trackDropdownOpen: false,
       showAutoFetchLyricModal: false,
       fetchSongName: '',
-      // 【修改1】初始化时设置默认值为专辑歌手名
       fetchArtist: this.album.singer || '',
       fetchDuration: 0,
+      fetchNeteaseUrl: '',
       fetchLoading: false,
       fetchResult: null,
-      // 修复：增加QQ音乐来源
       lyricSources: [
         {key: 'netease', name: '网易云音乐'},
         {key: 'kugou', name: '酷狗音乐'},
@@ -405,7 +418,13 @@ export default {
         {key: 'genius', name: 'Genius'}
       ],
       selectedSource: 'netease',
-      selectedLyricContent: ''
+      selectedLyricContent: '',
+      scrollAnimationTimer: null,
+      // 新增批量获取相关状态
+      batchFetchLoading: false,
+      batchFetchCurrent: 0,
+      batchFetchTotal: 0,
+      batchFetchTimer: null,
     };
   },
   computed: {
@@ -474,7 +493,6 @@ export default {
           this.initTrackList(true);
         }
         this.initTrackList(true);
-        // 【修改2】专辑变化时更新歌手名
         this.fetchArtist = newVal.singer || '';
       }, deep: true
     },
@@ -487,8 +505,6 @@ export default {
 
         if (this.trackList[newVal]) {
           this.fetchSongName = this.trackList[newVal].name || '';
-          // 【修改3】保留原有逻辑，但不覆盖歌手名（用户可手动修改）
-          // 仅在歌手名为空时才设置，避免覆盖用户输入
           if (!this.fetchArtist) {
             this.fetchArtist = this.album.singer || '';
           }
@@ -499,6 +515,7 @@ export default {
           } else {
             this.fetchDuration = 0;
           }
+          this.fetchNeteaseUrl = '';
         }
       },
       immediate: true
@@ -517,25 +534,19 @@ export default {
     },
     lyrics: {
       handler(newVal) {
-        // 解析原版歌词
         this.localParsedLyrics = this.parseLyricText(newVal.lyric_text || '');
 
-        // 解析翻译歌词（支持多语言）
         this.localParsedTranslateLyrics = {};
         try {
           const translateObj = JSON.parse(newVal.lyric_translate || '{}');
-          // 解析每种语言的翻译歌词
           Object.keys(translateObj).forEach(lang => {
             this.localParsedTranslateLyrics[lang] = this.parseLyricText(translateObj[lang] || '');
           });
-          // 默认选中中文
           this.currentTranslateLang = 'CN';
         } catch (e) {
-          // 兼容旧格式
           this.localParsedTranslateLyrics['CN'] = this.parseLyricText(newVal.lyric_translate || '');
         }
 
-        // 整合原版+中文翻译歌词
         this.combineLyrics();
 
         this.initTrackLyricsMap();
@@ -549,18 +560,15 @@ export default {
     },
     selectedSource: {
       handler(newVal) {
-        // 修复：增强数据检查，确保数据存在
         if (this.fetchResult && this.fetchResult[newVal]) {
           this.selectedLyricContent = this.fetchResult[newVal].lyric || '';
         } else {
           this.selectedLyricContent = '';
         }
-        // 修复：自动选中第一个成功的来源
         this.autoSelectFirstSuccessSource();
       },
       immediate: true
     },
-    // 新增：监听fetchResult变化，自动选中第一个成功的来源
     fetchResult: {
       handler(newVal) {
         if (newVal) {
@@ -573,10 +581,12 @@ export default {
   },
   mounted() {
     this.initTrackList();
-    this.startResetTimer();
+    // 2. 移除：删除startResetTimer()调用
     document.addEventListener('click', this.handleClickOutside);
 
+    // 关键修改：绑定粘贴事件
     this.$nextTick(() => {
+      this.bindLyricPasteEvent();
       this.updateCurrentLyric();
     });
   },
@@ -584,70 +594,236 @@ export default {
     if (this.scrollTimer) {
       clearTimeout(this.scrollTimer);
     }
-    if (this.resetTimer) {
-      clearTimeout(this.resetTimer);
-    }
+    // 3. 移除：删除resetTimer的清理逻辑
     document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
     document.removeEventListener('click', this.handleClickOutside);
+
+    clearTimeout(this.scrollAnimationTimer);
+
+    // 清理批量获取计时器
+    if (this.batchFetchTimer) {
+      clearTimeout(this.batchFetchTimer);
+    }
+
+    // 关键修改：解绑粘贴事件
+    if (this.$refs.originalLyricTextarea) {
+      this.$refs.originalLyricTextarea.removeEventListener('paste', this.handleLyricPaste);
+    }
   },
   methods: {
-    // 修复：获取歌词的核心方法
+    // 关键新增：绑定粘贴事件
+    bindLyricPasteEvent() {
+      const textarea = this.$refs.originalLyricTextarea;
+      if (textarea) {
+        // 先移除可能存在的旧事件
+        textarea.removeEventListener('paste', this.handleLyricPaste);
+        // 绑定新的粘贴事件
+        textarea.addEventListener('paste', this.handleLyricPaste);
+      }
+    },
+
+    // 关键修复：处理歌词粘贴拆分逻辑
+    async handleLyricPaste(e) {
+      e.preventDefault(); // 阻止默认粘贴行为
+
+      try {
+        // 读取剪贴板内容
+        const pastedContent = await navigator.clipboard.readText();
+        if (!pastedContent.trim()) return;
+
+        // 按行分割并清理空行
+        const lines = pastedContent.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+
+        // 统一解析所有 [xx:xx.xxx] 格式的歌词行
+        const allItems = [];
+        for (const line of lines) {
+          // 匹配 [mm:ss.xxx] 或 mm:ss.xxx 格式（兼容带/不带中括号）
+          const regex = /(?:\[)?(\d{2}:\d{2}\.\d+)(?:\])?\s*(.+)/;
+          const match = line.match(regex);
+          if (!match) continue;
+
+          let timeStr = match[1]; // 原始时间字符串（如 01:41.532）
+          const text = match[2].trim();
+          if (!text) continue;
+
+          // 过滤掉作词作曲/by: 等无效行
+          if (/^[:：by:作词作曲编曲演唱专辑]/.test(text)) continue;
+
+          // 解析时间并格式化
+          const time = this.parseTimeStr(timeStr);
+          const formattedTimeStr = this.formatTimeForOutput(time);
+
+          allItems.push({
+            time: parseFloat(time.toFixed(1)), // 保留1位小数用于分组
+            rawTimeStr: timeStr,
+            timeStr: formattedTimeStr,
+            text
+          });
+        }
+
+        if (allItems.length === 0) {
+          // 没有解析到有效歌词，直接粘贴原始内容
+          this.currentTrackLyricContent = pastedContent;
+          return;
+        }
+
+        // 按格式化后的时间（1位毫秒）分组，确保精准匹配
+        const groups = {};
+        for (const item of allItems) {
+          const key = item.time.toFixed(1); // 01:41.532 → 101.5 → 分组key
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(item);
+        }
+
+        // 检查是否包含双语（同一时间戳下有多个文本）
+        const hasMulti = Object.values(groups).some(g => g.length >= 2);
+        if (!hasMulti) {
+          // 不是双语，直接输出格式化后的歌词
+          this.currentTrackLyricContent = allItems.map(i => `${i.timeStr} ${i.text}`).join('\n');
+          return;
+        }
+
+        // 开始拆分：第一组=原版（非中文），第二组=翻译（中文）
+        const originalLines = [];
+        const translateLines = [];
+        // 检测是否为中文的辅助函数（更精准的中文检测）
+        const isChinese = (str) => {
+          // 匹配中文字符、中文标点
+          return /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(str);
+        };
+
+        // 按时间排序处理
+        const sortedKeys = Object.keys(groups).sort((a, b) => a - b);
+        for (const key of sortedKeys) {
+          const items = groups[key];
+          if (items.length === 0) continue;
+
+          // 分离中文和非中文内容
+          const chineseItems = items.filter(item => isChinese(item.text));
+          const originalItems = items.filter(item => !isChinese(item.text));
+
+          // 优先使用非中文作为原版，没有则取第一个
+          const originalItem = originalItems.length > 0 ? originalItems[0] : items[0];
+          // 中文作为翻译
+          const chineseItem = chineseItems.length > 0 ? chineseItems[0] : null;
+
+          if (originalItem) {
+            originalLines.push(`${originalItem.timeStr} ${originalItem.text}`);
+          }
+          if (chineseItem) {
+            translateLines.push(`${chineseItem.timeStr} ${chineseItem.text}`);
+          }
+        }
+
+        // 核心修复：确保数据更新触发视图刷新
+        this.$nextTick(() => {
+          this.currentTrackLyricContent = originalLines.join('\n');
+          this.currentTrackTranslateContent = translateLines.join('\n');
+
+          // 提示用户拆分成功
+          if (this.$message) {
+            this.$message.success('已自动拆分双语歌词，格式适配为 mm:ss.x！');
+          }
+        });
+
+      } catch (err) {
+        console.error('粘贴失败', err);
+        // 降级处理：直接粘贴原始内容
+        try {
+          this.currentTrackLyricContent = await navigator.clipboard.readText();
+        } catch (e) {
+          this.currentTrackLyricContent = '';
+        }
+      }
+    },
+
+    // 新增：专门用于输出的时间格式化方法（mm:ss.x）
+    formatTimeForOutput(seconds) {
+      if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
+      const min = Math.floor(seconds / 60);
+      const sec = Math.floor(seconds % 60);
+      const ms = Math.floor((seconds % 1) * 10); // 只保留1位毫秒
+      return ms > 0
+          ? `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}.${ms}`
+          : `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    },
+
     async fetchLyrics() {
-      if (!this.fetchSongName.trim()) {
-        this.$message?.warning('歌曲名不能为空！');
+      if (!this.fetchSongName.trim() && !this.fetchNeteaseUrl.trim()) {
+        this.$message?.warning('歌曲名和网易云链接不能同时为空！');
         return;
       }
 
       this.fetchLoading = true;
-      // 修复：清空之前的结果，避免干扰
       this.fetchResult = null;
       this.selectedLyricContent = '';
 
       try {
-        const res = await this.$axios.post(
-            '/api/lyric/fetch_auto',
-            {
-              song_name: this.fetchSongName.trim(),
-              artist: this.fetchArtist.trim(),
-              duration: this.fetchDuration
-            },
-            {headers: {Authorization: localStorage.getItem('token') || ''}}
-        );
+        let res;
+        if (this.fetchNeteaseUrl.trim()) {
+          res = await this.$axios.post(
+              '/api/lyric/parse_netease_url',
+              {
+                song_url: this.fetchNeteaseUrl.trim()
+              },
+              {headers: {Authorization: localStorage.getItem('token') || ''}}
+          );
 
-        // 修复：统一数据处理逻辑，适配不同的后端返回格式
-        if (res.data.code === 200) {
-          // 标准化返回数据格式
-          let lyricsData = res.data.data?.lyrics || res.data.data || {};
-
-          // 适配后端日志中的格式（网易云/酷狗/QQ音乐）
-          const standardSources = {
-            netease: {
-              status: lyricsData.netease?.status || (lyricsData.netease?.lyric ? 'success' : 'failed'),
-              lyric: lyricsData.netease?.lyric || lyricsData.netease || ''
-            },
-            kugou: {
-              status: lyricsData.kugou?.status || (lyricsData.kugou?.lyric ? 'success' : 'failed'),
-              lyric: lyricsData.kugou?.lyric || lyricsData.kugou || ''
-            },
-            qq: {
-              status: lyricsData.qq?.status || (lyricsData.qq?.lyric ? 'success' : 'failed'),
-              lyric: lyricsData.qq?.lyric || lyricsData.qq || ''
-            },
-            genius: {
-              status: lyricsData.genius?.status || (lyricsData.genius?.lyric ? 'success' : 'failed'),
-              lyric: lyricsData.genius?.lyric || lyricsData.genius || ''
-            }
-          };
-
-          this.fetchResult = standardSources;
-
-          // 修复：立即自动选中第一个成功的来源，不需要等待watch触发
-          this.autoSelectFirstSuccessSource();
-
-          this.$message?.success('歌词获取成功！');
+          if (res.data.code === 200) {
+            this.fetchResult = {
+              netease: {
+                status: 'success',
+                lyric: res.data.data.lyric_text || ''
+              },
+              kugou: {status: 'failed', lyric: ''},
+              qq: {status: 'failed', lyric: ''},
+              genius: {status: 'failed', lyric: ''}
+            };
+            this.$message?.success('通过网易云链接获取歌词成功！');
+          } else {
+            this.$message?.error(res.data.msg || '通过网易云链接获取歌词失败！');
+            this.fetchResult = null;
+          }
         } else {
-          this.$message?.error(res.data.msg || '歌词获取失败！');
-          this.fetchResult = null;
+          res = await this.$axios.post(
+              '/api/lyric/fetch_auto',
+              {
+                song_name: this.fetchSongName.trim(),
+                artist: this.fetchArtist.trim(),
+                duration: this.fetchDuration
+              },
+              {headers: {Authorization: localStorage.getItem('token') || ''}}
+          );
+
+          if (res.data.code === 200) {
+            let lyricsData = res.data.data?.lyrics || res.data.data || {};
+
+            const standardSources = {
+              netease: {
+                status: lyricsData.netease?.status || (lyricsData.netease?.lyric ? 'success' : 'failed'),
+                lyric: lyricsData.netease?.lyric || lyricsData.netease || ''
+              },
+              kugou: {
+                status: lyricsData.kugou?.status || (lyricsData.kugou?.lyric ? 'success' : 'failed'),
+                lyric: lyricsData.kugou?.lyric || lyricsData.kugou || ''
+              },
+              qq: {
+                status: lyricsData.qq?.status || (lyricsData.qq?.lyric ? 'success' : 'failed'),
+                lyric: lyricsData.qq?.lyric || lyricsData.qq || ''
+              },
+              genius: {
+                status: lyricsData.genius?.status || (lyricsData.genius?.lyric ? 'success' : 'failed'),
+                lyric: lyricsData.genius?.lyric || lyricsData.genius || ''
+              }
+            };
+
+            this.fetchResult = standardSources;
+            this.autoSelectFirstSuccessSource();
+            this.$message?.success('歌词获取成功！');
+          } else {
+            this.$message?.error(res.data.msg || '歌词获取失败！');
+            this.fetchResult = null;
+          }
         }
       } catch (error) {
         console.error('获取歌词失败：', error);
@@ -655,123 +831,136 @@ export default {
         this.fetchResult = null;
       } finally {
         this.fetchLoading = false;
-        // 修复：确保UI及时更新
         this.$forceUpdate();
       }
     },
 
-    // 核心修复：解析LRC格式歌词，正确提取时间和歌词内容
-    // 修复：解析LRC格式歌词，转换为输入框标准格式(mm:ss 歌词)
     parseLrcToStandardFormat(lrcText) {
       if (!lrcText || typeof lrcText !== 'string') return '';
 
       const lines = lrcText.trim().split('\n');
       const standardLyrics = [];
+      const processedTimes = new Set();
 
       lines.forEach(line => {
-        // 清理行：去除空白字符
         const cleanLine = line.trim();
         if (!cleanLine) return;
 
-        // 匹配LRC时间标签：[mm:ss.xx] 或 [mm:ss]
-        // 注意：LRC格式时间标签可能在行首或多个标签连续出现
-        const timeMatches = [];
-        let remainingLine = cleanLine;
-
-        // 提取所有时间标签
-        const timePattern = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+        const timePattern = /\[(\d{2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
         let match;
+        let lyricText = cleanLine;
+        const timeTags = [];
+
         while ((match = timePattern.exec(cleanLine)) !== null) {
-          const [, min, sec, ms] = match;
-          const totalSeconds = parseInt(min) * 60 + parseInt(sec) + (ms ? parseInt(ms) / (ms.length === 2 ? 100 : 1000) : 0);
-          timeMatches.push({
-            time: totalSeconds,
-            match: match[0],
-            index: match.index
+          const [fullMatch, min, sec, ms] = match;
+          const totalSeconds =
+              parseInt(min) * 60 +
+              parseInt(sec) +
+              (ms ? parseInt(ms) / (ms.length === 3 ? 1000 : 100) : 0);
+
+          timeTags.push({
+            tag: fullMatch,
+            time: Math.round(totalSeconds * 10) / 10
           });
 
-          // 获取标签后的歌词文本
-          const tagEndIndex = match.index + match[0].length;
-          if (timeMatches.length === 1) {
-            // 第一个标签后的文本就是歌词
-            const lyricText = cleanLine.substring(tagEndIndex).trim();
-            remainingLine = lyricText;
-          }
+          lyricText = lyricText.replace(fullMatch, '').trim();
         }
 
-        // 如果没有时间标签，跳过这一行
-        if (timeMatches.length === 0) return;
+        if (timeTags.length === 0) return;
 
-        // 过滤无效内容
-        if (!remainingLine ||
-            /词：|曲：|编曲：|制作人：|演唱：|原唱：|专辑：|歌名：|作词：|作曲：|Lyrics|Music|Album/i.test(remainingLine) ||
-            remainingLine.startsWith('[') && remainingLine.endsWith(']')) {
-          return;
-        }
+        const invalidPatterns = [
+          /作词\s*[:：]/i,
+          /作曲\s*[:：]/i,
+          /编曲\s*[:：]/i,
+          /制作人\s*[:：]/i,
+          /演唱\s*[:：]/i,
+          /原唱\s*[:：]/i,
+          /专辑\s*[:：]/i,
+          /歌名\s*[:：]/i,
+          /Lyrics\s*[:：]/i,
+          /Music\s*[:：]/i,
+          /Album\s*[:：]/i,
+          /by:/i
+        ];
 
-        // 为每个时间标签创建歌词行
-        timeMatches.forEach(({time}) => {
+        const isInvalid = invalidPatterns.some(pattern => pattern.test(lyricText));
+        if (isInvalid || !lyricText) return;
+
+        timeTags.forEach(({ time }) => {
+          if (processedTimes.has(time)) return;
+          processedTimes.add(time);
+
           const minutes = Math.floor(time / 60);
           const seconds = Math.floor(time % 60);
-          const milliseconds = time % 1;
+          const milliseconds = Math.round((time % 1) * 10);
 
-          // 格式化时间：mm:ss 或 mm:ss.xx
           let timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
           if (milliseconds > 0) {
-            // 保留1-2位小数
-            const msStr = Math.round(milliseconds * 100).toString().padStart(2, '0');
-            timeStr += `.${msStr}`.replace(/0+$/, ''); // 去除末尾的0
+            timeStr += `.${milliseconds}`;
           }
 
           standardLyrics.push({
             time: time,
             timeStr: timeStr,
-            text: remainingLine
+            text: lyricText
           });
         });
       });
 
-      // 按时间排序
-      standardLyrics.sort((a, b) => a.time - b.time);
-
-      // 转换为字符串格式
-      return standardLyrics.map(item => `${item.timeStr} ${item.text}`).join('\n');
+      return standardLyrics
+          .sort((a, b) => a.time - b.time)
+          .map(item => `${item.timeStr} ${item.text}`)
+          .join('\n');
     },
 
-    // 修复：自动选中第一个成功获取到歌词的来源
+    handleLyricInputChange(content) {
+      const lrcPattern = /\[\d{2}:\d{2}\.\d{1,3}\]/;
+      if (lrcPattern.test(content)) {
+        const standardContent = this.parseLrcToStandardFormat(content);
+        if (standardContent) {
+          this.currentTrackLyricContent = standardContent;
+          this.$message?.info('已自动将LRC格式歌词转换为标准格式');
+        }
+      }
+    },
+
+    handleTranslateLyricInputChange(content) {
+      const lrcPattern = /\[\d{2}:\d{2}\.\d{1,3}\]/;
+      if (lrcPattern.test(content)) {
+        const standard = this.parseLrcToStandardFormat(content);
+        if (standard) {
+          this.currentTrackTranslateContent = standard;
+          this.$message?.info('已自动将翻译LRC歌词转换为标准格式');
+        }
+      }
+    },
+
     autoSelectFirstSuccessSource() {
       if (!this.fetchResult) return;
 
-      // 修复：立即执行来源选择，避免延迟
       const successSource = this.lyricSources.find(source => {
         return this.fetchResult[source.key]?.status === 'success' &&
             this.fetchResult[source.key]?.lyric?.trim();
       });
 
       if (successSource) {
-        // 修复：同步更新选中状态，避免需要二次点击
         this.selectedSource = successSource.key;
         this.selectedLyricContent = this.fetchResult[successSource.key].lyric || '';
       }
     },
 
-    // 修复：填入歌词到输入框的核心方法
     fillLyricToInput() {
       if (!this.selectedLyricContent.trim()) {
         this.$message?.warning('暂无歌词可填入！');
         return;
       }
 
-      // 确保曲目开始时间为非负数
-
-      // 第一步：将LRC原始歌词转换为输入框标准格式
       const standardLyricText = this.parseLrcToStandardFormat(this.selectedLyricContent);
       if (!standardLyricText) {
         this.$message?.warning('未解析到有效歌词内容！');
         return;
       }
 
-      // 第二步：解析标准格式歌词，转换为相对时间
       const lines = standardLyricText.trim().split('\n');
       const relativeLyrics = [];
 
@@ -779,12 +968,9 @@ export default {
         const match = line.match(/^(\d{2}:\d{2}(?:\.\d{1,2})?)\s+(.+)$/);
         if (match) {
           const [, timeStr, lyricText] = match;
-          // 解析绝对时间
           const absoluteTime = this.parseTimeStr(timeStr);
-          // 计算相对时间（相对于当前单曲开始时间）
           const relativeTime = Math.max(0, absoluteTime);
 
-          // 格式化相对时间（避免00:00.00格式）
           let formattedTime = '';
           if (relativeTime < 0.01) {
             formattedTime = '00:00';
@@ -796,20 +982,17 @@ export default {
             if (ms < 0.01) {
               formattedTime = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
             } else {
-              // 只保留1位小数
               const msRounded = Math.round(ms * 10);
               formattedTime = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}.${msRounded}`;
             }
           }
 
-          // 过滤掉时间为00:00且歌词为空的无效行
           if (!(formattedTime === '00:00' && !lyricText.trim())) {
             relativeLyrics.push(`${formattedTime} ${lyricText}`);
           }
         }
       });
 
-      // 第三步：填入输入框
       this.currentTrackLyricContent = relativeLyrics.join('\n');
       this.showAutoFetchLyricModal = false;
       this.$message?.success('歌词已格式化并填入输入框！');
@@ -820,6 +1003,13 @@ export default {
       this.fetchResult = null;
       this.selectedLyricContent = '';
       this.selectedSource = 'netease';
+      this.fetchNeteaseUrl = '';
+
+      // 清理批量计时器
+      if (this.batchFetchTimer) {
+        clearTimeout(this.batchFetchTimer);
+        this.batchFetchTimer = null;
+      }
     },
 
     toggleTrackDropdown() {
@@ -889,7 +1079,6 @@ export default {
             return `${this.formatTime(relativeTime)} ${lyric.text}`;
           }).join('\n');
 
-          // 获取中文翻译歌词
           const trackTranslateLyrics = (this.localParsedTranslateLyrics['CN'] || []).filter(lyric =>
               lyric.time >= trackStartTime && lyric.time < trackEndTime
           );
@@ -919,21 +1108,19 @@ export default {
       this.currentTranslateLang = this.trackLyricsMap[this.selectedTrackIndex]?.lang || 'CN';
     },
 
-    // 辅助优化：formatTime 简化，避免冗余毫秒（输入框只需要mm:ss或mm:ss.x）
     formatTime(seconds) {
       if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
       const min = Math.floor(seconds / 60);
       const sec = Math.floor(seconds % 60);
-      const ms = Math.floor((seconds % 1) * 10); // 只保留1位毫秒，避免冗余
+      const ms = Math.floor((seconds % 1) * 10);
       return ms > 0
           ? `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}.${ms}`
           : `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
     },
 
-    // 修复：parseTimeStr方法增强，支持更多格式
+    // 解析时间字符串为秒数 (兼容 mm:ss.xxx 格式)
     parseTimeStr(timeStr) {
       try {
-        // 支持格式：mm:ss、mm:ss.xx、mm:ss.x
         const [minPart, rest] = timeStr.split(':');
         if (!rest) return 0;
 
@@ -943,7 +1130,8 @@ export default {
         if (rest.includes('.')) {
           const [secPart, msPart] = rest.split('.');
           sec = parseInt(secPart, 10);
-          const ms = parseInt(msPart, 10) / Math.pow(10, msPart.length);
+          // 处理3位毫秒数
+          const ms = parseInt(msPart, 10) / 1000;
           sec += ms;
         } else {
           sec = parseInt(rest, 10);
@@ -967,7 +1155,9 @@ export default {
 
         const timeMatch = line.match(/^(\d{1,2}:\d{2}(?:\.\d{1,2})?)\s+(.*)$/);
         if (timeMatch) {
-          const time = this.parseTimeStr(timeMatch[1]);
+          let time = this.parseTimeStr(timeMatch[1]);
+          time = Math.floor(time * 10) / 10;
+
           const text = timeMatch[2].trim();
           if (text) {
             lyrics.push({time, text});
@@ -978,48 +1168,43 @@ export default {
       return lyrics.sort((a, b) => a.time - b.time);
     },
 
-    // 新增：整合原版歌词和中文翻译歌词
     combineLyrics() {
       this.combinedLyrics = [];
 
-      // 获取中文翻译歌词数组
       const cnLyrics = this.localParsedTranslateLyrics['CN'] || [];
 
-      // 创建翻译歌词的时间映射
-      const cnLyricMap = {};
+      const cnLyricMap = new Map();
       cnLyrics.forEach(item => {
-        // 四舍五入到小数点后1位，避免时间精度问题
-        const timeKey = Math.round(item.time * 10) / 10;
-        cnLyricMap[timeKey] = item.text;
+        const timeKey = Math.floor(item.time * 10) / 10;
+        cnLyricMap.set(timeKey, item.text);
       });
 
-      // 遍历原版歌词，匹配对应的中文翻译
+      const processedTimeKeys = new Set();
       this.localParsedLyrics.forEach(originalItem => {
-        const timeKey = Math.round(originalItem.time * 10) / 10;
+        const timeKey = Math.floor(originalItem.time * 10) / 10;
+        processedTimeKeys.add(timeKey);
+
         this.combinedLyrics.push({
           time: originalItem.time,
           originalText: originalItem.text,
-          cnText: cnLyricMap[timeKey] || '' // 匹配不到则为空
+          cnText: cnLyricMap.get(timeKey) || ''
         });
+
+        if (cnLyricMap.has(timeKey)) {
+          cnLyricMap.delete(timeKey);
+        }
       });
 
-      // 如果有翻译歌词没有对应的原版歌词，也添加进去
-      cnLyrics.forEach(cnItem => {
-        const timeKey = Math.round(cnItem.time * 10) / 10;
-        // 检查是否已存在
-        const exists = this.combinedLyrics.some(item =>
-            Math.round(item.time * 10) / 10 === timeKey
-        );
-        if (!exists) {
+      cnLyricMap.forEach((text, timeKey) => {
+        if (!processedTimeKeys.has(timeKey)) {
           this.combinedLyrics.push({
-            time: cnItem.time,
+            time: timeKey,
             originalText: '',
-            cnText: cnItem.text
+            cnText: text
           });
         }
       });
 
-      // 按时间排序
       this.combinedLyrics.sort((a, b) => a.time - b.time);
     },
 
@@ -1059,7 +1244,7 @@ export default {
           .join('\n');
 
       const translateObj = {};
-      translateObj['CN'] = translateText; // 固定为中文
+      translateObj['CN'] = translateText;
 
       return {
         lyric_text: lyricText,
@@ -1067,7 +1252,6 @@ export default {
       };
     },
 
-    // 新增：检查是否是当前播放的整合版歌词
     isCurrentCombinedLyric(index) {
       const currentLyric = this.combinedLyrics[index];
       if (!currentLyric) return false;
@@ -1080,17 +1264,20 @@ export default {
     },
 
     updateCurrentLyric() {
-      // 更新整合版歌词高亮
+      if (this.isScrolling) return;
+
       this.updateHighlightedCombinedIndex();
 
       this.$nextTick(() => {
         if (this.highlightedCombinedIndex !== -1 && !this.isScrolling) {
-          this.scrollToCurrentCombinedLyric(this.highlightedCombinedIndex);
+          clearTimeout(this.scrollAnimationTimer);
+          this.scrollAnimationTimer = setTimeout(() => {
+            this.scrollToCurrentCombinedLyric(this.highlightedCombinedIndex);
+          }, 50);
         }
       });
     },
 
-    // 新增：更新整合版歌词高亮索引
     updateHighlightedCombinedIndex() {
       let currentIndex = -1;
       const currentTime = this.currentTime;
@@ -1112,7 +1299,6 @@ export default {
       }
     },
 
-    // 新增：滚动到当前播放的整合版歌词
     scrollToCurrentCombinedLyric(index) {
       if (index === -1 || this.isScrolling) return;
 
@@ -1138,23 +1324,49 @@ export default {
               const targetScrollTop = itemOffsetTop - (containerHeight / 2) + (itemHeight / 2);
               const safeScrollTop = Math.max(0, Math.min(targetScrollTop, lyricsContent.scrollHeight - containerHeight));
 
-              requestAnimationFrame(() => {
-                lyricsContent.scrollTop = safeScrollTop;
-
-                setTimeout(() => {
-                  this.isScrolling = false;
-                }, 100);
-              });
-            } else {
-              this.isScrolling = false;
+              this.smoothScrollTo(lyricsContent, safeScrollTop, 300);
+              return;
             }
-          } else {
-            this.isScrolling = false;
           }
-        } else {
-          this.isScrolling = false;
         }
+
+        setTimeout(() => {
+          this.isScrolling = false;
+        }, 100);
       });
+    },
+
+    smoothScrollTo(element, targetPosition, duration = 300) {
+      const startPosition = element.scrollTop;
+      const distance = targetPosition - startPosition;
+      const startTime = performance.now();
+
+      const easeOutQuad = (t, b, c, d) => {
+        t /= d;
+        return -c * t * (t - 2) + b;
+      };
+
+      const animateScroll = (currentTime) => {
+        const timeElapsed = currentTime - startTime;
+        const scrollPosition = easeOutQuad(
+            Math.min(timeElapsed, duration),
+            startPosition,
+            distance,
+            duration
+        );
+
+        element.scrollTop = scrollPosition;
+
+        if (timeElapsed < duration) {
+          requestAnimationFrame(animateScroll);
+        } else {
+          setTimeout(() => {
+            this.isScrolling = false;
+          }, 50);
+        }
+      };
+
+      requestAnimationFrame(animateScroll);
     },
 
     getLyricItemStyle(index, highlightedIndex, isCn = false) {
@@ -1162,15 +1374,15 @@ export default {
 
       const distance = Math.abs(index - highlightedIndex);
       let opacity = 1;
-      let fontSize = isCn ? '20px' : '24px'; // 中文翻译字体稍小
-      let fontWeight = 700;
+      let baseFontSize = isCn ? 22 : 26;
+      let fontSize = baseFontSize - (distance * 4);
+      fontSize = Math.max(16, fontSize);
+      fontSize = `${fontSize}px`;
+
+      let fontWeight = distance === 0 ? 700 : 400;
 
       if (distance > 0) {
         opacity = Math.max(0.5, 1 - (distance * 0.15));
-        fontSize = isCn
-            ? `${Math.max(16, 28 - (distance * 4))}px`
-            : `${Math.max(16, 28 - (distance * 4))}px`;
-        fontWeight = 400;
       }
 
       return {
@@ -1181,60 +1393,34 @@ export default {
       };
     },
 
+    // 4. 修改：清空handleManualScroll方法内容
     handleManualScroll() {
-      this.resetResetTimer();
+      // 移除：删除重置计时器的逻辑
     },
 
-    startResetTimer() {
-      this.resetTimer = setTimeout(() => {
-        this.resetLyricPosition();
-      }, 5000);
-    },
-
-    resetResetTimer() {
-      if (this.resetTimer) {
-        clearTimeout(this.resetTimer);
-      }
-      this.startResetTimer();
-    },
-
-    resetLyricPosition() {
-      if (this.isScrolling) return;
-
-      const lyricsContent = this.$refs.lyricsContent;
-      if (lyricsContent) {
-        lyricsContent.scrollTop = 0;
-
-        this.$nextTick(() => {
-          this.updateCurrentLyric();
-        });
-      }
-      this.startResetTimer();
-    },
+    // 5. 移除：删除startResetTimer方法
+    // 6. 移除：删除resetResetTimer方法
+    // 7. 移除：删除resetLyricPosition方法
 
     handleLyricClick(time) {
       this.$emit('jump-to-time', time);
-      this.resetResetTimer();
+      // 8. 移除：删除resetResetTimer()调用
     },
 
     closeModal() {
       this.showUploadLyricModal = false;
     },
 
-    // 核心新增：合并保存当前单曲+上传所有歌词的方法
     async saveAndUploadAllLyrics() {
-      // 1. 验证当前单曲原版歌词非空
       if (!this.currentTrackLyricContent.trim()) {
         this.$message?.warning('原版歌词内容不能为空！');
         return;
       }
-      // 2. 保存当前编辑的单曲歌词到本地trackLyricsMap
       this.trackLyricsMap[this.selectedTrackIndex] = {
         lyric: this.currentTrackLyricContent.trim(),
         translate: this.currentTrackTranslateContent.trim(),
         lang: 'CN'
       };
-      // 3. 整合所有歌词并上传到服务器
       try {
         const integratedData = this.integrateAllLyrics();
         if (!integratedData.lyric_text.trim()) {
@@ -1248,9 +1434,7 @@ export default {
         );
         if (res.data.code === 200) {
           this.$message?.success('所有歌词保存并上传成功！');
-          this.showUploadLyricModal = false;
           this.$emit('update:lyrics', integratedData);
-          // 刷新本地解析的歌词
           this.localParsedLyrics = this.parseLyricText(integratedData.lyric_text);
           let translateText = '';
           try {
@@ -1260,7 +1444,6 @@ export default {
             translateText = integratedData.lyric_translate || '';
           }
           this.localParsedTranslateLyrics['CN'] = this.parseLyricText(translateText);
-          // 重新整合歌词
           this.combineLyrics();
           this.$nextTick(() => {
             this.updateCurrentLyric();
@@ -1274,16 +1457,131 @@ export default {
       }
     },
 
-    // 保留原方法做兼容（防止其他地方调用）
     async saveAllLyrics() {
       await this.saveAndUploadAllLyrics();
+    },
+
+    // 新增：批量获取所有歌词
+    async startBatchFetchLyrics() {
+      if (this.trackList.length === 0) {
+        this.$message?.warning('暂无歌曲可处理！');
+        return;
+      }
+
+      // 确认操作
+      const confirm = window.confirm('确认要批量获取所有歌曲的歌词吗？这个过程可能需要较长时间，请耐心等待！');
+      if (!confirm) return;
+
+      this.batchFetchLoading = true;
+      this.batchFetchCurrent = 0;
+      this.batchFetchTotal = this.trackList.length;
+
+      // 开始处理第一首
+      await this.processNextTrackInBatch();
+    },
+
+    // 处理批量获取中的下一首歌曲
+    async processNextTrackInBatch() {
+      // 检查是否处理完所有歌曲
+      if (this.batchFetchCurrent >= this.batchFetchTotal) {
+        this.batchFetchLoading = false;
+        this.$message?.success(`批量获取完成！共处理 ${this.batchFetchTotal} 首歌曲`);
+        return;
+      }
+
+      try {
+        // 1. 选择当前要处理的歌曲
+        const currentIndex = this.batchFetchCurrent;
+        this.selectedTrackIndex = currentIndex;
+
+        // 等待DOM更新和数据加载
+        await this.$nextTick();
+
+        // 2. 打开自动获取歌词弹窗
+        this.showAutoFetchLyricModal = true;
+        await this.$nextTick();
+
+        // 3. 自动点击获取歌词按钮
+        if (!this.fetchSongName.trim()) {
+          this.$message?.warning(`第 ${currentIndex + 1} 首歌曲无名称，跳过处理`);
+          this.batchFetchCurrent++;
+          this.processNextTrackInBatch();
+          return;
+        }
+
+        // 调用获取歌词方法
+        await this.fetchLyrics();
+
+        // 4. 等待10秒，让歌词获取完成
+        this.batchFetchTimer = setTimeout(async () => {
+          try {
+            // 检查是否获取到歌词
+            if (this.fetchResult && this.selectedLyricContent.trim()) {
+              // 填入歌词输入框
+              this.fillLyricToInput();
+              this.$message?.info(`第 ${currentIndex + 1} 首歌曲歌词获取成功并填入`);
+
+              // 保存当前歌词到映射表
+              this.trackLyricsMap[currentIndex] = {
+                lyric: this.currentTrackLyricContent.trim(),
+                translate: this.currentTrackTranslateContent.trim(),
+                lang: 'CN'
+              };
+            } else {
+              this.$message?.warning(`第 ${currentIndex + 1} 首歌曲未获取到有效歌词`);
+            }
+
+            // 关闭弹窗
+            this.closeAutoFetchModal();
+
+            // 处理下一首
+            this.batchFetchCurrent++;
+            this.processNextTrackInBatch();
+          } catch (error) {
+            console.error(`处理第 ${currentIndex + 1} 首歌曲失败`, error);
+            this.$message?.error(`第 ${currentIndex + 1} 首歌曲处理失败：${error.message}`);
+
+            // 继续处理下一首
+            this.batchFetchCurrent++;
+            this.processNextTrackInBatch();
+          }
+        }, 10000); // 等待10秒
+
+      } catch (error) {
+        console.error('批量处理歌曲失败', error);
+        this.$message?.error(`处理第 ${this.batchFetchCurrent + 1} 首歌曲时出错：${error.message}`);
+
+        // 继续处理下一首
+        this.batchFetchCurrent++;
+        this.processNextTrackInBatch();
+      }
     }
   }
 };
 </script>
-
 <style scoped>
 /* 样式部分保持不变，新增整合版歌词样式 */
+/* 批量获取歌词按钮样式 */
+.batch-fetch-lyric-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  margin-right: 8px;
+}
+
+.batch-fetch-lyric-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.batch-fetch-lyric-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
 /* 整体容器 */
 .lyric-detail-container {
   width: 100%;
@@ -1519,6 +1817,7 @@ export default {
   color: v-bind(mainColorDarkDouble); /* 强制统一高亮色 */
 }
 /* 原版歌词项 */
+/* 原版歌词项 */
 .original-lyric-item {
   padding: 8px 15px;
   margin: 2px 0;
@@ -1526,13 +1825,14 @@ export default {
   justify-content: center;
   align-items: center;
   position: relative;
-  color: #333;
-  /* 关键：硬件加速，减少动画卡顿 */
+  /* 未高亮：中灰，不抢风头 */
+  color: #888888;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   transform: translateZ(0);
   backface-visibility: hidden;
+  will-change: opacity, font-size, font-weight, color;
 }
-
-/* 中文翻译歌词项 - 新增 color 绑定 */
+/* 中文翻译歌词项 */
 .cn-lyric-item {
   padding: 4px 15px 8px;
   margin: 2px 0;
@@ -1540,9 +1840,12 @@ export default {
   justify-content: center;
   align-items: center;
   position: relative;
-  color: v-bind(mainColorDarkDouble); /* 与原版高亮颜色一致 */
+  /* 翻译同色系，更协调 */
+  color: #888888;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   transform: translateZ(0);
   backface-visibility: hidden;
+  will-change: opacity, font-size, font-weight, color;
 }
 
 /* 时间戳样式优化 - 仅鼠标悬停时显示 */
@@ -1944,5 +2247,40 @@ export default {
 
 .modal-save-btn:hover, .modal-save-all-btn:hover {
   opacity: 0.9;
+}
+
+/* 优化歌词项的过渡效果 */
+.original-lyric-item, .cn-lyric-item {
+  /* 增强过渡效果，包含所有变化属性 */
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  /* 硬件加速，提升动画流畅度 */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: opacity, font-size, font-weight, color;
+}
+
+/* 歌词滚动容器优化 */
+.lyrics-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  /* 保留 auto，避免和自定义动画冲突 */
+  scroll-behavior: auto;
+  position: relative;
+  /* 添加硬件加速 */
+  transform: translateZ(0);
+}
+
+/* 优化高亮歌词的过渡 */
+.lyric-pair {
+  transition: all 0.2s ease;
+}
+
+.lyric-pair.highlighted {
+  padding: 4px;
+  border-radius: 8px;
+  /* 添加轻微的缩放效果，增强视觉反馈 */
+  transform: scale(1.02);
+  transition: all 0.3s ease;
 }
 </style>

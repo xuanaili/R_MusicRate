@@ -180,6 +180,28 @@
                 </li>
               </ul>
             </div>
+            <!-- 时长类型筛选下拉 -->
+<div class="dropdown-btn-container">
+  <button
+    class="dropdown-btn"
+    @click="toggleDropdown('durationType')"
+  >
+    {{ durationTypeMap[durationType] }}
+    <span class="arrow-icon" :class="{active: dropdownShow.durationType}">▼</span>
+  </button>
+  <ul class="dropdown-options" v-show="dropdownShow.durationType">
+    <li
+      v-for="(label, key) in durationTypeMap"
+      :key="key"
+      @click="handleDurationTypeChange(key); toggleDropdown('durationType')"
+      :class="{active: durationType === key}"
+    >
+      {{ label }}
+    </li>
+  </ul>
+</div>
+
+
 
             <!-- 升序/降序按钮 -->
             <div class="sort-options">
@@ -398,12 +420,24 @@ export default {
       listenStatusMap: {
         all: '全部',
         listened: '已听',
-        unlistened: '未听'
+        unlistened: '未听',
+        unrecorded: '未收录' // 新增未收录选项
       },
+          // 时长类型筛选
+    durationType: 'LP', // 默认选中LP
+    durationTypeMap: {
+      LP: 'LP',
+      EP: 'EP',
+      SIN: 'SIN',
+      COM: 'COM'
+    },
+
+
       dropdownShow: {
         sortBy: false,
         pageSize: false,
-        listenStatus: false
+        listenStatus: false,
+      durationType: false // 新增
       },
       // 背景和主题色【和首页保持一致】
       coverBgUrl: localStorage.getItem('persistCoverBg') || '',
@@ -682,6 +716,8 @@ goToMusicCategory() {
           tagName: this.currentTagName,
           listenStatus: this.listenStatus,
           // 只传筛选条件，不传分页参数
+
+      durationType: this.durationType,
         }
 
         // 添加年份筛选
@@ -889,21 +925,19 @@ goToMusicCategory() {
       this.page = 1
       this.getAlbumList() // 会自动触发getAllAlbumIds
     },
+
+      // 时长类型筛选变更
+  handleDurationTypeChange(type) {
+    this.durationType = type
+    this.page = 1 // 重置页码
+    this.getAlbumList() // 重新加载专辑列表
+  },
+
+
     // ========== 修改：专辑列表获取逻辑（新增全量ID加载） ==========
     async getAlbumList() {
       try {
         this.albumListLoading = true
-        console.log('开始加载专辑列表：', {
-          tagName: this.currentTagName,
-          year: this.selectedYear,
-          keyword: this.nameSingerKeyword,
-          listenStatus: this.listenStatus,
-          page: this.page,
-          page_size: this.pageSize,
-          sort_field: this.sortBy,
-          sort_order: this.sortOrder
-        })
-
         const headers = {
           'Authorization': localStorage.getItem('token') || ''
         }
@@ -915,7 +949,9 @@ goToMusicCategory() {
           page_size: this.pageSize,
           sort_field: this.sortBy,
           sort_order: this.sortOrder,
-          listenStatus: this.listenStatus
+          listenStatus: this.listenStatus,
+          durationType: this.durationType, // 新增时长类型参数
+
         }
 
         // 添加年份筛选
@@ -933,7 +969,6 @@ goToMusicCategory() {
           headers
         })
 
-        console.log('专辑列表返回结果：', response.data)
 
         if (response.data.code === 200) {
           this.albumList = response.data.data.list || []

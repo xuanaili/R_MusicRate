@@ -37,6 +37,7 @@ backend/data/album_track
 # 工具类
 backend/tools/ffmpeg/*.exe
 backend/tools/unlock/*.exe
+backend/tools/*.exe
 # ===================== 通用忽略项 =====================
 # PyCharm配置
 .idea/
@@ -51,3 +52,5 @@ Thumbs.db
 *.bak
 # CDN版前端的临时文件（可选）
 frontend-cdn/
+
+node_modules/

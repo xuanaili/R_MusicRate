@@ -380,7 +380,6 @@ export default {
         });
 
         if (res.data.code === 200) {
-          alert("音乐风格修改成功！");
           this.handleClose();
           // 通知父组件刷新数据
           this.$emit('refresh');

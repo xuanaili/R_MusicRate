@@ -11,7 +11,7 @@ from backend.utils.tag import get_album_tag_stats
 
 
 def register_tags_routes(app):
-    """注册音乐风格标签相关路由（新增标签）"""
+    """注册音乐风格标签相关路由"""
 
     # ✅ 1. 新增音乐风格标签接口（仅管理员可访问）
     @app.route('/api/tags/add', methods=['POST', 'OPTIONS'])
@@ -28,7 +28,6 @@ def register_tags_routes(app):
             cursor = db.cursor(pymysql.cursors.DictCursor)
             cursor.execute('SELECT is_admin FROM users WHERE user_id = %s', (current_user_id,))
             user = cursor.fetchone()
-            # 移除 cursor.close() —— 交给 Flask 自动处理
 
             # 验证：is_admin=1 才是管理员
             if not user or user.get('is_admin') != 1:
@@ -58,7 +57,6 @@ def register_tags_routes(app):
             ''', (tags_name,))
             existing_tag = cursor.fetchone()
             if existing_tag:
-                # 移除 cursor.close() 和 db.close()
                 return jsonify({"code": 400, "msg": f"风格名称「{tags_name}」已存在！"}), 200
 
             # 构造插入数据
@@ -95,9 +93,6 @@ def register_tags_routes(app):
             db.commit()
             tag_id = cursor.lastrowid
 
-            # 移除所有手动关闭连接的代码
-            # cursor.close() 和 db.close() 都删掉
-
             return jsonify({
                 "code": 200,
                 "msg": "音乐风格添加成功！",
@@ -132,8 +127,6 @@ def register_tags_routes(app):
             ''')
             tags_list = cursor.fetchall()
 
-            # 移除 cursor.close() 和 db.close()
-
             return jsonify({
                 "code": 200,
                 "msg": "获取风格列表成功！",
@@ -147,7 +140,7 @@ def register_tags_routes(app):
 
     # ✅ 3. 新增：获取标签详情接口
     @app.route('/api/tags/detail', methods=['GET', 'OPTIONS'])
-    @login_required  # 如果需要登录才能查看，保留该装饰器；否则移除
+    @login_required
     def get_tag_detail():
         try:
             # 获取标签名参数
@@ -186,10 +179,7 @@ def register_tags_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取标签详情失败：{str(e)}"}), 200
 
-
-
-    # 在 register_tags_routes 函数中新增以下接口
-    # ✅ 4. 新增：获取树状结构的标签列表接口
+    # ✅ 4. 修复版：获取树状结构的标签列表接口
     @app.route('/api/tags/tree', methods=['GET', 'OPTIONS'])
     @login_required
     def get_tags_tree():
@@ -210,15 +200,17 @@ def register_tags_routes(app):
 
             # 将扁平数据转换为树状结构
             def build_tag_tree(tags):
-                # 1. 构建ID到标签的映射
-                tag_map = {tag['id']: tag for tag in tags}
+                # 1. 构建ID到标签的映射，并提前初始化所有标签的children字段（核心修复）
+                tag_map = {}
+                for tag in tags:
+                    tag['children'] = []  # 提前初始化，避免KeyError
+                    tag_map[tag['id']] = tag
 
                 # 2. 分离根节点（无父ID或父ID为空）和子节点
                 root_tags = []
                 for tag in tags:
-                    # 初始化children字段
-                    tag['children'] = []
-                    parent_ids = tag['parent_tag_ids'].strip()
+                    # 处理parent_tag_ids空值
+                    parent_ids = tag['parent_tag_ids'].strip() if tag.get('parent_tag_ids') else ''
 
                     # 根节点：parent_tag_ids为空或0
                     if not parent_ids or parent_ids == '0':
@@ -227,9 +219,13 @@ def register_tags_routes(app):
                         # 处理多个父ID（取第一个作为主要父节点）
                         parent_id_list = [p.strip() for p in parent_ids.split(',') if p.strip()]
                         if parent_id_list:
-                            main_parent_id = int(parent_id_list[0])
-                            if main_parent_id in tag_map:
-                                tag_map[main_parent_id]['children'].append(tag)
+                            try:
+                                main_parent_id = int(parent_id_list[0])
+                                if main_parent_id in tag_map:
+                                    tag_map[main_parent_id]['children'].append(tag)
+                            except ValueError:
+                                # 父ID不是数字，作为根节点处理
+                                root_tags.append(tag)
 
                 # 3. 递归排序子节点
                 def sort_children(tag):
@@ -258,18 +254,7 @@ def register_tags_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取风格树失败：{str(e)}"}), 200
 
-
-
-
-
-
-
-
-
-
-    # 原有接口：add_album_tag、get_tags_list、get_tag_detail、get_tags_tree 保持不变
-
-    # ✅ 新增：编辑音乐风格标签接口（仅管理员可访问）
+    # ✅ 5. 编辑音乐风格标签接口（仅管理员可访问）
     @app.route('/api/tags/edit', methods=['POST', 'OPTIONS'])
     @login_required
     def edit_album_tag():
@@ -356,6 +341,7 @@ def register_tags_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"修改风格失败：{str(e)}"}), 200
 
+    # ✅ 6. 获取标签专辑统计接口
     @app.route('/api/tags/album/stats', methods=['GET', 'OPTIONS'])
     @login_required
     def get_tag_album_stats():
@@ -371,7 +357,6 @@ def register_tags_routes(app):
             # ======================
             # 第一步：统计符合条件的专辑ID（单专辑占比>10%）
             # ======================
-            # ✅ 方式1：用字符串拼接+参数绑定，彻底避免占位符问题
             sql_album_stats = """
                 WITH album_tag_stats AS (
                     SELECT 
@@ -413,7 +398,7 @@ def register_tags_routes(app):
             # ======================
             year_stats = []
             if album_ids:
-                # ✅ 方式2：直接拼接ID列表（安全，因为ID是数字）
+                # 直接拼接ID列表（安全，因为ID是数字）
                 album_ids_str = ','.join(album_ids)
                 sql_year_stats = f"""
                     SELECT 
@@ -444,7 +429,7 @@ def register_tags_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取统计数据失败：{str(e)}"}), 200
 
-    # ✅ 新增接口：获取符合条件的专辑ID+发布年份
+    # ✅ 7. 获取标签专辑年份统计接口
     @app.route('/api/tags/album/year-stats', methods=['GET', 'OPTIONS'])
     @login_required
     def get_tag_album_year_stats():
@@ -476,7 +461,6 @@ def register_tags_routes(app):
 
             album_ids = [item['album_pool_id'] for item in cursor.fetchall()]
 
-
             if not album_ids:
                 return jsonify({
                     "code": 200,
@@ -507,6 +491,7 @@ def register_tags_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取失败：{str(e)}"}), 200
 
+    # ✅ 8. 获取标签专辑列表接口
     @app.route('/api/tags/album/list', methods=['GET', 'OPTIONS'])
     @login_required
     def get_tag_album_list():
@@ -519,7 +504,7 @@ def register_tags_routes(app):
             sort_field = request.args.get('sort_field', 'create_time')
             sort_order = request.args.get('sort_order', 'desc')
             keyword = request.args.get('keyword', '').strip()
-            # ✅ 新增：听状态筛选参数
+            # 听状态筛选参数 - 新增unrecorded支持
             listen_status = request.args.get('listenStatus', 'all').strip()
 
             if not tag_name:
@@ -534,8 +519,8 @@ def register_tags_routes(app):
             if sort_order not in ['asc', 'desc']:
                 sort_order = 'desc'
 
-            # ✅ 校验听状态参数
-            valid_listen_status = ['all', 'listened', 'unlistened']
+            # 校验听状态参数 - 新增unrecorded
+            valid_listen_status = ['all', 'listened', 'unlistened', 'unrecorded']
             if listen_status not in valid_listen_status:
                 listen_status = 'all'
 
@@ -579,10 +564,47 @@ def register_tags_routes(app):
                 })
 
             # ======================
-            # Step 2：获取用户已听的专辑source_pool_id列表
+            # Step 2：处理未收录筛选逻辑
+            # ======================
+            unrecorded_album_ids = []
+            if listen_status == 'unrecorded':
+                # 查询未收录的专辑ID：
+                # 1. album_share中不存在的专辑ID
+                # 2. 或album_share中创建时间超过10年的专辑ID
+                cursor.execute(f'''
+                    SELECT DISTINCT ap.id 
+                    FROM album_pool ap
+                    LEFT JOIN album_share ash ON ap.id = ash.album_pool_id
+                    WHERE ap.id IN ({','.join(['%s'] * len(album_ids))})
+                    AND (
+                        ash.id IS NULL  -- 不存在于share表
+                        OR ash.create_time < DATE_SUB(NOW(), INTERVAL 10 YEAR)  -- 创建时间超过10年
+                    )
+                ''', album_ids)
+                unrecorded_album_ids = [item['id'] for item in cursor.fetchall()]
+
+                if not unrecorded_album_ids:
+                    return jsonify({
+                        "code": 200,
+                        "msg": "暂无未收录的该风格专辑",
+                        "data": {
+                            "list": [],
+                            "pagination": {
+                                "total": 0,
+                                "page": page,
+                                "page_size": page_size,
+                                "total_pages": 0
+                            }
+                        }
+                    })
+                # 更新album_ids为未收录的专辑ID列表
+                album_ids = unrecorded_album_ids
+
+            # ======================
+            # Step 3：获取用户已听的专辑source_pool_id列表（原有逻辑）
             # ======================
             user_listened_source_ids = []
-            if current_user_id and listen_status != 'all':
+            if current_user_id and listen_status in ['listened', 'unlistened']:
                 # 获取用户专辑表名
                 user_album_table = get_album_table_name(current_user_id)
                 # 查询用户所有专辑的source_pool_id（代表已听）
@@ -595,10 +617,9 @@ def register_tags_routes(app):
                 user_listened_source_ids = [item['source_pool_id'] for item in cursor.fetchall()]
 
             # ======================
-            # Step 3：构建筛选条件（修复：添加表别名ap）
+            # Step 4：构建筛选条件
             # ======================
             query_params = []
-            # 修复1：添加表别名ap，避免字段冲突
             where_conditions = ["ap.id IN ({})".format(','.join(['%s'] * len(album_ids)))]
             query_params.extend(album_ids)
 
@@ -607,20 +628,25 @@ def register_tags_routes(app):
                 where_conditions.append("ap.release_year = %s")
                 query_params.append(int(release_year))
 
+            # 时长类型筛选
+            duration_type = request.args.get('durationType', 'LP').strip()
+            valid_duration_types = ['LP', 'EP', 'SIN', 'COM']
+            if duration_type in valid_duration_types:
+                where_conditions.append("ap.duration_type = %s")
+                query_params.append(duration_type)
             # 专辑名/歌手搜索
             if keyword:
                 where_conditions.append("(ap.album_name LIKE %s OR ap.singer LIKE %s)")
                 query_params.extend([f'%{keyword}%', f'%{keyword}%'])
 
-            # ✅ 新增：听状态筛选
-            if listen_status == 'listened':
+            # 原有听状态筛选逻辑（仅在不是未收录时生效）
+            if listen_status == 'listened' and listen_status != 'unrecorded':
                 # 只显示用户已听的专辑
                 if user_listened_source_ids:
                     source_placeholders = ','.join(['%s'] * len(user_listened_source_ids))
                     where_conditions.append(f"ap.id IN ({source_placeholders})")
                     query_params.extend(user_listened_source_ids)
                 else:
-                    # 无已听专辑，直接返回空
                     return jsonify({
                         "code": 200,
                         "msg": "暂无已听的该风格专辑",
@@ -634,7 +660,7 @@ def register_tags_routes(app):
                             }
                         }
                     })
-            elif listen_status == 'unlistened':
+            elif listen_status == 'unlistened' and listen_status != 'unrecorded':
                 # 只显示用户未听的专辑
                 if user_listened_source_ids:
                     source_placeholders = ','.join(['%s'] * len(user_listened_source_ids))
@@ -642,8 +668,9 @@ def register_tags_routes(app):
                     query_params.extend(user_listened_source_ids)
 
             # ======================
-            # Step 4：查询总数（修复：关联users表+添加表别名）
+            # 后续的总数查询、分页查询、数据格式化逻辑保持不变
             # ======================
+            # Step 5：查询总数
             count_sql = f'''
                 SELECT COUNT(*) as total 
                 FROM album_pool ap
@@ -654,11 +681,8 @@ def register_tags_routes(app):
             total = cursor.fetchone()['total']
             total_pages = (total + page_size - 1) // page_size
 
-            # ======================
-            # Step 5：分页查询专辑列表（修复：关联users表+添加表别名）
-            # ======================
+            # Step 6：分页查询专辑列表
             offset = (page - 1) * page_size
-            # 修复2：关联users表获取创建用户名称，添加表别名ap
             list_sql = f'''
                 SELECT ap.*, u.username as create_user_name 
                 FROM album_pool ap
@@ -667,21 +691,18 @@ def register_tags_routes(app):
                 ORDER BY ap.{sort_field} {sort_order}
                 LIMIT %s OFFSET %s
             '''
-            # 修复3：先复制筛选参数，避免分页参数污染原参数列表
             list_query_params = query_params.copy()
             list_query_params.extend([page_size, offset])
             cursor.execute(list_sql, list_query_params)
             album_list = cursor.fetchall()
 
-            # ======================
-            # Step 6：格式化数据（添加创建用户和标签信息）
-            # ======================
+            # Step 7：格式化数据
             result_list = []
             for album in album_list:
                 # 添加听状态标识
                 album['is_listened'] = album['id'] in user_listened_source_ids
 
-                # 解析JSON字段（和搜索接口保持一致）
+                # 解析JSON字段
                 main_type = safe_json_loads(album.get('main_type')) or []
                 tags = safe_json_loads(album.get('tags')) or []
                 tracks = safe_json_loads(album.get('tracks')) or []
@@ -692,7 +713,7 @@ def register_tags_routes(app):
                 # 格式化创建时间
                 create_time_str = album['create_time'].strftime('%Y-%m-%d %H:%M:%S') if album.get('create_time') else ''
 
-                # 组装返回数据（和搜索接口字段一致）
+                # 组装返回数据
                 result_item = {
                     "id": album['id'],
                     "album_name": album['album_name'],
@@ -733,7 +754,7 @@ def register_tags_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取专辑列表失败：{str(e)}"}), 200
 
-    # ✅ 最终版：包含当前标签的统计逻辑
+    # ✅ 9. 获取标签专辑标签统计接口
     @app.route('/api/tags/album/tag-stats', methods=['GET', 'OPTIONS'])
     @login_required
     def get_tag_album_tag_stats():
@@ -787,7 +808,7 @@ def register_tags_routes(app):
 
             tag_records = cursor.fetchall()
 
-            # 4. 统计标签出现次数（🔥 关键修改：不移除当前标签）
+            # 4. 统计标签出现次数（不移除当前标签）
             tag_count = {}
             for record in tag_records:
                 try:
@@ -796,7 +817,6 @@ def register_tags_routes(app):
                         for tag in tags:
                             if tag and tag.strip():
                                 tag = tag.strip()
-                                # 移除排除当前标签的判断，保留所有标签
                                 tag_count[tag] = tag_count.get(tag, 0) + 1
                 except (json.JSONDecodeError, TypeError):
                     continue
@@ -807,9 +827,7 @@ def register_tags_routes(app):
                 for tag, count in tag_count.items()
             ]
             # 按出现次数降序排序，最多返回20个
-
             tag_stats = sorted(tag_stats, key=lambda x: x['count'], reverse=True)[:20]
-
 
             return jsonify({
                 "code": 200,
@@ -822,7 +840,7 @@ def register_tags_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取标签统计数据失败：{str(e)}"}), 200
 
-    # ✅ 新增：根据父标签ID列表获取父标签详情
+    # ✅ 10. 根据父标签ID列表获取父标签详情
     @app.route('/api/tags/parent-tags', methods=['GET', 'OPTIONS'])
     @login_required
     def get_parent_tags():
@@ -877,22 +895,23 @@ def register_tags_routes(app):
                 "msg": f"获取父标签失败：{str(e)}"
             })
 
-    # ✅ 新增：获取标签下所有符合条件的专辑ID（不分页）
+    # ✅ 11. 获取标签下所有符合条件的专辑ID（不分页）
     @app.route('/api/tags/album/all-ids', methods=['GET', 'OPTIONS'])
     @login_required
     def get_tag_album_all_ids():
         try:
-            # 获取参数（和list接口保持一致）
+            # 获取参数
             tag_name = request.args.get('tagName', '').strip()
             release_year = request.args.get('year', '').strip()
             keyword = request.args.get('keyword', '').strip()
+            # 新增unrecorded支持
             listen_status = request.args.get('listenStatus', 'all').strip()
 
             if not tag_name:
                 return jsonify({"code": 400, "msg": "标签名称不能为空！"}), 200
 
-            # 校验听状态参数
-            valid_listen_status = ['all', 'listened', 'unlistened']
+            # 校验听状态参数 - 新增unrecorded
+            valid_listen_status = ['all', 'listened', 'unlistened', 'unrecorded']
             if listen_status not in valid_listen_status:
                 listen_status = 'all'
 
@@ -928,13 +947,36 @@ def register_tags_routes(app):
                 })
 
             # ======================
-            # Step 2：获取用户已听的专辑source_pool_id列表
+            # Step 2：处理未收录筛选逻辑
+            # ======================
+            if listen_status == 'unrecorded':
+                # 查询未收录的专辑ID
+                cursor.execute(f'''
+                    SELECT DISTINCT ap.id 
+                    FROM album_pool ap
+                    LEFT JOIN album_share ash ON ap.id = ash.album_pool_id
+                    WHERE ap.id IN ({','.join(['%s'] * len(album_ids))})
+                    AND (
+                        ash.id IS NULL
+                        OR ash.create_time < DATE_SUB(NOW(), INTERVAL 10 YEAR)
+                    )
+                ''', album_ids)
+                unrecorded_album_ids = [item['id'] for item in cursor.fetchall()]
+
+                if not unrecorded_album_ids:
+                    return jsonify({
+                        "code": 200,
+                        "msg": "暂无未收录的该风格专辑",
+                        "data": {"albumIds": []}
+                    })
+                album_ids = unrecorded_album_ids
+
+            # ======================
+            # Step 3：获取用户已听的专辑source_pool_id列表
             # ======================
             user_listened_source_ids = []
-            if current_user_id and listen_status != 'all':
-                # 获取用户专辑表名
+            if current_user_id and listen_status in ['listened', 'unlistened']:
                 user_album_table = get_album_table_name(current_user_id)
-                # 查询用户所有专辑的source_pool_id（代表已听）
                 cursor.execute(f'''
                     SELECT source_pool_id 
                     FROM `{user_album_table}` 
@@ -944,7 +986,7 @@ def register_tags_routes(app):
                 user_listened_source_ids = [item['source_pool_id'] for item in cursor.fetchall()]
 
             # ======================
-            # Step 3：构建筛选条件（和list接口一致）
+            # Step 4：构建筛选条件
             # ======================
             query_params = []
             where_conditions = ["id IN ({})".format(','.join(['%s'] * len(album_ids)))]
@@ -960,29 +1002,26 @@ def register_tags_routes(app):
                 where_conditions.append("(album_name LIKE %s OR singer LIKE %s)")
                 query_params.extend([f'%{keyword}%', f'%{keyword}%'])
 
-            # 听状态筛选
-            if listen_status == 'listened':
-                # 只显示用户已听的专辑
+            # 原有听状态筛选
+            if listen_status == 'listened' and listen_status != 'unrecorded':
                 if user_listened_source_ids:
                     source_placeholders = ','.join(['%s'] * len(user_listened_source_ids))
                     where_conditions.append(f"id IN ({source_placeholders})")
                     query_params.extend(user_listened_source_ids)
                 else:
-                    # 无已听专辑，直接返回空
                     return jsonify({
                         "code": 200,
                         "msg": "暂无已听的该风格专辑",
                         "data": {"albumIds": []}
                     })
-            elif listen_status == 'unlistened':
-                # 只显示用户未听的专辑
+            elif listen_status == 'unlistened' and listen_status != 'unrecorded':
                 if user_listened_source_ids:
                     source_placeholders = ','.join(['%s'] * len(user_listened_source_ids))
                     where_conditions.append(f"id NOT IN ({source_placeholders})")
                     query_params.extend(user_listened_source_ids)
 
             # ======================
-            # Step 4：查询所有符合条件的专辑ID
+            # Step 5：查询所有符合条件的专辑ID
             # ======================
             list_sql = f'''
                 SELECT id 
