@@ -12,13 +12,11 @@ import time
 import random
 import html
 import base64
-import struct
-import zlib
 
 # 增强版请求头，模拟真实浏览器
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-    'Referer': 'https://music.163.com/',
+    'Referer': 'https://y.qq.com/',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
     'Accept-Encoding': 'gzip, deflate, br, zstd',
@@ -42,7 +40,7 @@ SESSION.mount('https://', requests.adapters.HTTPAdapter(max_retries=2))
 
 
 def register_lyric_routes(app):
-    """注册歌词相关路由（长文本存储版）"""
+    """注册歌词相关路由（仅保留QQ音乐歌词获取）"""
 
     # ✅ 1. 保存/更新歌词接口 - 保存长文本到album_lyric表
     @app.route('/api/album/lyric/save/<int:album_pool_id>', methods=['POST', 'OPTIONS'])
@@ -166,11 +164,11 @@ def register_lyric_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"获取歌词失败：{str(e)}"}), 200
 
-    # ✅ 3. 自动获取多平台歌词接口
+    # ✅ 3. 自动获取QQ音乐歌词接口
     @app.route('/api/lyric/fetch_auto', methods=['POST', 'OPTIONS'])
     @login_required
     def fetch_auto_lyric():
-        """增强版自动获取歌词，添加详细日志和备用方案"""
+        """仅保留QQ音乐歌词获取功能"""
         try:
             data = request.get_json()
             song_name = data.get('song_name', '').strip()
@@ -180,59 +178,13 @@ def register_lyric_routes(app):
             if not song_name:
                 return jsonify({"code": 400, "msg": "歌曲名不能为空！"}), 200
 
-            print(f"\n🎵 开始获取歌词：{song_name} - {artist}")
+            print(f"\n🎵 开始获取QQ音乐歌词：{song_name} - {artist}")
 
             result = {
-                "netease": {"status": "failed", "lyric": "", "msg": ""},
-                "kugou": {"status": "failed", "lyric": "", "msg": ""},
-                "genius": {"status": "failed", "lyric": "", "msg": ""},
                 "qq": {"status": "failed", "lyric": "", "msg": ""}
             }
 
-            # 1. 网易云（主方案）- 增加重试和更详细的错误日志
-            try:
-                print("尝试网易云...")
-                # 随机延迟，避免被风控
-                time.sleep(random.uniform(0.5, 1.5))
-                netease_lyric = fetch_netease_lyric(song_name, artist, duration)
-                if netease_lyric:
-                    result["netease"] = {
-                        "status": "success",
-                        "lyric": netease_lyric,
-                        "msg": f"获取成功，{len(netease_lyric)}字符"
-                    }
-                    print(f"✅ 网易云成功: {len(netease_lyric)}字符")
-                else:
-                    result["netease"]["msg"] = "未找到歌词"
-                    print("❌ 网易云无结果")
-            except Exception as e:
-                error_msg = str(e)[:100]
-                result["netease"]["msg"] = f"接口错误: {error_msg}"
-                print(f"❌ 网易云异常: 网易云接口错误：{e}")
-                # 打印详细的错误堆栈
-                print(traceback.format_exc())
-
-            # 2. 酷狗（第二方案）
-            try:
-                print("尝试酷狗...")
-                time.sleep(random.uniform(0.5, 1.5))
-                kugou_lyric = fetch_kugou_lyric(song_name, artist, duration)
-                if kugou_lyric:
-                    result["kugou"] = {
-                        "status": "success",
-                        "lyric": kugou_lyric,
-                        "msg": f"获取成功，{len(kugou_lyric)}字符"
-                    }
-                    print(f"✅ 酷狗成功: {len(kugou_lyric)}字符")
-                else:
-                    result["kugou"]["msg"] = "未找到歌词"
-                    print("❌ 酷狗无结果")
-            except Exception as e:
-                error_msg = str(e)[:100]
-                result["kugou"]["msg"] = f"接口错误: {error_msg}"
-                print(f"❌ 酷狗异常: {e}")
-
-            # 3. QQ音乐（新增备用）
+            # 仅尝试QQ音乐获取歌词
             try:
                 print("尝试QQ音乐...")
                 time.sleep(random.uniform(0.5, 1.5))
@@ -244,33 +196,13 @@ def register_lyric_routes(app):
                         "msg": f"获取成功，{len(qq_lyric)}字符"
                     }
                     print(f"✅ QQ音乐成功: {len(qq_lyric)}字符")
-                    print(qq_lyric)
+                    print(qq_lyric[:100] + "..." if len(qq_lyric) > 100 else qq_lyric)
                 else:
                     result["qq"]["msg"] = "未找到歌词"
                     print("❌ QQ音乐无结果")
             except Exception as e:
                 result["qq"]["msg"] = str(e)[:100]
                 print(f"❌ QQ音乐异常: {e}")
-
-            # 4. Genius（最后尝试）
-            if not any(r["status"] == "success" for r in result.values()):
-                try:
-                    print("尝试Genius...")
-                    time.sleep(random.uniform(0.5, 1.5))
-                    genius_lyric = fetch_genius_lyric(song_name, artist)
-                    if genius_lyric:
-                        result["genius"] = {
-                            "status": "success",
-                            "lyric": genius_lyric,
-                            "msg": f"获取成功，{len(genius_lyric)}字符"
-                        }
-                        print(f"✅ Genius成功: {len(genius_lyric)}字符")
-                    else:
-                        result["genius"]["msg"] = "未找到歌词"
-                        print("❌ Genius无结果")
-                except Exception as e:
-                    result["genius"]["msg"] = str(e)[:100]
-                    print(f"❌ Genius异常: {e}")
 
             # 统计成功数量
             success_count = sum(1 for r in result.values() if r["status"] == "success")
@@ -293,123 +225,10 @@ def register_lyric_routes(app):
             print(f"❌ 自动获取歌词出错：{traceback.format_exc()}")
             return jsonify({"code": 500, "msg": f"自动获取歌词失败：{str(e)}"}), 200
 
-    # ✅ 4. 解析网易云链接获取歌词接口
-    @app.route('/api/lyric/parse_netease_url', methods=['POST', 'OPTIONS'])
-    @login_required
-    def parse_netease_url_lyric():
-        """解析网易云音乐链接获取歌词"""
-        try:
-            data = request.get_json()
-            song_url = data.get('song_url', '').strip()
-
-            # 验证URL
-            if not song_url or not song_url.startswith('https://music.163.com/'):
-                return jsonify({
-                    "code": 400,
-                    "msg": "请输入有效的网易云音乐歌曲链接！"
-                }), 200
-
-            # 解析歌曲ID
-            song_id = None
-            # 匹配两种URL格式：带#和不带#的
-            patterns = [
-                r'song\?id=(\d+)',  # 匹配 ?id=xxx
-                r'song/id/(\d+)',  # 匹配 /id/xxx
-                r'#/song\?id=(\d+)',  # 匹配 #/song?id=xxx
-                r'song/(\d+)'  # 匹配 /song/xxx
-            ]
-
-            for pattern in patterns:
-                match = re.search(pattern, song_url)
-                if match:
-                    song_id = match.group(1)
-                    break
-
-            if not song_id:
-                return jsonify({
-                    "code": 400,
-                    "msg": "无法从链接中解析出歌曲ID，请检查链接格式！",
-                    "data": {"song_url": song_url}
-                }), 200
-
-            print(f"\n🔍 解析网易云链接成功，歌曲ID: {song_id}")
-
-            # 根据ID直接获取歌词（绕过搜索步骤）
-            def fetch_netease_lyric_by_id(song_id):
-                """通过歌曲ID直接获取网易云歌词"""
-                try:
-                    headers = {
-                        **HEADERS,
-                        'Referer': 'https://music.163.com/',
-                        'Host': 'music.163.com',
-                    }
-
-                    # 直接调用歌词接口
-                    lyric_url = f"https://music.163.com/api/song/lyric/v1?id={song_id}&lv=1&kv=1&tv=-1"
-                    lyric_response = SESSION.get(lyric_url, headers=headers, timeout=10)
-
-                    if lyric_response.status_code != 200:
-                        print(f"歌词接口返回非200状态码: {lyric_response.status_code}")
-                        return ""
-
-                    try:
-                        lyric_data = lyric_response.json()
-                    except json.JSONDecodeError:
-                        print(f"歌词接口返回非JSON内容: {lyric_response.text[:200]}")
-                        return ""
-
-                    # 解析歌词
-                    lyric_text = ""
-
-                    # 优先获取原版歌词
-                    if 'lrc' in lyric_data and lyric_data['lrc'].get('lyric'):
-                        lyric_text = lyric_data['lrc']['lyric']
-
-                    # 合并翻译歌词
-                    if 'tlyric' in lyric_data and lyric_data['tlyric'].get('lyric'):
-                        trans_lyric = lyric_data['tlyric']['lyric']
-                        if trans_lyric and trans_lyric != '[99:00.00]纯音乐，请欣赏\n':
-                            lyric_text += "\n\n【翻译】\n" + trans_lyric
-
-                    return clean_lyric(lyric_text, keep_timestamp=True) if lyric_text else ""
-                except Exception as e:
-                    print(f"通过ID获取网易云歌词错误: {str(e)}")
-                    return ""
-
-            # 获取歌词
-            lyric_text = fetch_netease_lyric_by_id(song_id)
-
-            if not lyric_text:
-                return jsonify({
-                    "code": 404,
-                    "msg": "未找到该歌曲的歌词！",
-                    "data": {
-                        "song_id": song_id,
-                        "song_url": song_url
-                    }
-                }), 200
-
-            return jsonify({
-                "code": 200,
-                "msg": "解析成功，获取歌词完成！",
-                "data": {
-                    "song_id": song_id,
-                    "song_url": song_url,
-                    "lyric_text": lyric_text,
-                    "lyric_length": len(lyric_text)
-                }
-            })
-
-        except Exception as e:
-            print(f"❌ 解析网易云链接出错：{traceback.format_exc()}")
-            return jsonify({
-                "code": 500,
-                "msg": f"解析链接失败：{str(e)}"
-            }), 200
-    # ==================== 各平台歌词获取函数（修复增强版） ====================
+    # ==================== QQ音乐歌词获取函数 ====================
 
     def fetch_qq_lyric(song_name, artist):
-        """QQ音乐备用接口（增强版）"""
+        """QQ音乐歌词获取（增强版）"""
         try:
             # 使用更稳定的QQ音乐API
             search_url = f"https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n=10&w={quote(song_name + ' ' + artist)}&format=json"
@@ -470,519 +289,81 @@ def register_lyric_routes(app):
             print(f"QQ音乐歌词获取错误: {e}")
             return ""
 
-    def parse_kugou_krc(krc_content):
-        """解析酷狗KRC格式歌词（增强版）"""
-        try:
-            # 检查是否为KRC格式
-            if not krc_content or (isinstance(krc_content, str) and not krc_content.startswith('krc1')):
-                return clean_lyric(krc_content, keep_timestamp=True)
-
-            # KRC解密密钥
-            key = [64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105]
-
-            # 移除krc1头部
-            encrypted_data = krc_content[4:] if isinstance(krc_content, str) else krc_content[4:]
-
-            # 解密数据
-            decrypted_bytes = bytearray()
-            for i, byte in enumerate(encrypted_data):
-                if isinstance(byte, str):
-                    byte = ord(byte)
-                decrypted_bytes.append(byte ^ key[i % 16])
-
-            # 解压缩
-            try:
-                decompressed_data = zlib.decompress(bytes(decrypted_bytes))
-            except:
-                decompressed_data = bytes(decrypted_bytes)
-
-            # 解析KRC格式
-            lyric_text = parse_krc_binary(decompressed_data)
-
-            return clean_lyric(lyric_text, keep_timestamp=True)
-
-        except Exception as e:
-            print(f"KRC解析失败: {e}")
-            return extract_text_from_krc(krc_content)
-
-    def parse_krc_binary(data):
-        """解析KRC二进制数据（增强版）"""
-        if not data:
-            return ""
-
-        lines = []
-        pos = 0
-        data_len = len(data)
-
-        while pos < data_len:
-            try:
-                if pos + 8 > data_len:
-                    break
-
-                # 读取时间戳和长度
-                timestamp = struct.unpack('<I', data[pos:pos + 4])[0]
-                pos += 4
-
-                lyric_len = struct.unpack('<I', data[pos:pos + 4])[0]
-                pos += 4
-
-                if lyric_len == 0 or pos + lyric_len > data_len:
-                    break
-
-                # 读取歌词文本
-                lyric_text = data[pos:pos + lyric_len].decode('utf-8', errors='ignore')
-                pos += lyric_len
-
-                # 格式化时间戳
-                minutes = timestamp // 60000
-                seconds = (timestamp % 60000) / 1000
-                timestamp_str = f"[{minutes:02d}:{seconds:06.3f}]".replace('.', ':')
-
-                # 清理歌词文本
-                clean_text = re.sub(r'<\d+,\d+,\d+>', '', lyric_text)
-                clean_text = re.sub(r'\([^)]*\)', '', clean_text)
-                clean_text = clean_text.strip()
-
-                if clean_text:
-                    lines.append(f"{timestamp_str}{clean_text}")
-
-            except:
-                pos += 1
-
-        return '\n'.join(lines)
-
-    def extract_text_from_krc(krc_content):
-        """从KRC内容中提取文本（降级方案）"""
-        try:
-            # 提取中文字符、英文字符和常见标点
-            text_matches = re.findall(r'[\u4e00-\u9fff\w\s,.!?;:，。！？；：、]+', str(krc_content))
-            extracted = ' '.join(text_matches)
-
-            if not extracted:
-                try:
-                    decoded = str(krc_content).encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')
-                    decoded = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', decoded)
-                    return decoded
-                except:
-                    return ""
-
-            return extracted
-        except:
-            return ""
-
-    def fetch_netease_lyric(song_name, artist, duration=0):
+    # ==================== 酷狗 KRC 转 LRC 接口（新增） ====================
+    @app.route('/api/lyric/krc2lrc', methods=['POST', 'OPTIONS'])
+    @login_required
+    def krc_to_lrc():
         """
-        获取网易云音乐歌词（修复增强版）
-        解决 Expecting value: line 1 column 1 (char 0) 错误
+        酷狗 KRC 文件 转换为 标准 LRC 歌词接口
+        前端上传 .krc 文件，返回标准 LRC 文本
         """
         try:
-            # 方案1: 使用官方API（带更完善的请求头和错误处理）
-            search_url = "https://music.163.com/api/search/get/"
-            search_params = {
-                's': f"{song_name} {artist}",
-                'type': 1,
-                'limit': 10,
-                'offset': 0,
-                'total': True,
-                'csrf_token': ''
-            }
+            # 1. 获取上传的 krc 文件
+            if 'krc_file' not in request.files:
+                return jsonify({"code": 400, "msg": "请上传 KRC 文件"}), 200
 
-            headers = {
-                **HEADERS,
-                'Referer': 'https://music.163.com/search/',
-                'Host': 'music.163.com',
-                'X-Real-IP': '114.114.114.114',  # 模拟真实IP
-            }
+            file = request.files['krc_file']
+            if not file.filename.endswith('.krc'):
+                return jsonify({"code": 400, "msg": "仅支持 .krc 格式文件"}), 200
 
-            # 发送请求并处理响应
-            response = SESSION.get(search_url, params=search_params, headers=headers, timeout=10)
+            # 2. 读取文件二进制
+            krc_data = file.read()
+            if len(krc_data) < 100:
+                return jsonify({"code": 400, "msg": "KRC 文件无效"}), 200
 
-            # 打印响应信息用于调试
-            print(f"网易云响应状态码: {response.status_code}")
-            print(f"网易云响应内容长度: {len(response.text)}")
+            # 3. 酷狗 KRC 固定解密密钥
+            KEY = [64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 161, 127, 129, 164, 194]
 
-            if response.status_code != 200:
-                print(f"网易云返回非200状态码: {response.status_code}")
-                # 尝试方案2: 使用备用接口
-                return fetch_netease_lyric_backup(song_name, artist)
+            # 4. 解密
+            decrypted = bytearray()
+            for i, b in enumerate(krc_data):
+                decrypted.append(b ^ KEY[i % len(KEY)])
 
-            # 处理响应内容
-            try:
-                search_result = response.json()
-            except json.JSONDecodeError as e:
-                print(f"网易云返回非JSON内容: {response.text[:200]}")
-                # 尝试方案2: 使用备用接口
-                return fetch_netease_lyric_backup(song_name, artist)
+            json_str = decrypted.decode('utf-8', errors='ignore')
+            js = json.loads(json_str)
 
-            if not search_result.get('result', {}).get('songs'):
-                print("网易云未搜索到歌曲")
-                return ""
+            # 5. 生成标准 LRC
+            lrc_lines = []
 
-            # 选择最佳匹配
-            songs = search_result['result']['songs']
-            best_match = None
+            # 标题/歌手（可选）
+            if 'ti' in js:
+                lrc_lines.append(f"[ti:{js['ti']}]")
+            if 'ar' in js:
+                lrc_lines.append(f"[ar:{js['ar']}]")
 
-            # 智能匹配（优先完全匹配）
-            song_name_lower = song_name.lower()
-            artist_lower = artist.lower()
+            # 逐行解析
+            for item in js.get("lrc", []):
+                time_ms = item["t"]
+                text = item["c"].strip()
+                if not text:
+                    continue
 
-            for song in songs:
-                song_name_api = song.get('name', '').lower()
-                song_artists = [ar['name'].lower() for ar in song.get('artists', [])]
+                # 毫秒转 [mm:ss.xx]
+                mins = time_ms // 60000
+                secs = (time_ms % 60000) / 1000
+                lrc_lines.append(f"[{mins:02d}:{secs:05.2f}]{text}")
 
-                # 匹配规则：歌曲名包含 + 歌手包含
-                if (song_name_lower in song_name_api or song_name_api in song_name_lower) and \
-                        (any(artist_lower in a for a in song_artists) or not artist_lower):
-                    best_match = song
-                    break
+            lrc_content = "\n".join(lrc_lines)
 
-            if not best_match:
-                best_match = songs[0]
-
-            song_id = best_match['id']
-            print(f"选中歌曲ID: {song_id}")
-
-            # 获取歌词 - 使用更稳定的接口
-            lyric_url = f"https://music.163.com/api/song/lyric/v1?id={song_id}&lv=1&kv=1&tv=-1"
-
-            lyric_response = SESSION.get(lyric_url, headers=headers, timeout=10)
-
-            if lyric_response.status_code != 200:
-                print(f"歌词接口返回非200状态码: {lyric_response.status_code}")
-                return ""
-
-            try:
-                lyric_data = lyric_response.json()
-            except json.JSONDecodeError:
-                print(f"歌词接口返回非JSON内容: {lyric_response.text[:200]}")
-                return ""
-
-            # 解析歌词
-            lyric_text = ""
-
-            # 优先获取原版歌词
-            if 'lrc' in lyric_data and lyric_data['lrc'].get('lyric'):
-                lyric_text = lyric_data['lrc']['lyric']
-
-            # 合并翻译歌词
-            if 'tlyric' in lyric_data and lyric_data['tlyric'].get('lyric'):
-                trans_lyric = lyric_data['tlyric']['lyric']
-                if trans_lyric and trans_lyric != '[99:00.00]纯音乐，请欣赏\n':
-                    lyric_text += "\n\n【翻译】\n" + trans_lyric
-
-            return clean_lyric(lyric_text, keep_timestamp=True) if lyric_text else ""
+            return jsonify({
+                "code": 200,
+                "msg": "KRC 转换 LRC 成功",
+                "data": {
+                    "lrc_text": lrc_content,
+                    "song": js.get('ti', ''),
+                    "artist": js.get('ar', '')
+                }
+            })
 
         except Exception as e:
-            print(f"网易云歌词获取详细错误: {str(e)}")
-            # 尝试备用方案
-            try:
-                return fetch_netease_lyric_backup(song_name, artist)
-            except:
-                raise Exception(f"网易云接口错误：{str(e)}")
-
-    def fetch_netease_lyric_backup(song_name, artist):
-        """网易云备用接口（使用第三方公开API）"""
-        try:
-            # 使用公开的网易云歌词API作为备用
-            backup_url = f"https://api.uomg.com/api/lyric?song={quote(song_name)}&singer={quote(artist)}"
-            response = SESSION.get(backup_url, timeout=10)
-
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('code') == 1 and data.get('data', {}).get('lyric'):
-                    return clean_lyric(data['data']['lyric'], keep_timestamp=True)
-
-            return ""
-        except:
-            return ""
-
-    def fetch_kugou_lyric(song_name, artist, duration=0):
-        """获取酷狗音乐歌词（修复增强版）"""
-        try:
-            # 1. 访问首页获取cookies
-            SESSION.get("https://www.kugou.com/", timeout=5)
-
-            # 2. 搜索歌曲
-            search_params = {
-                'keyword': f"{song_name} {artist}",
-                'page': 1,
-                'pagesize': 10,
-                'platform': 'WebFilter',
-                'format': 'json',
-                'userid': -1,
-                'clientver': '',
-                'clienttime': int(time.time()),
-                'mid': str(int(time.time())),
-                'uuid': str(int(time.time())),
-            }
-
-            headers = {
-                **HEADERS,
-                'Referer': 'https://www.kugou.com/',
-                'Host': 'songsearch.kugou.com',
-                'X-Requested-With': 'XMLHttpRequest',
-            }
-
-            response = SESSION.get(
-                "https://songsearch.kugou.com/song_search_v2",
-                params=search_params,
-                headers=headers,
-                timeout=10
-            )
-
-            if response.status_code != 200:
-                return fetch_kugou_backup_lyric_by_name(song_name, artist)
-
-            search_data = response.json()
-
-            if not search_data.get('data', {}).get('lists'):
-                print("酷狗未搜索到歌曲")
-                return ""
-
-            # 3. 智能匹配歌曲
-            best_match = None
-            song_name_lower = song_name.lower()
-            artist_lower = artist.lower()
-
-            for song in search_data['data']['lists']:
-                song_title = html.unescape(song.get('SongName', '')).lower()
-                singer_name = html.unescape(song.get('Singername', '')).lower()
-
-                if (song_name_lower in song_title or song_title in song_name_lower) and \
-                        (artist_lower in singer_name or not artist_lower):
-                    best_match = song
-                    break
-
-            if not best_match:
-                best_match = search_data['data']['lists'][0]
-
-            # 4. 获取歌词
-            hash_value = best_match.get('FileHash', '')
-            album_id = best_match.get('AlbumID', '')
-
-            if not hash_value:
-                return ""
-
-            # 使用新的酷狗歌词API
-            lyric_url = "https://krcs.kugou.com/search"
-            lyric_params = {
-                'ver': 1,
-                'man': 'yes',
-                'client': 'mobi',
-                'hash': hash_value,
-                'album_audio_id': album_id,
-                '_': int(time.time() * 1000)
-            }
-
-            lyric_headers = {
-                **HEADERS,
-                'Referer': 'https://www.kugou.com/',
-                'Host': 'krcs.kugou.com',
-            }
-
-            lyric_response = SESSION.get(lyric_url, params=lyric_params, headers=lyric_headers, timeout=10)
-
-            if lyric_response.status_code != 200:
-                return fetch_kugou_backup_lyric(hash_value)
-
-            lyric_data = lyric_response.json()
-
-            if lyric_data.get('status') != 1 or not lyric_data.get('candidates'):
-                return fetch_kugou_backup_lyric(hash_value)
-
-            # 获取歌词内容
-            lyric_info = lyric_data['candidates'][0]
-            lyric_id = lyric_info.get('id', '')
-            accesskey = lyric_info.get('accesskey', '')
-
-            if not lyric_id or not accesskey:
-                return ""
-
-            # 下载歌词文件
-            download_url = f"https://krcs.kugou.com/download?ver=1&client=pc&id={lyric_id}&accesskey={accesskey}&fmt=krc&charset=utf8"
-            lyric_response = SESSION.get(download_url, timeout=10)
-
-            if lyric_response.status_code != 200:
-                return ""
-
-            # 解析KRC歌词
-            raw_lyric = lyric_response.text
-            cleaned_lyric = parse_kugou_krc(raw_lyric)
-
-            return cleaned_lyric
-
-        except Exception as e:
-            print(f"酷狗歌词获取详细错误: {str(e)}")
-            # 尝试多种备用方案
-            try:
-                return fetch_kugou_simple(song_name, artist)
-            except:
-                try:
-                    return fetch_kugou_backup_lyric_by_name(song_name, artist)
-                except:
-                    raise Exception(f"酷狗接口错误：{str(e)}")
-
-    def fetch_kugou_backup_lyric(hash_value):
-        """酷狗备用接口"""
-        try:
-            url = f"https://lyrics.kugou.com/download"
-            params = {
-                'ver': 1,
-                'client': 'pc',
-                'fmt': 'lrc',
-                'charset': 'utf8',
-                'id': hash_value,
-                'accesskey': hash_value,
-                '_': int(time.time() * 1000)
-            }
-
-            response = SESSION.get(url, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('status') == 200:
-                    lyric_content = data.get('content', '')
-                    if lyric_content:
-                        decoded = base64.b64decode(lyric_content).decode('utf-8', errors='ignore')
-                        return clean_lyric(decoded, keep_timestamp=True)
-            return ""
-        except:
-            return ""
-
-    def fetch_kugou_backup_lyric_by_name(song_name, artist):
-        """通过歌名歌手直接获取酷狗歌词"""
-        try:
-            url = f"https://api.kugou.com/lyric/search?keyword={quote(f'{song_name} {artist}')}&format=json"
-            response = SESSION.get(url, timeout=10)
-
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('status') == 0 and data.get('candidates'):
-                    lyric_id = data['candidates'][0].get('id')
-                    if lyric_id:
-                        lyric_url = f"https://api.kugou.com/lyric/detail?lyricId={lyric_id}&format=json"
-                        lyric_resp = SESSION.get(lyric_url, timeout=10)
-                        if lyric_resp.status_code == 200:
-                            lyric_data = lyric_resp.json()
-                            if lyric_data.get('status') == 0:
-                                return clean_lyric(lyric_data.get('content', ''), keep_timestamp=True)
-            return ""
-        except:
-            return ""
-
-    def fetch_kugou_simple(song_name, artist):
-        """最简单的酷狗歌词获取（通过网页解析）"""
-        try:
-            search_url = f"https://www.kugou.com/yy/song/detail/{quote(song_name + '-' + artist)}.html"
-
-            response = SESSION.get(search_url, timeout=10)
-
-            # 多种正则匹配方式
-            patterns = [
-                r'<div class="lyric" id="lyric-content">([\s\S]*?)</div>',
-                r'data-lyrics="([^"]+)"',
-                r'<p class="lyric-line">([^<]+)</p>'
-            ]
-
-            for pattern in patterns:
-                match = re.search(pattern, response.text)
-                if match:
-                    lyric = html.unescape(match.group(1))
-                    return clean_lyric(lyric, keep_timestamp=False)
-
-            return ""
-        except:
-            return ""
-
-    def fetch_genius_lyric(song_name, artist):
-        """获取Genius歌词（修复增强版）"""
-        try:
-            # 1. 使用更稳定的搜索接口
-            search_term = f"{song_name} {artist}"
-            search_url = f"https://genius.com/api/search/song?q={quote(search_term)}"
-
-            headers = {
-                **HEADERS,
-                'Referer': 'https://genius.com/',
-                'Host': 'genius.com',
-                'Accept-Language': 'en-US,en;q=0.9',
-            }
-
-            response = SESSION.get(search_url, headers=headers, timeout=15)
-
-            if response.status_code != 200:
-                return ""
-
-            data = response.json()
-
-            # 2. 寻找歌曲URL
-            song_url = None
-            hits = data.get('response', {}).get('hits', [])
-
-            for hit in hits:
-                result = hit.get('result', {})
-                if result.get('_type') == 'song':
-                    primary_artist = result.get('primary_artist', {}).get('name', '').lower()
-                    if artist.lower() in primary_artist or not artist:
-                        song_url = result.get('url')
-                        break
-
-            if not song_url:
-                return ""
-
-            # 3. 获取歌词页面
-            page_response = SESSION.get(song_url, headers=headers, timeout=15)
-
-            if page_response.status_code != 200:
-                return ""
-
-            # 4. 多种方式解析歌词
-            html_content = page_response.text
-
-            # 方法1: 新的Genius歌词容器
-            lyric_sections = re.findall(r'<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)</div>', html_content)
-
-            if lyric_sections:
-                raw_lyric = ''.join(lyric_sections)
-            else:
-                # 方法2: 传统方式
-                lyric_match = re.search(r'<div class="lyrics">([\s\S]*?)</div>', html_content)
-                if lyric_match:
-                    raw_lyric = lyric_match.group(1)
-                else:
-                    # 方法3: 备用选择器
-                    lyric_match = re.search(r'<div[^>]*class="[^"]*Lyrics__Container[^"]*"[^>]*>([\s\S]*?)</div>',
-                                            html_content)
-                    if lyric_match:
-                        raw_lyric = lyric_match.group(1)
-                    else:
-                        return ""
-
-            # 5. 深度清理歌词
-            raw_lyric = re.sub(r'<[^>]+>', '', raw_lyric)
-            raw_lyric = html.unescape(raw_lyric)
-
-            # 移除广告、注释等无关内容
-            raw_lyric = re.sub(r'(\[.*?\])|(\(.*?\))', '', raw_lyric)
-
-            # 清理空白行和重复行
-            lines = [line.strip() for line in raw_lyric.split('\n') if line.strip()]
-            seen = set()
-            unique_lines = []
-
-            for line in lines:
-                if line not in seen and len(line) > 1:
-                    seen.add(line)
-                    unique_lines.append(line)
-
-            return '\n'.join(unique_lines)
-
-        except Exception as e:
-            print(f"Genius歌词获取详细错误: {str(e)}")
-            return ""
-
+            print("❌ KRC 转 LRC 失败：", traceback.format_exc())
+            return jsonify({
+                "code": 500,
+                "msg": f"KRC 解析失败：{str(e)}"
+            }), 200
     def clean_lyric(raw_lyric, keep_timestamp=True):
         """
-        清理歌词格式（修复增强版）
+        清理歌词格式
         :param raw_lyric: 原始歌词
         :param keep_timestamp: 是否保留时间戳
         :return: 格式化的歌词文本
@@ -1024,10 +405,6 @@ def register_lyric_routes(app):
         return '\n'.join(unique_lines)
 
     return app  # 返回app实例，方便链式调用
-
-
-
-
 
 
 # 导出注册函数

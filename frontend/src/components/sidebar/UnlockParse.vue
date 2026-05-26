@@ -52,13 +52,13 @@
           <!-- 状态提示 -->
           <div class="parse-status">{{ parseStatus }}</div>
 
-          <!-- 下一步按钮（统一为"开始处理音频"） -->
-          <button
-            class="unlock-parse-btn"
-            @click="gotoNextStep"
-            :disabled="!fileList.length || isUploading">
-            开始处理音频
-          </button>
+<!-- 下一步按钮（统一为"开始处理音频"） -->
+<button
+  class="unlock-parse-btn"
+  @click="gotoNextStep"
+  :disabled="!fileList.length || isConverting">
+  {{ isConverting ? '处理中...' : '开始处理音频' }}
+</button>
         </div>
 
         <!-- 步骤2：转换音频（统一处理所有格式：MP3/OGG/FLAC/NCM/KGG） -->
@@ -244,18 +244,19 @@ export default {
     },
 
     // 步骤导航
-    gotoNextStep() {
-      if (this.currentStep === 1) {
-        // 统一走转换流程（MP3/NCM/KGG都调用对应的转换接口）
-        this.convertAudioFiles();
-      } else if (this.currentStep === 2) {
-        this.currentStep = 3;
-      } else if (this.currentStep === 3) {
-        // 解析完成后自动到步骤4
-      } else if (this.currentStep === 4) {
-        // 完成
-      }
-    },
+gotoNextStep() {
+  if (this.currentStep === 1) {
+    // 统一走转换流程（MP3/NCM/KGG都调用对应的转换接口）
+    this.isConverting = true; // 👈 加上这一行
+    this.convertAudioFiles();
+  } else if (this.currentStep === 2) {
+    this.currentStep = 3;
+  } else if (this.currentStep === 3) {
+    // 解析完成后自动到步骤4
+  } else if (this.currentStep === 4) {
+    // 完成
+  }
+},
 
     gotoPrevStep() {
       if (this.currentStep > 1) {

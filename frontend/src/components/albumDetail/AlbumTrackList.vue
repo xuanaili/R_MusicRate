@@ -1149,7 +1149,7 @@ export default {
 }
 
 
-.root-container{
+.root-container {
   height: 88vh;
 }
 </style>

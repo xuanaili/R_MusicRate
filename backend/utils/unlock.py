@@ -351,79 +351,84 @@ def upload_cover_to_imgbed(cover_path):
 # 合并音频文件
 def merge_audio_files(audio_files, output_dir, album_name, artist, album_id):
     """
-    合并多个音频文件为一个整轨MP3
-    :param audio_files: 音频文件路径列表（已排序）
-    :param output_dir: 输出目录
-    :param album_name: 专辑名（用于生成文件名）
-    :param artist: 歌手名（用于生成文件名）
-    :param album_id: 简单序号（文件数+1）
-    :return: 合并后的MP3文件路径
+    合并多个音频文件为一个整轨MP3（修复版：使用concat滤镜强制重编码）
     """
     if not audio_files or len(audio_files) == 0:
         return ""
 
     try:
-        # 确保输出目录存在
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # ✅ 核心简化：生成指定格式的文件名
-        # 处理特殊字符（移除Windows不允许的字符）
         safe_album_name = re.sub(r'[\\/:*?"<>|]', '_', album_name)
         safe_artist = re.sub(r'[\\/:*?"<>|]', '_', artist)
-        # 格式：序号_歌手名_专辑名.mp3
         merge_filename = f"{album_id}_{safe_artist}_{safe_album_name}.mp3"
         merge_file_path = os.path.join(output_dir, merge_filename)
 
-        # 如果只有一个文件，直接转换为MP3（确保格式统一）
         if len(audio_files) == 1:
+            # 单个文件直接转码
             cmd = [
                 FFMPEG_PATH,
                 '-i', audio_files[0],
-                '-acodec', 'mp3',
-                '-b:a', '320k',  # 320kbps高质量
+                '-acodec', 'libmp3lame',
+                '-b:a', '320k',
+                '-ar', '44100',  # 统一采样率
+                '-ac', '2',  # 统一声道
                 '-y',
                 '-hide_banner',
                 '-loglevel', 'error',
                 merge_file_path
             ]
         else:
-            # 多个文件，先生成文件列表，再合并（修复路径问题）
-            list_file_path = os.path.join(output_dir, "merge_list.txt")
-            with open(list_file_path, 'w', encoding='utf-8') as f:
-                for file_path in audio_files:
-                    # FFmpeg的文件列表格式：file '路径' - 修复特殊字符
-                    f.write(f"file '{file_path.replace("'", "\\'")}'\n")
+            # ✅ 修复：使用concat滤镜进行重编码合并
+            # 构建filter_complex输入
+            inputs = []
+            filter_parts = []
 
-            # 执行合并命令
+            for i, file_path in enumerate(audio_files):
+                inputs.extend(['-i', file_path])
+                filter_parts.append(f'[{i}:a:0]')
+
+            # 构建concat滤镜字符串: [0:a:0][1:a:0]...concat=n=19:v=0:a=1[out]
+            concat_filter = ''.join(filter_parts) + f'concat=n={len(audio_files)}:v=0:a=1[out]'
+
             cmd = [
                 FFMPEG_PATH,
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', list_file_path,
-                '-acodec', 'mp3',
+                *inputs,  # 展开所有输入文件
+                '-filter_complex', concat_filter,
+                '-map', '[out]',
+                '-acodec', 'libmp3lame',
                 '-b:a', '320k',
+                '-ar', '44100',
+                '-ac', '2',
                 '-y',
                 '-hide_banner',
                 '-loglevel', 'error',
                 merge_file_path
             ]
 
-        # 执行FFmpeg命令（修复shell=False）
-        result = subprocess.run(cmd, capture_output=True, text=True, shell=False)
+        result = subprocess.run(cmd, capture_output=True, text=True, shell=False, encoding='utf-8')
+
         if result.returncode != 0:
-            print(f"音频合并失败: {result.stderr}")
+            print(f"❌ FFmpeg合并失败: {result.stderr}")
+            print(f"命令: {' '.join(cmd)}")
             return ""
 
-        # 删除临时列表文件
-        if len(audio_files) > 1 and os.path.exists(list_file_path):
-            os.remove(list_file_path)
+        # ✅ 验证：检查输出文件时长是否合理
+        actual_duration = get_duration_with_ffprobe(merge_file_path)
+        expected_duration = sum(get_duration_with_ffprobe(f) for f in audio_files)
+
+        print(f"📊 合并验证：期望时长 {expected_duration:.2f}s, 实际时长 {actual_duration:.2f}s")
+
+        if actual_duration < expected_duration * 0.9:  # 允许10%误差
+            print(f"⚠️ 警告：合并后时长异常，可能丢失数据！")
 
         return merge_file_path
+
     except Exception as e:
         print(f"音频合并异常: {e}")
+        traceback.print_exc()
         return ""
-
 
 # ✅ 简化：上传函数使用简单序号生成文件名
 def upload_merged_audio(merge_file_path, album_id, artist, album_name):
