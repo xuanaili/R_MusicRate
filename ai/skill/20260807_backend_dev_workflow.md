@@ -34,7 +34,7 @@
 - [ ] `my_score` 等JSON字段用TEXT类型（无默认值）
 - [ ] 字符集使用utf8mb4
 - [ ] create_* 函数已添加到 `init_base_tables()` 调用链
-- [ ] 错误处理包含 `db.rollback()`
+- [ ] try前 `db = None`，except中 `if db: db.rollback()`（**禁止直接 `db.rollback()`**）
 - [ ] 考虑了与现有表的关联关系
 
 ## 三、修改现有功能流程
@@ -67,7 +67,19 @@
 - [ ] 封面压缩后不超过256KB
 - [ ] 合并后时长验证（10%误差容忍）
 
-## 五、CORS与认证问题排查
+## 六、MySQL启动失败排查
+
+### 常见问题
+1. **`Can't connect to MySQL server on 'localhost'`** → MySQL未启动，检查端口3306是否监听
+2. **`UnboundLocalError: local variable 'db' referenced before assignment`** → `get_db()` 失败后 `db.rollback()` 引用未赋值变量，真实原因是MySQL连接失败
+3. **`UnicodeEncodeError: 'gbk' codec can't encode character`** → Windows终端GBK编码无法输出emoji，需 `sys.stdout.reconfigure(encoding='utf-8')`
+4. **`指定的服务未安装`** → 移动硬盘MySQL未注册为Windows服务，需直接启动mysqld.exe
+
+### 排查步骤
+1. 检查3306端口：`powershell -Command "Test-NetConnection -ComputerName localhost -Port 3306"`
+2. 检查MySQL服务：`sc query MySQL80`
+3. 手动启动mysqld：`"<DRIVE>:/__/app/MySQL/MySQL Server 8.0/bin/mysqld.exe" --defaults-file="<DRIVE>:/__/app/MySQL/MySQL Server 8.0/my.ini"`
+4. 检查run.py启动逻辑：端口检测 → 服务启动 → 直接启动mysqld → 轮询等待就绪
 
 ### 常见问题
 1. **跨域被拦截** → 检查CORS配置是否为 `origins=r".*"`

@@ -232,3 +232,36 @@
 1. album_comments → 2. album_pool → 3. users → 4. user_album_intro → 5. user_playlist → 6. user_recommend → 7. album_tags → 8. album_singers → 9. album_lyric → 10. album_share
 
 然后 `init_default_admin()` 创建默认admin用户及其专属专辑表。
+
+---
+
+## 五、数据库异常处理模式
+
+### try/except 中 db 变量安全模式（强制规范）
+
+所有 `create_*` 函数和 `init_default_admin()` 必须遵循以下模式：
+
+```python
+def some_db_operation():
+    db = None              # ① try前初始化，防止get_db()失败时db未赋值
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        ...
+        db.commit()
+        cursor.close()
+    except Exception as e:
+        if db: db.rollback()  # ② 安全检查后再rollback，防止UnboundLocalError
+        raise e
+```
+
+**为什么必须这样做**：`get_db()` 连接失败时会抛 `pymysql.OperationalError`，此时 `db` 未被赋值。如果 `except` 块直接调用 `db.rollback()`，会触发 `UnboundLocalError`，掩盖真正的连接错误。
+
+### MySQL连接失败常见原因
+
+| 错误信息 | 原因 | 解决 |
+|----------|------|------|
+| `Can't connect to MySQL server on 'localhost' ([WinError 10061])` | MySQL未启动/端口未监听 | 检查MySQL服务或手动启动mysqld |
+| `Access denied for user 'music_user'@'localhost'` | 用户名/密码错误 | 检查config.py中的MYSQL_CONFIG |
+| `Unknown database 'music_rate'` | 数据库不存在 | 需先 `CREATE DATABASE music_rate` |
+| `MySQL service not installed` | 移动硬盘MySQL未注册为Windows服务 | 直接启动mysqld.exe --defaults-file |

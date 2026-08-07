@@ -12,8 +12,9 @@ metadata:
 - **操作系统**: Windows 11 Pro
 - **Python**: 3.10 / 3.12（IDE中配置了两个版本，项目使用 3.10）
 - **Node.js**: 需要支持 Vue CLI 5
-- **MySQL**: 8.0.44，服务名 `MySQL80`，数据库 `music_rate`
+- **MySQL**: 8.0.44，安装在移动硬盘 `U:/__/app/MySQL/`，数据库 `music_rate`
 - **数据库用户**: `music_user@localhost`，端口 `3306`
+- **MySQL配置文件**: `U:/__/app/MySQL/MySQL Server 8.0/my.ini`（basedir/datadir指向U盘路径）
 - **浏览器**: Edge（自动录屏使用）
 
 ## 启动命令
@@ -29,8 +30,20 @@ npm run lint     # ESLint检查
 ### 后端
 ```bash
 python -m backend.run   # 启动Flask http://0.0.0.0:5000
-# Windows下会自动启动MySQL80服务
+# Windows下自动检测MySQL端口就绪，优先尝试MySQL80服务，失败则直接启动mysqld
 ```
+
+### 手动启动MySQL（移动硬盘/U盘环境）
+```bash
+# 如果run.py自动启动失败，可手动执行：
+"U:/__/app/MySQL/MySQL Server 8.0/bin/mysqld.exe" --defaults-file="U:/__/app/MySQL/MySQL Server 8.0/my.ini"
+```
+
+### MySQL启动逻辑（run.py）
+1. 先检测3306端口是否已就绪 → 直接继续
+2. 尝试Windows服务(MySQL80)启动 → 轮询端口等待就绪（最多60秒）
+3. 服务启动失败 → 根据项目所在盘符推算mysqld路径直接启动
+4. Windows终端UTF-8输出配置：`sys.stdout.reconfigure(encoding='utf-8')`，防止emoji崩溃
 
 ## Python 依赖（requirements.txt）
 

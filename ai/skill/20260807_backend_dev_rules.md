@@ -35,7 +35,8 @@
 - 排序字段必须使用白名单校验（`VALID_SORT_FIELDS`）
 - 用户专辑表名通过 `get_album_table_name(user_id)` 获取
 - JSON字段使用 `safe_json_loads()` 解析，不要直接 `json.loads()`
-- 错误时调用 `db.rollback()` 后返回
+- 错误时调用 `if db: db.rollback()` 后返回（**禁止直接 `db.rollback()`**）
+- **try/except 中 db 变量安全模式**（强制）：`try` 前必须 `db = None`，`except` 中必须 `if db: db.rollback()`，防止 `get_db()` 失败时 `UnboundLocalError`
 
 ## 五、错误处理模式
 
