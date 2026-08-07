@@ -3,6 +3,12 @@ import subprocess
 import sys
 import os
 import time
+import socket
+
+# Windows终端UTF-8输出，防止emoji(✅❌)等字符GBK编码报错
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # 添加这一行：自动设置正确的导入路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,39 +19,81 @@ from backend.utils.db import init_base_tables
 app = create_app()
 
 
-try:
-        # 执行sc query命令查询服务状态
-    result = subprocess.run(
+def is_mysql_port_ready():
+    """检查MySQL 3306端口是否可连接"""
+    try:
+        sock = socket.create_connection(('localhost', 3306), timeout=1)
+        sock.close()
+        return True
+    except (ConnectionRefusedError, socket.timeout, OSError):
+        return False
+
+
+def wait_mysql_ready(max_wait=60):
+    """等待MySQL端口就绪，最多等max_wait秒"""
+    for i in range(max_wait // 2):
+        time.sleep(2)
+        if is_mysql_port_ready():
+            print(f"MySQL服务已就绪（等待了{(i+1)*2}秒）")
+            return True
+    print(f"⚠️ MySQL服务启动超时（{max_wait}秒），尝试继续启动...")
+    return False
+
+
+def start_mysql_via_service():
+    """尝试通过Windows服务启动MySQL"""
+    try:
+        result = subprocess.run(
             ['sc', 'query', 'MySQL80'],
-            capture_output=True,
-            text=True,
-            encoding='gbk'  # 解决中文乱码
+            capture_output=True, text=True, encoding='gbk'
         )
-        # 判断服务是否运行中（STATE : 4 RUNNING）
-    if not ("STATE" in result.stdout and "RUNNING" in result.stdout):
+        if "STATE" in result.stdout and "RUNNING" in result.stdout:
+            print("MySQL服务已启动")
+            return True
+        # 尝试通过sc start启动
         ps_cmd = 'powershell -Command "Start-Process cmd -ArgumentList \'/c sc start MySQL80\' -Verb RunAs"'
-        result = subprocess.run(ps_cmd, shell=True, capture_output=True, text=True)
-        print("MySQL服务启动中，等待就绪...")
-        # 等待MySQL真正就绪（端口可连接），最多等60秒
-        import socket
-        mysql_ready = False
-        for i in range(30):
-            time.sleep(2)
-            try:
-                sock = socket.create_connection(('localhost', 3306), timeout=1)
-                sock.close()
-                print(f"MySQL服务已就绪（等待了{(i+1)*2}秒）")
-                mysql_ready = True
-                break
-            except (ConnectionRefusedError, socket.timeout):
-                if i == 29:
-                    print("⚠️ MySQL服务启动超时（60秒），尝试继续启动...")
-        if not mysql_ready:
-            print("⚠️ MySQL可能未完全启动，后续数据库操作可能失败")
+        subprocess.run(ps_cmd, shell=True, capture_output=True, text=True)
+        print("尝试通过MySQL80服务启动...")
+        return wait_mysql_ready()
+    except Exception as e:
+        print(f"通过服务启动失败：{e}")
+        return False
+
+
+def start_mysql_via_mysqld():
+    """直接启动mysqld进程（适用于移动硬盘等非系统安装的MySQL）"""
+    # 根据项目所在盘符推算MySQL路径
+    project_drive = os.path.splitdrive(os.path.abspath(__file__))[0]  # 如 U:
+    mysqld_path = os.path.join(project_drive, os.sep, '__',
+                                'app', 'MySQL', 'MySQL Server 8.0', 'bin', 'mysqld.exe')
+    ini_path = os.path.join(project_drive, os.sep, '__',
+                             'app', 'MySQL', 'MySQL Server 8.0', 'my.ini')
+
+    if not os.path.exists(mysqld_path):
+        print(f"⚠️ 未找到mysqld：{mysqld_path}")
+        return False
+
+    print(f"尝试直接启动mysqld：{mysqld_path}")
+    try:
+        # 以管理员权限启动mysqld，使用--defaults-file指定配置
+        cmd = f'powershell -Command "Start-Process cmd -ArgumentList \'/c \\"{mysqld_path}\\" --defaults-file=\\"{ini_path}\\"\' -Verb RunAs"'
+        subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return wait_mysql_ready()
+    except Exception as e:
+        print(f"直接启动mysqld失败：{e}")
+        return False
+
+
+# ========== 启动MySQL ==========
+try:
+    if is_mysql_port_ready():
+        print("MySQL服务已就绪")
     else:
-        print(f"MySQL服务已启动")
+        # 优先尝试Windows服务，失败则直接启动mysqld
+        if not start_mysql_via_service():
+            start_mysql_via_mysqld()
 except Exception as e:
-        print(f"查询MySQL状态失败：{e}")
+    print(f"启动MySQL失败：{e}")
 
 # 启动初始化（创建基础表、默认管理员）
 with app.app_context():
