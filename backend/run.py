@@ -25,8 +25,23 @@ try:
     if not ("STATE" in result.stdout and "RUNNING" in result.stdout):
         ps_cmd = 'powershell -Command "Start-Process cmd -ArgumentList \'/c sc start MySQL80\' -Verb RunAs"'
         result = subprocess.run(ps_cmd, shell=True, capture_output=True, text=True)
-        time.sleep(10)
-        print(f"MySQL服务启动成功")
+        print("MySQL服务启动中，等待就绪...")
+        # 等待MySQL真正就绪（端口可连接），最多等60秒
+        import socket
+        mysql_ready = False
+        for i in range(30):
+            time.sleep(2)
+            try:
+                sock = socket.create_connection(('localhost', 3306), timeout=1)
+                sock.close()
+                print(f"MySQL服务已就绪（等待了{(i+1)*2}秒）")
+                mysql_ready = True
+                break
+            except (ConnectionRefusedError, socket.timeout):
+                if i == 29:
+                    print("⚠️ MySQL服务启动超时（60秒），尝试继续启动...")
+        if not mysql_ready:
+            print("⚠️ MySQL可能未完全启动，后续数据库操作可能失败")
     else:
         print(f"MySQL服务已启动")
 except Exception as e:

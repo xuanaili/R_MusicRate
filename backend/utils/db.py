@@ -10,6 +10,7 @@ from backend.utils.auth import encrypt_password
 def check_and_create_user_album_table(user_id):
     """检查用户专辑表是否存在，不存在则创建
     """
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -28,13 +29,14 @@ def check_and_create_user_album_table(user_id):
             db.commit()
         cursor.close()
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 检查/创建用户专辑表失败：{str(e)}")
         traceback.print_exc()
         raise e
 
 def get_next_id(table_name):
     """获取指定表的下一个自增ID"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -89,6 +91,7 @@ def create_user_album_table(user_id):
     favourite_tracks_time: TEXT 收藏曲目对应秒数数组
     所有数组一一对应、索引一致、永久保存
     """
+    db = None
     try:
         db = get_db()
         cursor = db.cursor()
@@ -130,7 +133,7 @@ def create_user_album_table(user_id):
         cursor.close()
         print(f"✅ 为用户{user_id}创建专辑表{table_name}成功！my_score为TEXT数组格式+无默认值，解决1101错误")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建用户专辑表失败：{str(e)}")
         traceback.print_exc()
         raise e
@@ -140,6 +143,7 @@ def create_user_album_table(user_id):
 # ========== 新增：创建用户-专辑专属简介表 ==========
 def create_user_album_intro_table():
     """创建用户-专辑专属简介表（核心：关联user_id + album_id，存储用户自定义简介）"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -160,7 +164,7 @@ def create_user_album_intro_table():
         cursor.close()
         print("✅ user_album_intro表创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建user_album_intro表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -168,6 +172,7 @@ def create_user_album_intro_table():
 # ========== ✅✅✅ 新增：创建用户播放列表表 user_playlist ✅✅✅
 def create_user_playlist_table():
     """创建用户播放列表数据表【核心】- 匹配playlist.py接口需求"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -186,13 +191,14 @@ def create_user_playlist_table():
         cursor.close()
         print("✅ user_playlist 用户播放列表表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建user_playlist表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
 
 def create_user_recommend():
     """创建用户推荐数据表，用于每日推荐 ✅修复外键名重复+打印文案错误"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -213,7 +219,7 @@ CREATE TABLE IF NOT EXISTS `user_recommend` (
         cursor.close()
         print("✅ user_recommend 用户每日推荐表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建user_recommend表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -221,6 +227,7 @@ CREATE TABLE IF NOT EXISTS `user_recommend` (
 
 def create_users():
     """创建用户表"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -244,7 +251,7 @@ def create_users():
         cursor.close()
         print("✅ users用户表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建users表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -252,6 +259,7 @@ def create_users():
 
 def create_album_pool():
     """创建用户表"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -289,13 +297,14 @@ def create_album_pool():
         cursor.close()
         print("✅ album_pool表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建album_pool表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
 
 def create_album_comments():
     """创建用户表"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -320,7 +329,7 @@ def create_album_comments():
         cursor.close()
         print("✅ album_comments表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建album_comments表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -328,6 +337,7 @@ def create_album_comments():
 
 def create_album_tags():
     """创建专辑类型表（兼容MySQL所有版本：TEXT替代JSON，移除默认值）"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -356,7 +366,7 @@ def create_album_tags():
         cursor.close()
         print("✅ album_tags表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建album_tags表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -364,6 +374,7 @@ def create_album_tags():
 
 def create_album_singers():
     """创建歌手信息表（兼容MySQL所有版本：TEXT替代JSON，移除默认值）"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -390,7 +401,7 @@ def create_album_singers():
         cursor.close()
         print("✅ album_singers表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建album_singers表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -398,6 +409,7 @@ def create_album_singers():
 
 def create_album_lyric():
     """创建专辑歌词表（兼容MySQL所有版本：TEXT替代JSON，移除默认值）"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -418,7 +430,7 @@ CREATE TABLE IF NOT EXISTS album_lyric (
         cursor.close()
         print("✅ album_lyric表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建album_lyric表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -426,6 +438,7 @@ CREATE TABLE IF NOT EXISTS album_lyric (
 
 def create_album_share():
     """创建专辑专题表（兼容MySQL所有版本：TEXT替代JSON，移除默认值）"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -444,7 +457,7 @@ CREATE TABLE IF NOT EXISTS album_share (
         cursor.close()
         print("✅ album_share表 创建/检查成功！")
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 创建album_share表失败：{str(e)}")
         print(traceback.format_exc())
         raise e
@@ -478,6 +491,7 @@ def init_base_tables():
 
 def init_default_admin():
     """初始化默认admin用户，并创建其专属专辑表"""
+    db = None
     try:
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
@@ -500,7 +514,7 @@ def init_default_admin():
             print(f"✅ 默认admin用户已存在（ID：{user['user_id']}），my_score字段已修复完成！")
         cursor.close()
     except Exception as e:
-        db.rollback()
+        if db: db.rollback()
         print(f"❌ 初始化admin用户失败：{str(e)}")
         print(traceback.format_exc())
         raise e
