@@ -85,26 +85,24 @@ def start_mysql_via_mysqld():
 
 
 # ========== 启动MySQL & 初始化 ==========
-# Flask debug模式默认启用reloader，会用Restarting with stat重启子进程
-# 只在子进程（真正服务的进程）中执行初始化，避免所有输出打印两遍
-if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('WERKZEUG_RUN_MAIN') is None:
-    try:
-        if is_mysql_port_ready():
-            print("MySQL服务已就绪")
-        else:
-            # 优先尝试Windows服务，失败则直接启动mysqld
-            if not start_mysql_via_service():
-                start_mysql_via_mysqld()
-    except Exception as e:
-        print(f"启动MySQL失败：{e}")
+try:
+    if is_mysql_port_ready():
+        print("MySQL服务已就绪")
+    else:
+        # 优先尝试Windows服务，失败则直接启动mysqld
+        if not start_mysql_via_service():
+            start_mysql_via_mysqld()
+except Exception as e:
+    print(f"启动MySQL失败：{e}")
 
-    # 启动初始化（创建基础表、默认管理员）
-    with app.app_context():
-        init_base_tables()
-
-    print("✅ MySQL版音乐评分系统后端启动！")
-    print(f"🌐 服务地址：http://0.0.0.0:5000")
+# 启动初始化（创建基础表、默认管理员）
+with app.app_context():
+    init_base_tables()
 
 # 启动服务
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    print("✅ MySQL版音乐评分系统后端启动！")
+    print(f"🌐 服务地址：http://0.0.0.0:5000")
+    # use_reloader=False：关闭Flask自动重载，避免reloader重启子进程导致所有输出打印两遍
+    # debug=True仍保留：错误页面、调试器等开发功能正常可用
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)
