@@ -14,13 +14,28 @@ from mutagen.flac import FLAC
 from mutagen.wave import WAVE
 from mutagen.mp4 import MP4
 import subprocess
-from pydub import AudioSegment
 import uuid
 import pymysql
+import warnings
+
+# ✅ 修复：在导入pydub之前，先将ffmpeg目录加入系统PATH
+# 这样pydub在import时就能找到ffmpeg，不会报"Couldn't find ffmpeg"警告
+current_dir = os.path.dirname(os.path.abspath(__file__))
+FFMPEG_PATH = os.path.abspath(os.path.join(current_dir, '..', 'tools', 'ffmpeg', 'ffmpeg.exe'))
+FFPROBE_PATH = os.path.abspath(os.path.join(current_dir, '..', 'tools', 'ffmpeg', 'ffprobe.exe'))
+
+ffmpeg_dir = os.path.dirname(FFMPEG_PATH)
+if ffmpeg_dir not in os.environ.get('PATH', ''):
+    os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+
+from pydub import AudioSegment
+
+# 强制设置pydub的FFmpeg/ffprobe路径（双保险）
+AudioSegment.converter = FFMPEG_PATH
+AudioSegment.ffprobe = FFPROBE_PATH
 
 # 导入配置（确保路径正确）
 from backend.config import UPLOAD_FOLDER, COVER_BASE_URL, AUDIO_BASE_URL, AUDIO_UPLOAD_FOLDER, MYSQL_CONFIG
-
 
 # 日志配置
 logging.basicConfig(
@@ -29,25 +44,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
-
-# ✅ 修复1：获取当前文件的绝对路径，拼接FFmpeg路径（关键！）
-# 获取unlock.py所在目录
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# 拼接FFmpeg路径（根据你的实际目录结构调整）
-FFMPEG_PATH = os.path.join(current_dir, '..', 'tools', 'ffmpeg', 'ffmpeg.exe')
-FFPROBE_PATH = os.path.join(current_dir, '..', 'tools', 'ffmpeg', 'ffprobe.exe')
-
-# 转换为绝对路径（解决相对路径层级问题）
-FFMPEG_PATH = os.path.abspath(FFMPEG_PATH)
-FFPROBE_PATH = os.path.abspath(FFPROBE_PATH)
-
-# 强制设置pydub的FFmpeg/ffprobe路径
-AudioSegment.converter = FFMPEG_PATH
-AudioSegment.ffprobe = FFPROBE_PATH
-
-# 打印路径调试（方便排查）
-print(f"FFmpeg路径: {FFMPEG_PATH} (存在: {os.path.exists(FFMPEG_PATH)})")
-print(f"FFprobe路径: {FFPROBE_PATH} (存在: {os.path.exists(FFPROBE_PATH)})")
 
 # 允许的音频格式
 ALLOWED_EXTENSIONS = {'mp3', 'ogg', 'flac', 'wav', 'm4a', 'mp4'}
