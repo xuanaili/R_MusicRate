@@ -58,3 +58,6 @@ node_modules/
 
 # 便携 Python（内嵌，每台机器本地安装）
 python/
+
+# Claude Code 便携配置（含 API 密钥，不入仓库）
+.claude/
