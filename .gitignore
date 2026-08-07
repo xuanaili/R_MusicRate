@@ -20,6 +20,7 @@ frontend/npm-debug.log*
 
 # ===================== 后端（Flask）忽略项 =====================
 # Python虚拟环境
+.venv/
 backend/venv/
 # Python缓存
 __pycache__/
@@ -54,3 +55,6 @@ Thumbs.db
 frontend-cdn/
 
 node_modules/
+
+# 便携 Python（内嵌，每台机器本地安装）
+python/
