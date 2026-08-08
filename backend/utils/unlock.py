@@ -21,8 +21,8 @@ import warnings
 # ✅ 修复：在导入pydub之前，先将ffmpeg目录加入系统PATH
 # 这样pydub在import时就能找到ffmpeg，不会报"Couldn't find ffmpeg"警告
 current_dir = os.path.dirname(os.path.abspath(__file__))
-FFMPEG_PATH = os.path.abspath(os.path.join(current_dir, '..', 'tools', 'ffmpeg', 'ffmpeg.exe'))
-FFPROBE_PATH = os.path.abspath(os.path.join(current_dir, '..', 'tools', 'ffmpeg', 'ffprobe.exe'))
+FFMPEG_PATH = os.path.abspath(os.path.join(current_dir, '..', '..', 'portable', 'ffmpeg', 'ffmpeg.exe'))
+FFPROBE_PATH = os.path.abspath(os.path.join(current_dir, '..', '..', 'portable', 'ffmpeg', 'ffprobe.exe'))
 
 ffmpeg_dir = os.path.dirname(FFMPEG_PATH)
 if ffmpeg_dir not in os.environ.get('PATH', ''):
@@ -67,7 +67,7 @@ def get_ffmpeg_exe():
 
     # 检查常见路径
     possible_paths = [
-        r"tools/ffmpeg/ffmpeg.exe",
+        r"portable/ffmpeg/ffmpeg.exe",
         r"U:\project\python\AudioConnect\tools\ffmpeg\ffmpeg.exe",
         r"G:\project\python\AudioConnect\ffmpeg\ffmpeg.exe",
         r"C:\ffmpeg\bin\ffmpeg.exe",
