@@ -12,8 +12,9 @@ from PIL import Image
 from backend.utils.unlock import add_mp3_metadata, ensure_dir_exists, get_ffmpeg_exe
 
 # ===================== 配置区域 =====================
-# 请根据你的实际路径配置
-KGG_DEC_EXE_PATH = Path("portable/unlock/kgg-dec.exe")  # kgg-dec.exe路径
+# 基于当前文件位置计算便携工具路径（与 unlock.py 中 ffmpeg 路径一致）
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+KGG_DEC_EXE_PATH = Path(os.path.abspath(os.path.join(_current_dir, '..', '..', 'portable', 'unlock', 'kgg-dec.exe')))
 FFMPEG_PATH = None  # FFmpeg路径，会自动检测
 OGG_TITLE_FILE_PATH = ""  # 标题列表文件路径（可选）
 

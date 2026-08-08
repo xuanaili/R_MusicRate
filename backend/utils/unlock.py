@@ -68,8 +68,6 @@ def get_ffmpeg_exe():
     # 检查常见路径
     possible_paths = [
         r"portable/ffmpeg/ffmpeg.exe",
-        r"U:\project\python\AudioConnect\tools\ffmpeg\ffmpeg.exe",
-        r"G:\project\python\AudioConnect\ffmpeg\ffmpeg.exe",
         r"C:\ffmpeg\bin\ffmpeg.exe",
         "ffmpeg.exe"
     ]
