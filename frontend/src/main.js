@@ -5,6 +5,8 @@ import axios from 'axios'
 import VueRouter from 'vue-router'
 // v0.7 P1：蒙版透明度启动时恢复（否则页面刷新后 --mask-opacity 丢失，毛玻璃样式与设置不一致）
 import { applyMaskOpacity } from '@/utils/maskOpacity'
+// v0.7 修复：启动时修复持久化主题色的 transparent 坏值（一次性写回默认色，避免文字/图表透明）
+import { getSavedTheme } from '@/utils/themeColor'
 // 导入页面组件（统一用@别名，避免路径错误）
 import LoginPage from '@/views/LoginPage.vue'
 import MusicList from '@/components/myMusic/MusicList.vue'
@@ -138,6 +140,8 @@ Vue.prototype.$axios = axios
 
 // v0.7 P1：蒙版透明度启动时从 localStorage 恢复
 applyMaskOpacity()
+// v0.7 修复：启动时修复持久化主题色的 transparent 坏值（一次性写回默认色，避免文字/图表透明）
+getSavedTheme()
 
 // ========== 3. 启动Vue ==========
 new Vue({
