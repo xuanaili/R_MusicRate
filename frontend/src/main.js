@@ -3,6 +3,8 @@ import Vue from 'vue'
 import App from './App.vue'
 import axios from 'axios'
 import VueRouter from 'vue-router'
+// v0.7 P1：蒙版透明度启动时恢复（否则页面刷新后 --mask-opacity 丢失，毛玻璃样式与设置不一致）
+import { applyMaskOpacity } from '@/utils/maskOpacity'
 // 导入页面组件（统一用@别名，避免路径错误）
 import LoginPage from '@/views/LoginPage.vue'
 import MusicList from '@/components/myMusic/MusicList.vue'
@@ -111,13 +113,16 @@ axios.interceptors.request.use(
 )
 
 // 响应拦截器：优化401处理
+// ⚠️ 铁律：401 只清【认证相关键】，绝不能用 localStorage.clear()
+// （否则会把 persistMainColor / persistCoverBg / maskOpacity 等用户偏好一并清掉，导致主题/蒙版丢失）
+const AUTH_LOCALSTORAGE_KEYS = ['token', 'username', 'user_id', 'is_admin', 'is_vip', 'avatar', 'level']
 axios.interceptors.response.use(
   response => response,
   error => {
     if (error.response) {
       const { status, data } = error.response
       if (status === 401) {
-        localStorage.clear()
+        AUTH_LOCALSTORAGE_KEYS.forEach(k => localStorage.removeItem(k))
         if (router.currentRoute.name !== 'Login') {
           alert(data.msg || '登录已过期，请重新登录')
           router.replace('/login')
@@ -130,6 +135,9 @@ axios.interceptors.response.use(
 
 // 挂载axios
 Vue.prototype.$axios = axios
+
+// v0.7 P1：蒙版透明度启动时从 localStorage 恢复
+applyMaskOpacity()
 
 // ========== 3. 启动Vue ==========
 new Vue({

@@ -342,9 +342,13 @@ export default {
       }
     },
     getCoverBgUrl(url) {
+      // 空 URL（今日推荐加载失败/无封面）不清空已持久化的背景，避免刷新后主题背景丢失
+      if (!url) return
       this.coverBgUrl = url
     },
     getThemeColor(colorObj) {
+      // 提取失败时 DailyRecommend 会 emit transparent —— 此时保留已持久化的主题，不让瞬时失败覆盖掉
+      if (!colorObj || !colorObj.mainColor || colorObj.mainColor === 'transparent') return
       this.mainColor = colorObj.mainColor
       this.mainColorDark = colorObj.mainColorDark
       this.mainColorDarkDouble = colorObj.mainColorDarkDouble

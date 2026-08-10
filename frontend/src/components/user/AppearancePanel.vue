@@ -32,10 +32,8 @@
 </template>
 
 <script>
-// 蒙版透明度的取值区间：0%–60%，默认 25%（对应历史 rgba(255,255,255,0.25)）
-const MASK_MIN = 0
-const MASK_MAX = 60
-const MASK_DEFAULT = 25
+// 蒙版透明度取值区间、读写、全局应用统一收敛到 utils/maskOpacity.js（main.js 启动时也会调用恢复）
+import { MASK_DEFAULT, getSavedMaskOpacity, applyMaskOpacity } from '@/utils/maskOpacity'
 
 export default {
   name: 'AppearancePanel',
@@ -59,11 +57,9 @@ export default {
     }
   },
   created() {
-    const saved = parseInt(localStorage.getItem('maskOpacity'), 10)
-    if (!isNaN(saved) && saved >= MASK_MIN && saved <= MASK_MAX) {
-      this.maskOpacity = saved
-    }
-    this.applyMaskOpacity()
+    // 读取已保存值（main.js 启动时已应用过一次，这里与当前滑块状态对齐）
+    this.maskOpacity = getSavedMaskOpacity()
+    this.applyMaskOpacityLocal()
   },
   methods: {
     handleMaskChange(e) {
@@ -77,11 +73,11 @@ export default {
     },
     saveAndApply() {
       localStorage.setItem('maskOpacity', this.maskOpacity)
-      this.applyMaskOpacity()
+      this.applyMaskOpacityLocal()
     },
-    // 通过全局 CSS 变量联动所有毛玻璃蒙版容器（WebHome/PlayerPlaylist/AlbumDetail）
-    applyMaskOpacity() {
-      document.documentElement.style.setProperty('--mask-opacity', (this.maskOpacity / 100).toFixed(2))
+    // 用当前滑块值写全局 CSS 变量（联动 WebHome/PlayerPlaylist/AlbumDetail 毛玻璃容器）
+    applyMaskOpacityLocal() {
+      applyMaskOpacity()
     },
     showMsg(type, msg) {
       if (this.$message && this.$message[type]) {
