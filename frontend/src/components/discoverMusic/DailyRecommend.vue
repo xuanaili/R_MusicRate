@@ -11,7 +11,7 @@
         <div class="album-panel info-panel">
           <!-- ✅ 原有：封面添加点击事件 @click="copyAlbum" + 鼠标悬浮指针样式 -->
           <div class="cover" @click="copyAlbum">
-            <img v-if="albumData.cover_img" :src="albumData.cover_img" alt="封面" class="detail-cover">
+            <img v-if="albumData.cover_img" :src="albumData.cover_img" alt="封面" class="detail-cover" loading="lazy">
             <div v-else class="no-cover">暂无封面</div>
           </div>
           <div class="info-mask">

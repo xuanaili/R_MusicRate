@@ -31,6 +31,14 @@ if not os.path.exists(UPLOAD_FOLDER):
 # 图片访问基础URL
 COVER_BASE_URL = f"http://{HOST}:{PORT}/covers/"
 
+# ================= 本地图床配置 - 专辑封面缩略图 =================
+# 缩略图保存路径（自动创建文件夹） - 列表页小图专用，避免下载几MB原图
+COVER_THUMB_UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend/data/album_covers_thumb")
+if not os.path.exists(COVER_THUMB_UPLOAD_FOLDER):
+    os.makedirs(COVER_THUMB_UPLOAD_FOLDER)
+# 缩略图访问基础URL
+COVER_THUMB_BASE_URL = f"http://{HOST}:{PORT}/covers_thumb/"
+
 # ================= 本地音频配置 - 专辑整轨MP3 (你要修改的存歌地址 在这里改！) =================
 # MP3保存路径 自动创建 album_track 文件夹
 AUDIO_UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend/data/album_track")

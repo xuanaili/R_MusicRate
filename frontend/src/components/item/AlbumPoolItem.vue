@@ -6,7 +6,7 @@
         class="pool-cover-box"
         @click="handleViewDetail"
       >
-        <img :src="album.cover_img" alt="封面" class="pool-cover">
+        <img :src="coverThumb(album.cover_img)" alt="封面" class="pool-cover" loading="lazy">
       </div>
       <div v-else class="no-cover" @click="handleViewDetail">暂无封面</div>
       <div class="pool-info">
@@ -50,6 +50,9 @@
 </template>
 
 <script>
+// 引入封面缩略图工具（列表页小图用缩略图URL）
+import { coverThumb as coverThumbUtil } from '@/utils/cover.js';
+
 export default {
   name: 'AlbumPoolItem',
   props: {
@@ -77,6 +80,10 @@ export default {
     }
   },
   methods: {
+    // 列表页小图用缩略图URL（挂到methods便于模板解析）
+    coverThumb(url) {
+      return coverThumbUtil(url)
+    },
     handleCopy() {
       this.$emit('copy-album', this.album.id)
     },

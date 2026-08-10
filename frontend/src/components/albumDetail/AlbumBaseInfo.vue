@@ -3,7 +3,7 @@
     <div class="new-base-info-card">
       <!-- 左上：封面 -->
       <div class="info-section cover-section">
-        <img v-if="album.cover_img" :src="album.cover_img" alt="专辑封面" class="big-cover-img">
+        <img v-if="album.cover_img" :src="album.cover_img" alt="专辑封面" class="big-cover-img" loading="lazy">
         <div v-else class="cover-placeholder">{{ album.album_name || '未知' }}</div>
       </div>
 

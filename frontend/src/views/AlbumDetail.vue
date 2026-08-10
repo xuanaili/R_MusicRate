@@ -164,7 +164,7 @@
       <!-- ✅ 修改点 1：无音频时点击封面 触发上传弹窗；有音频时保留播放暂停功能 -->
       <div class="album-rotate-box" @click="audioSrc ? togglePlayPause() : handleTriggerUpload" v-if="audioSrc && album.cover_img">
         <div class="album-rotate-circle" :class="{playing: isPlaying}">
-          <img :src="album.cover_img" alt="专辑封面" class="album-rotate-img"/>
+          <img :src="album.cover_img" alt="专辑封面" class="album-rotate-img" loading="lazy"/>
         </div>
       </div>
       <!-- ✅ 修改点 2：无音频的圆形封面 - 背景色绑定 mainColor + 点击触发上传 -->

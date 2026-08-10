@@ -17,7 +17,7 @@
         <!-- 专辑基础信息面板（放大） -->
         <div class="album-panel info-panel">
           <div class="cover">
-            <img v-if="albumData.cover_img" :src="albumData.cover_img" alt="封面" class="detail-cover">
+            <img v-if="albumData.cover_img" :src="albumData.cover_img" alt="封面" class="detail-cover" loading="lazy">
             <div v-else class="no-cover">暂无封面</div>
           </div>
           <!-- ✅ 外层增加蒙版容器 - 和收听用户一致的白色磨砂层 -->

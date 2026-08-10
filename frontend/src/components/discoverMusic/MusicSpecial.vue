@@ -76,7 +76,7 @@
             @click="handleAlbumClick(album.id)"
           >
             <div class="album-cover">
-              <img :src="album.cover || 'https://picsum.photos/200/200?random=99'" :alt="album.name" />
+              <img :src="coverThumb(album.cover) || 'https://picsum.photos/200/200?random=99'" :alt="album.name" loading="lazy" />
             </div>
             <div class="album-info">
               <h3 class="album-name">{{ album.name }}</h3>
@@ -169,7 +169,7 @@
               @click="selectAlbum(album.id, 'create')"
             >
               <div class="album-cover-square">
-                <img :src="album.cover_img || 'https://picsum.photos/100/100?random=' + album.id" :alt="album.album_name" />
+                <img :src="coverThumb(album.cover_img) || 'https://picsum.photos/100/100?random=' + album.id" :alt="album.album_name" loading="lazy" />
               </div>
               <div class="album-text">
                 <div class="album-name-text">{{ album.album_name }}</div>
@@ -224,7 +224,7 @@
               @click="selectAlbum(album.id, 'add')"
             >
               <div class="album-cover-square">
-                <img :src="album.cover_img || 'https://picsum.photos/100/100?random=' + album.id" :alt="album.album_name" />
+                <img :src="coverThumb(album.cover_img) || 'https://picsum.photos/100/100?random=' + album.id" :alt="album.album_name" loading="lazy" />
               </div>
               <div class="album-text">
                 <div class="album-name-text">{{ album.album_name }}</div>
@@ -268,6 +268,9 @@
 </template>
 
 <script>
+// 引入封面缩略图工具（列表页小图用缩略图URL）
+import { coverThumb as coverThumbUtil } from '@/utils/cover.js';
+
 export default {
   name: 'MusicSpecial',
   props: {
@@ -342,6 +345,10 @@ export default {
     await this.fetchWeeklyShareList()
   },
   methods: {
+    // 列表页小图用缩略图URL（挂到methods便于模板解析）
+    coverThumb(url) {
+      return coverThumbUtil(url)
+    },
     // 检查管理员角色
     async checkAdminRole() {
       try {

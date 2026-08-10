@@ -53,7 +53,7 @@
                 @click="chooseFile"
             >
               <span v-if="!album.cover_img">拖拽图片到这里，或点击上传</span>
-              <img v-else :src="album.cover_img" class="preview-img" alt="封面预览">
+              <img v-else :src="album.cover_img" class="preview-img" alt="封面预览" loading="lazy">
             </div>
             <input type="file" ref="fileInput" accept="image/*" style="display: none" @change="handleFileChange">
             <input v-model="album.cover_img" type="text" placeholder="可选：输入图片URL" style="margin-top: 10px"

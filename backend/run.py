@@ -105,4 +105,5 @@ if __name__ == '__main__':
     print(f"🌐 服务地址：http://0.0.0.0:5000")
     # use_reloader=False：关闭Flask自动重载，避免reloader重启子进程导致所有输出打印两遍
     # debug=True仍保留：错误页面、调试器等开发功能正常可用
-    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)
+    # threaded=True：开启多线程并发处理，封面/音频等静态资源不再串行排队下载
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False, threaded=True)

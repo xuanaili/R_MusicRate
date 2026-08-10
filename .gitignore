@@ -32,6 +32,7 @@ backend/*.log
 backend/*.db
 # 数据
 backend/data/album_covers
+backend/data/album_covers_thumb
 backend/data/album_track
 
 

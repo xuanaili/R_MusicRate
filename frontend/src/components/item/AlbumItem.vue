@@ -3,10 +3,11 @@
     <div class="cover" @click="goToAlbumDetail">
       <img
         v-if="music.cover_img && music.cover_img.trim() !== ''"
-        :src="music.cover_img"
+        :src="coverThumb(music.cover_img)"
         alt="专辑封面"
         width="80"
         height="80"
+        loading="lazy"
         @click="goToAlbumDetail"
       >
       <div v-else class="no-cover">暂无封面</div>
@@ -46,6 +47,8 @@
 <script>
 // 引入公共的评分计算方法
 import { calculateAlbumTotalScore } from '@/utils/scoreCalc.js';
+// 引入封面缩略图工具（列表页小图用缩略图URL）
+import { coverThumb as coverThumbUtil } from '@/utils/cover.js';
 
 export default {
   props: {
@@ -94,6 +97,10 @@ export default {
     }
   },
   methods: {
+    // 列表页小图用缩略图URL（挂到methods便于模板解析）
+    coverThumb(url) {
+      return coverThumbUtil(url);
+    },
     goToAlbumDetail() {
       if (!this.music.id) {
         alert('专辑ID不存在，无法查看详情！');
