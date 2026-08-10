@@ -22,7 +22,9 @@ npm run build     # 生产构建
 npm run lint      # ESLint 检查
 
 # 后端（在项目根目录下）
-python -m backend.run   # 启动 Flask http://0.0.0.0:5000（Windows 下会自动启动 MySQL80 服务）
+# 注意：便携 Python 的 cwd 不在 sys.path 中，必须用脚本文件方式启动（run.py 内部自带 sys.path.insert）
+# 不要用 `python -m backend.run`，会报 ModuleNotFoundError: No module named 'backend'
+PYTHONIOENCODING=utf-8 portable\python\python.exe backend/run.py   # 启动 Flask http://0.0.0.0:5000（Windows 下会自动启动 MySQL80 服务）
 ```
 
 ### 测试（pytest）
