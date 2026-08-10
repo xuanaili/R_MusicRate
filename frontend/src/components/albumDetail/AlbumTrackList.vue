@@ -265,7 +265,10 @@ export default {
       // 仅保留小球配置传递给子组件
       currentBallConfig: globalConfig.ballConfig.default,
       isHoverRatingArea: false,
-      isMeteorPlay: false // 新增：流星播放状态
+      isMeteorPlay: false, // 新增：流星播放状态
+      // 评分防抖保存（v0.6 收尾）：打分隔评分也能落盘，不必等离开页面/切歌
+      saveScoreTimer: null,
+      pendingScoreSave: null // { albumId, scoreList } 防抖期间快照，避免切歌写错专辑
     };
   },
   watch: {
@@ -276,7 +279,8 @@ export default {
     album: {
       handler(newVal, oldVal) {
         if (oldVal && oldVal.id && newVal && newVal.id && oldVal.id !== newVal.id) {
-          this.saveAllScore();
+          // 切专辑前落盘旧专辑的待保存评分（快照指向旧专辑，避免写错）
+          this.flushScoreSave();
         }
         this.initTrackList(true);
         this.initFavouriteTrackList();
@@ -333,17 +337,46 @@ export default {
 
 
 
-    // AlbumTrackList 的 saveAllScore 方法
-    async saveAllScore() {
+    // ========== 评分防抖即时保存（v0.6 收尾） ==========
+    // 构建当前评分数组：[专辑整体分, 单曲1分, 单曲2分, ...]
+    buildScoreList() {
+      const scoreList = [this.score];
+      this.trackList.forEach(item => scoreList.push(item.score || 0));
+      return scoreList;
+    },
+    // 打分时调用：防抖 800ms 保存；快照 albumId + scoreList，
+    // 即使防抖期间切歌/离开页面，也能把评分写回正确的专辑
+    scheduleScoreSave() {
+      const albumId = this.album.id;
+      if (!albumId) return;
+      this.pendingScoreSave = {albumId, scoreList: this.buildScoreList()};
+      if (this.saveScoreTimer) clearTimeout(this.saveScoreTimer);
+      this.saveScoreTimer = setTimeout(() => {
+        this.saveScoreTimer = null;
+        const pending = this.pendingScoreSave;
+        this.pendingScoreSave = null;
+        if (pending) this.doScoreSave(pending.albumId, pending.scoreList);
+      }, 800);
+    },
+    // 立即落盘待执行的防抖快照（切歌/离开页面前调用）
+    flushScoreSave() {
+      if (this.saveScoreTimer) {
+        clearTimeout(this.saveScoreTimer);
+        this.saveScoreTimer = null;
+      }
+      const pending = this.pendingScoreSave;
+      this.pendingScoreSave = null;
+      if (pending) this.doScoreSave(pending.albumId, pending.scoreList);
+    },
+    // 真正发请求的保存；仅保存的是当前专辑时才同步父组件展示，
+    // 避免切歌后旧专辑快照污染新专辑的显示分数
+    async doScoreSave(albumId, scoreList) {
       try {
-        const albumId = this.album.id;
         if (!albumId) return;
-        let scoreList = [this.score];
-        this.trackList.forEach(item => scoreList.push(item.score || 0));
-
-        console.log('📤 AlbumTrackList 发射的scoreList：', scoreList);
-        this.$emit('score-list-change', scoreList); // 发射给父组件
-
+        if (albumId === this.album.id) {
+          console.log('📤 AlbumTrackList 发射的scoreList：', scoreList);
+          this.$emit('score-list-change', scoreList); // 发射给父组件
+        }
         await this.$axios.put(`/api/album/score/save/${albumId}`, {score_list: scoreList}, {
           headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
         });
@@ -351,6 +384,30 @@ export default {
       } catch (err) {
         console.error('保存评分失败：', err);
       }
+    },
+    // AlbumTrackList 的 saveAllScore 方法（离开页面/切歌/保存曲目列表时调用）
+    async saveAllScore() {
+      const albumId = this.album.id;
+      if (!albumId) return;
+
+      // 1. 先落盘待执行的防抖快照（可能是切歌前的旧专辑评分）
+      const pending = this.pendingScoreSave;
+      if (this.saveScoreTimer) {
+        clearTimeout(this.saveScoreTimer);
+        this.saveScoreTimer = null;
+        this.pendingScoreSave = null;
+      }
+      if (pending) {
+        await this.doScoreSave(pending.albumId, pending.scoreList);
+      }
+
+      // 2. 保存当前最新状态；若与刚保存的快照一致则跳过，避免重复请求
+      const scoreList = this.buildScoreList();
+      if (pending && pending.albumId === albumId &&
+          JSON.stringify(pending.scoreList) === JSON.stringify(scoreList)) {
+        return;
+      }
+      await this.doScoreSave(albumId, scoreList);
     },
     async getAllScore() {
       try {
@@ -561,6 +618,7 @@ export default {
     },
     resetRating() {
       this.score = 0;
+      this.scheduleScoreSave();
     },
     enterRatingArea() {
       this.isHoverRatingArea = true;
@@ -572,6 +630,7 @@ export default {
       if (!this.isHoverRatingArea) return;
       const delta = e.deltaY < 0 ? 0.5 : -0.5;
       this.score = Math.max(0, Math.min(100, this.score + delta));
+      this.scheduleScoreSave();
     },
     handleRatingClick(e) {
       const outerCircle = e.currentTarget;
@@ -585,6 +644,7 @@ export default {
       let percent = (distance / radius) * 100;
       percent = Math.max(0, Math.min(100, Math.round(percent * 2) / 2));
       this.score = percent;
+      this.scheduleScoreSave();
     },
     startTrackScore(e, idx) {
       this.isTrackScoring = true;
@@ -608,6 +668,7 @@ export default {
       let percent = ((e.clientX - rect.left) / rect.width) * 100;
       percent = Math.max(0, Math.min(100, Math.round(percent)));
       this.trackList[this.currentTrackIdx].score = percent;
+      this.scheduleScoreSave();
     },
     setTrackScoreByClick(e, idx) {
       this.currentTrackIdx = idx;
@@ -624,6 +685,7 @@ export default {
       let newScore = Math.max(0, Math.min(100, currentScore + step));
       // 更新分数
       this.trackList[idx].score = newScore;
+      this.scheduleScoreSave();
     },
     // 获取小球配置（仅用于初始化传递给子组件）
     getBallConfigByTag(tags) {
