@@ -2457,7 +2457,8 @@ handleToggleMeteorPlay(val) {
   padding: 30px;
   /*padding-bottom: 140px !important;*/
   overflow-y: auto;
-  background: rgba(255, 255, 255, 0.25);
+  /* v0.7 P1：蒙版透明度由 --mask-opacity 全局变量控制（AppearancePanel 调节） */
+  background: rgba(255, 255, 255, var(--mask-opacity, 0.25));
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   z-index: 2;

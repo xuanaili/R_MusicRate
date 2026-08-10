@@ -1,20 +1,22 @@
 <template>
   <div class="playlist-root-container">
     <div class="playlist-sidebar" v-show="visible">
-      <!-- v0.7：模式切换 - 歌单 / 个人中心 -->
+      <!-- v0.7：模式切换 - 歌单 / 个人中心（分段控件，图标+文字） -->
       <div class="sidebar-mode-toggle" :style="{ borderBottomColor: mainColorDark }">
         <div
           class="mode-toggle-btn"
           :class="{ active: sidebarMode === 'playlist' }"
-          :style="modeBtnStyle('playlist')"
           @click="sidebarMode = 'playlist'"
-        >歌单</div>
+        >
+          <span class="mode-toggle-icon">♪</span>歌单
+        </div>
         <div
           class="mode-toggle-btn"
           :class="{ active: sidebarMode === 'user' }"
-          :style="modeBtnStyle('user')"
           @click="sidebarMode = 'user'"
-        >个人中心</div>
+        >
+          <span class="mode-toggle-icon">👤</span>个人中心
+        </div>
       </div>
 
       <!-- 歌单模式：原有内容保持不变 -->
@@ -399,13 +401,6 @@ export default {
     this.isMounted = false;
   },
   methods: {
-    // v0.7：模式切换按钮样式
-    modeBtnStyle(mode) {
-      if (this.sidebarMode === mode) {
-        return { backgroundColor: this.mainColorDark, color: '#fff' };
-      }
-      return { color: this.mainColorDark };
-    },
     safeBackupPlaylistData() {
       const now = Date.now();
       // ✅ 修复8：防抖时间缩短，且允许强制备份（传true跳过防抖）
@@ -902,7 +897,8 @@ export default {
   right: 0;
   width: 380px;
   height: 100vh;
-  background: rgba(255, 255, 255, 0.25);
+  /* v0.7 P1：蒙版透明度由 --mask-opacity 全局变量控制（AppearancePanel 调节） */
+  background: rgba(255, 255, 255, var(--mask-opacity, 0.25));
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
   border-left: 1px solid rgba(255, 255, 255, 0.5);
@@ -917,27 +913,48 @@ export default {
   will-change: transform;
 }
 
-/* v0.7：歌单/个人中心 模式切换 */
+/* v0.7：歌单/个人中心 模式切换（分段控件样式美化） */
 .sidebar-mode-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding-bottom: 10px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.3);
   border-bottom: 2px solid;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .mode-toggle-btn {
-  padding: 5px 14px;
-  border-radius: 16px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 0;
+  border-radius: 9px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s;
+  color: v-bind(mainColorDark);
+  white-space: nowrap;
 }
 
-.mode-toggle-btn:hover {
+.mode-toggle-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.mode-toggle-btn.active {
+  background: v-bind(mainColorDark);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.mode-toggle-btn:not(.active):hover {
   background: rgba(255, 255, 255, 0.5);
 }
 
@@ -976,10 +993,12 @@ export default {
   border-color: v-bind(mainColorDark);
   color: v-bind(mainColorDarkDouble);
   font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 .playlist-tab-item:hover:not(.active) {
   background: rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
 }
 
 .playlist-tab-item.dragging {
@@ -1100,6 +1119,7 @@ export default {
 
 .common-album-card:hover {
   background: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
 .full-single-line {
@@ -1255,6 +1275,11 @@ export default {
 
 .common-search-input::placeholder {
   color: #999;
+}
+
+.common-search-input:focus {
+  border-color: v-bind(mainColorDark);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
 }
 
 .add-icon {

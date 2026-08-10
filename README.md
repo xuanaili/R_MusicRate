@@ -217,7 +217,7 @@
 ### 待做
 - [x] v0.6 收尾：提交评分 bug（打分即时防抖保存）✅ 2026-08-10
 - [x] P0 骨架：users.avatar 幂等迁移 + GET /api/user/info + POST /api/user/change-password + PlayerPlaylist「歌单/个人中心」模式切换 + UserCenter/ProfilePanel/UserAvatar + WebHome 右上角头像入口弹抽屉 ✅ 2026-08-10
-- [ ] P1 设置：头像上传（复用 /api/upload_img）+ 蒙版透明度调节（AppearancePanel）+ 侧边栏样式美化（v0.6 遗留）
+- [x] P1 设置：头像上传（复用 /api/upload_img）+ 蒙版透明度调节（AppearancePanel）+ 侧边栏样式美化（v0.6 遗留）✅ 2026-08-10
 - [ ] P2 统计：user_listening_log 表 + listening.py 写按天记录 + GET /api/user/stats + StatsPanel ECharts 三图
 
 ## v0.6

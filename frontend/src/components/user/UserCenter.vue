@@ -30,9 +30,12 @@
         :mainColorDark="mainColorDark"
         :mainColorDarkDouble="mainColorDarkDouble"
       />
-      <div v-else-if="activeTab === 'appearance'" class="uc-placeholder">
-        <p>外观设置（蒙版透明度调节）将在 <b>v0.7 P1</b> 上线</p>
-      </div>
+      <AppearancePanel
+        v-else-if="activeTab === 'appearance'"
+        :mainColor="mainColor"
+        :mainColorDark="mainColorDark"
+        :mainColorDarkDouble="mainColorDarkDouble"
+      />
       <div v-else class="uc-placeholder">
         <p>音乐统计（近N天听取时长柱状图等）将在 <b>v0.7 P2</b> 上线</p>
       </div>
@@ -42,10 +45,11 @@
 
 <script>
 import ProfilePanel from '@/components/user/ProfilePanel.vue'
+import AppearancePanel from '@/components/user/AppearancePanel.vue'
 
 export default {
   name: 'UserCenter',
-  components: { ProfilePanel },
+  components: { ProfilePanel, AppearancePanel },
   props: {
     mainColor: { type: String, default: 'transparent' },
     mainColorDark: { type: String, default: 'transparent' },

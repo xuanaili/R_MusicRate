@@ -8,7 +8,7 @@ from flask import request, jsonify
 from backend.utils.auth import encrypt_password
 from backend.utils.db import get_db, get_current_user_id, get_album_table_name
 from backend.utils.decorators import login_required
-from backend.utils.user import validate_password_change
+from backend.utils.user import validate_password_change, validate_avatar_url
 
 
 def register_user_routes(app):
@@ -95,3 +95,31 @@ def register_user_routes(app):
             print(f"❌ 修改密码失败：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": "修改密码失败，请稍后重试！"}), 500
+
+    # 3. 更新头像（图片上传复用 /api/upload_img，本接口只存 URL）
+    @app.route('/api/user/avatar', methods=['POST', 'OPTIONS'])
+    @login_required
+    def update_avatar():
+        try:
+            if request.method == 'OPTIONS':
+                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+
+            data = request.get_json() or {}
+            avatar_url = (data.get('avatarUrl') or '').strip()
+
+            # 纯逻辑校验（复用可单测函数）
+            error = validate_avatar_url(avatar_url)
+            if error:
+                return jsonify({"code": 400, "msg": error}), 400
+
+            current_user_id = get_current_user_id()
+            db = get_db()
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+            cursor.execute('UPDATE users SET avatar = %s WHERE user_id = %s', (avatar_url, current_user_id))
+            db.commit()
+            cursor.close()
+            return jsonify({"code": 200, "msg": "头像更新成功！", "data": {"avatar": avatar_url}})
+        except Exception as e:
+            print(f"❌ 更新头像失败：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": "更新头像失败，请稍后重试！"}), 500

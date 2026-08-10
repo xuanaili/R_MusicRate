@@ -290,6 +290,11 @@ export default {
     this.initThemeColor()
     // v0.7：拉取用户信息（头像/资料），右上角 UserAvatar 展示
     this.fetchUserInfo()
+    // v0.7 P1：头像更新后实时刷新右上角
+    window.addEventListener('user-avatar-changed', this.handleAvatarChanged)
+  },
+  beforeDestroy() {
+    window.removeEventListener('user-avatar-changed', this.handleAvatarChanged)
   },
   methods: {
     fetchUserInfo() {
@@ -303,6 +308,9 @@ export default {
       }).catch(err => {
         console.error('获取用户信息失败：', err)
       })
+    },
+    handleAvatarChanged(e) {
+      this.userAvatar = (e && e.detail) || ''
     },
     initThemeColor() {
       this.mainColor = localStorage.getItem('persistMainColor') || 'transparent';
@@ -370,9 +378,9 @@ export default {
   background-attachment: fixed;
 }
 
-/* 磨砂玻璃蒙版 */
+/* 磨砂玻璃蒙版（v0.7 P1：透明度由 --mask-opacity 全局变量控制） */
 .nav-mask-container {
-  background-color: rgba(255, 255, 255, 0.25);
+  background-color: rgba(255, 255, 255, var(--mask-opacity, 0.25));
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   -moz-backdrop-filter: blur(8px);
