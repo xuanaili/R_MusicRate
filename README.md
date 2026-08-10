@@ -20,7 +20,8 @@
 #### 进行中
 
 
-- 提交评分感觉可以打分的时候也能提交评分 
+- 【v0.6收尾】提交评分：打分时也能提交评分（当前仅离开页面/切歌时才保存，需打分即时防抖保存）
+
 
 
 
@@ -43,7 +44,7 @@
 
 
 ##### 5
-- 用户页面（是侧边栏好，还是单独tab页面还是子页？）
+- 用户页面 → 已在 v0.7 拍板：合并进播放列表侧边栏（歌单/个人中心模式切换）
 
 
 ##### 1
@@ -140,6 +141,82 @@
 ##### 盈利模式
 - 专辑打榜（盈利核心：细则在obsidian）
 
+
+
+## v0.7（规划中）— 个人用户界面（合并进播放列表侧边栏）
+
+> 现状：v0.6 仅剩「提交评分 bug」收尾。本版本把 BookRate 的个人用户功能搬过来，但落点改为「用户播放歌曲时的播放列表侧边栏」——现有侧边栏组件 PlayerPlaylist.vue 与个人用户界面合并成一个。
+
+### 已定决策（2026-08-10 拍板）
+| 决策点 | 结论 |
+|--------|------|
+| 合并布局 | 侧边栏顶部加「歌单 / 个人中心」模式切换；歌单模式保留现有全部功能不动 |
+| 主题 | 不做固定主题（MusicRate 主色来自封面动态提取），改做「蒙版透明度调节」 |
+| 统计 | 做近 N 天听取时长柱状图 → 新增 `user_listening_log` 按天记录表 |
+| 入口 | 抽公共 `UserCenter` 组件：嵌入 PlayerPlaylist 作 tab + WebHome 右上角「头像+用户名」弹同一抽屉 |
+| AI 配置 | 不做（MusicRate 无 AI 功能，BookRate AI 是独立功能） |
+| 头像 | 自定义上传（复用 `/api/upload_img`），未上传回退首字母圆形头像（同 BookRate） |
+
+### 数据库（2 处变更）
+1. `users` 表新增 `avatar` 列（VARCHAR(255) 存图片 URL）
+   - 幂等迁移：查 `information_schema.columns`，缺列则 `ALTER TABLE users ADD COLUMN avatar VARCHAR(255) DEFAULT ''`，封装函数挂进 `init_base_tables()`（复用 BookRate 已验证模式）
+2. 新增 `user_listening_log` 表（近 N 天柱状图数据源）
+   - `id`、`user_id`、`album_id`、`listen_date DATE`、`duration_seconds FLOAT`
+   - `UNIQUE KEY(user_id, album_id, listen_date)` + `INDEX(user_id, listen_date)`
+   - `listening.py` 的 pause 接口在更新 `listening_duration` 时同请求 upsert 按天记录
+
+### 后端接口（新增 `backend/api/user.py`，全部 `@login_required`）
+- `GET /api/user/info` — 用户名/注册时间/等级/专辑数/头像/最近登录/会员（专辑数取 `albums_{user_id}` 实时 COUNT）
+- `POST /api/user/change-password` — `{ oldPassword, newPassword }`，bcrypt 校验旧密码 + 更新
+- `POST /api/user/avatar` — `{ avatarUrl }`，存 URL（图片上传复用 `/api/upload_img`）
+- `GET /api/user/stats?days=7/14/30` — 统计聚合（见下表）
+- 蒙版调节：前端 localStorage 持久化即可，无后端接口
+
+**统计口径**（防重复计数，参考 BookRate 经验）：
+| 数据 | 来源 | 口径 |
+|------|------|------|
+| 专辑总数 | `albums_{user_id}` COUNT(*) | 全部 |
+| 已评分 | `my_score` 非空且非 `[]` | — |
+| 听取总时长 | `SUM(listening_duration)` | 以累计为准；**不与** `user_listening_log` 相加（同一秒数会写入两者，相加重复计数） |
+| 听后感数 | `review` 非空且非 `[]` | — |
+| 近N天听取时长 | `user_listening_log` 按 `listen_date` 分组累加 | 仅柱状图用 |
+| 标签分布 | `albums_{user_id}.tags` 逐行解析前 8 个 | 气泡图 |
+
+### 前端组件
+- 改造 `PlayerPlaylist.vue`：顶部加「歌单 / 个人中心」模式切换；歌单模式原样保留（含拖拽/备份/防抖保存全部逻辑）
+- 新建 `components/user/`：
+  - `UserCenter.vue` — 个人中心容器（子 tab：个人资料 / 外观 / 音乐统计），嵌 PlayerPlaylist + WebHome 抽屉复用
+  - `ProfilePanel.vue` — 头像上传 + 资料 + 修改密码 + 退出登录（移植 BookRate ProfileTab，改 Vue2 Options API，用 `mainColor` props / 现有取色）
+  - `AppearancePanel.vue` — 蒙版透明度滑块（localStorage 持久化，联动侧边栏 + 专辑详情页）
+  - `StatsPanel.vue` — 统计卡片 + ECharts 三图（`import * as echarts from 'echarts/dist/echarts.min.js'`，同 TagDetail.vue 模式）
+  - `UserAvatar.vue` — 头像+用户名触发器（WebHome 右上角 / PlayerPlaylist 头部复用）
+- `WebHome.vue` 右上角 `username + 退出登录` → 替换为 `UserAvatar`，点击弹出 `UserCenter` 独立抽屉
+
+### 分期路线
+- **P0 骨架**：`users.avatar` 幂等迁移 + `GET /api/user/info` + PlayerPlaylist 模式切换 + UserCenter/ProfilePanel（资料展示/退出登录/改密码）+ WebHome 右上角头像入口
+- **P1 设置**：头像上传（复用 `/api/upload_img`）+ 蒙版透明度调节（AppearancePanel）+ 侧边栏样式美化（v0.6 遗留）
+- **P2 统计**：`user_listening_log` 表 + listening.py 写按天记录 + `GET /api/user/stats` + StatsPanel ECharts 三图
+
+### 难点与对策
+- **users 表加列无先例**：幂等 ALTER（同 BookRate v0.4），重复启动不报错
+- **WebHome 无专辑播放上下文**：UserCenter 独立抽屉的主色取自 WebHome 当前主题（今日推荐封面取色）；蒙版调节全局 localStorage，两入口共享
+- **关标签页丢 pause（遗留问题）**：直接关浏览器不会触发 pause，`listening_duration` 与按天记录都会漏 → v0.6 顺手在 `beforeunload` 补一次 pause 上报
+- **「已评分」统计依赖 my_score 持久化**：评分若不即时保存统计会滞后 → 先修 v0.6 提交评分 bug，再做统计，顺序合理
+- **ECharts 体积**：MusicRate 非 Electron，沿用 TagDetail.vue 全量引入即可，不必按需
+
+### 测试（测试先行）
+- 单测（纯逻辑，零依赖）：
+  - `test_user_stats.py`：统计口径纯函数（按天累加 / 近N天补零序列 / 标签分布 top8 / 已评分判断 / 防重复计数口径）
+  - `test_password.py`：改密码校验分支（空值/长度<6/新旧相同/旧密码错误）
+  - `test_user_table_migration.py`：avatar 幂等迁移（缺列/已存在分支）
+- realdata（`-m realdata`）：
+  - `/api/user/info` 返回字段完整性
+  - `/api/user/stats` 与 DB 聚合一致
+  - listening pause 写入 `user_listening_log` 且 upsert 正确
+
+### 待做
+- [ ] v0.6 收尾：提交评分 bug（打分即时防抖保存）
+- [ ] P0 / P1 / P2（见分期路线）
 
 ## v0.6
 标签和周专题，以及部分文件解密和日常修bug
