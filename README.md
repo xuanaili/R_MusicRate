@@ -176,11 +176,12 @@
 | 数据 | 来源 | 口径 |
 |------|------|------|
 | 专辑总数 | `albums_{user_id}` COUNT(*) | 全部 |
-| 已评分 | `my_score` 非空且非 `[]` | — |
+| 已评分 | `my_score` 数组含至少一个非 0 评分（0=未评分，全 0 数组不算） | — |
 | 听取总时长 | `SUM(listening_duration)` | 以累计为准；**不与** `user_listening_log` 相加（同一秒数会写入两者，相加重复计数） |
 | 听后感数 | `review` 非空且非 `[]` | — |
 | 近N天听取时长 | `user_listening_log` 按 `listen_date` 分组累加 | 仅柱状图用 |
 | 标签分布 | `albums_{user_id}.tags` 逐行解析前 8 个 | 气泡图 |
+| 评分分布 | `my_score` 经 `calculate_album_total_score` 算总分后分桶（0 分不计入） | 柱状图；**不用** `albums.score` 列（那是评论均分，未评论的已评分专辑会漏） |
 
 ### 前端组件
 - 改造 `PlayerPlaylist.vue`：顶部加「歌单 / 个人中心」模式切换；歌单模式原样保留（含拖拽/备份/防抖保存全部逻辑）

@@ -1,5 +1,11 @@
 <template>
   <div class="stats-panel">
+    <!-- 加载失败提示（后端未重启/接口404时，避免误以为数据全是 0） -->
+    <div v-if="loadError" class="stats-error common-card">
+      <p>⚠️ 音乐统计加载失败：{{ loadError }}</p>
+      <p class="stats-error-tip">请确认后端已重启（/api/user/stats 接口 404 说明后端还是旧进程）。</p>
+    </div>
+
     <!-- 统计卡片 -->
     <div class="stats-cards">
       <div class="stat-card common-card">
@@ -80,6 +86,7 @@ export default {
       stats: { ...DEFAULT_STATS },
       days: 7,
       loading: false,
+      loadError: '',
       charts: []
     }
   },
@@ -104,15 +111,18 @@ export default {
   methods: {
     fetchStats() {
       this.loading = true
+      this.loadError = ''
       this.$axios.get('/api/user/stats', { params: { days: this.days } }).then(res => {
         if (res.data.code === 200 && res.data.data) {
           this.stats = { ...DEFAULT_STATS, ...res.data.data }
           this.$nextTick(() => this.renderCharts())
         } else {
           console.error('获取音乐统计失败：', res.data.msg)
+          this.loadError = res.data.msg || '接口返回异常'
         }
       }).catch(err => {
         console.error('获取音乐统计失败：', err)
+        this.loadError = (err.response && (err.response.data && err.response.data.msg || `HTTP ${err.response.status}`)) || err.message
       }).finally(() => {
         this.loading = false
       })
@@ -327,6 +337,24 @@ export default {
   font-size: 12px;
   color: #888;
   margin-top: 4px;
+}
+
+/* 加载失败提示 */
+.stats-error {
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  color: #b91c1c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.stats-error p {
+  margin: 0;
+}
+
+.stats-error-tip {
+  font-size: 12px;
+  opacity: 0.85;
 }
 
 /* 图表卡片 */

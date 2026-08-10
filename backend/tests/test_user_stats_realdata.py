@@ -112,6 +112,10 @@ def test_stats_matches_db_aggregation(client, test_user):
     assert old_day not in by_date
     assert sum(v for d, v in by_date.items() if d not in (today, yesterday)) == 0.0
 
+    # 评分分布：由 my_score [8.0, 9.0] 计算总分 8.0*0.6+9.0*0.4=8.4 → 0-9 桶
+    assert sum(b['count'] for b in data['score_distribution']) == 1
+    assert data['score_distribution'][0] == {'bucket': '0-9', 'count': 1}
+
 
 @pytest.mark.realdata
 def test_listening_pause_upserts_daily_log(client, test_user):

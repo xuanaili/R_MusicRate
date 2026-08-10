@@ -30,8 +30,12 @@ class TestScoredReview:
         assert is_scored("[]") is False
 
     def test_is_scored_zero_scores(self):
-        # 数组全 0 仍算已评分（口径：非空数组即已评分）
-        assert is_scored("[0, 0, 0]") is True
+        # 数组全 0 = 未打分（评分格式 0=未评分）→ 不算已评分
+        assert is_scored("[0, 0, 0]") is False
+
+    def test_is_scored_partial_zero(self):
+        # 数组含非 0 即算已评分（如只打了专辑分/部分单曲）
+        assert is_scored("[0, 8.5, 0]") is True
 
     def test_is_scored_valid(self):
         assert is_scored("[8.5, 9.0]") is True
@@ -139,22 +143,34 @@ class TestTagDistribution:
 
 
 class TestScoreDistribution:
-    """评分分布：按总分分桶，0 分未评分不计入"""
+    """评分分布：按 my_score 计算综合总分分桶，0 分未评分不计入"""
 
     def test_bucket_count(self):
         albums = [
-            {'score': 0},       # 未评分 → 不计入
-            {'score': 5},       # 0-9
-            {'score': 42},      # 40-49
-            {'score': 100},     # 90-100
-            {'score': 95},      # 90-100
-            {'score': None},    # 缺失 → 不计入
+            {'my_score': '[0]'},            # 全 0 未评分 → 不计入
+            {'my_score': '[5, 60]'},        # 5*0.6 + 60*0.4 = 27 → 20-29
+            {'my_score': '[42]'},           # 42 → 40-49
+            {'my_score': '[100]'},          # 100 → 90-100
+            {'my_score': '[95]'},           # 95 → 90-100
+            {'my_score': None},             # 缺失 → 不计入
+            {'my_score': 'not-json'},       # 解析失败 → 不计入
         ]
         result = build_score_distribution(albums)
         assert len(result) == 10  # 10 个桶
-        assert result[0] == {'bucket': '0-9', 'count': 1}
+        assert result[0] == {'bucket': '0-9', 'count': 0}
+        assert result[2] == {'bucket': '20-29', 'count': 1}
         assert result[4] == {'bucket': '40-49', 'count': 1}
         assert result[9] == {'bucket': '90-100', 'count': 2}
+
+    def test_score_column_ignored(self):
+        # 口径：评分分布只认 my_score 计算的总分，绝不用 albums.score 列（那是评论均分，未评论会漏）
+        albums = [
+            {'my_score': '[80]', 'score': 0.0},    # 已评分但未评论 → 必须计入 80-89
+            {'my_score': '[0]', 'score': 85.0},    # 未评分但被评论刷分 → 必须不计入
+        ]
+        result = build_score_distribution(albums)
+        assert result[8] == {'bucket': '80-89', 'count': 1}
+        assert sum(b['count'] for b in result) == 1
 
 
 class TestParseDays:
