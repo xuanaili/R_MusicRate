@@ -117,6 +117,15 @@ def register_listening_routes(app):
             cursor.execute(f'''
                 UPDATE `{table_name}` SET listening_duration = %s WHERE id = %s
             ''', (total_duration, album_id))
+
+            # v0.7 P2：同请求 upsert 按天记录（近N天柱状图数据源）
+            # 【防重复计数】只累加本次播放秒数 play_seconds，绝不用 total_duration：
+            # origin_duration 已在历史按天记录里，若写 total_duration 会把历史秒数重复累加到今天
+            cursor.execute('''
+                INSERT INTO user_listening_log (user_id, album_id, listen_date, duration_seconds)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE duration_seconds = duration_seconds + VALUES(duration_seconds)
+            ''', (current_user_id, album_id, datetime.now().strftime('%Y-%m-%d'), play_seconds))
             db.commit()
 
             # 6. 清除内存中的播放状态，释放缓存 + 关闭游标

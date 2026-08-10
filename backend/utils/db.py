@@ -197,6 +197,37 @@ def create_user_playlist_table():
         print(traceback.format_exc())
         raise e
 
+# ========== ✅ v0.7 P2：用户听取时长按天记录表 user_listening_log ==========
+def create_user_listening_log():
+    """创建用户听取时长按天记录表（近N天柱状图数据源）
+    与 albums_{user_id}.listening_duration 记录同一秒数（防重复计数见 README P2 统计口径表）：
+    该表仅用于「近N天听取时长」柱状图聚合，总时长仍以 albums 表 SUM 为准，两者不相加
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_listening_log (
+                id INT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+                user_id INT NOT NULL COMMENT '用户ID（关联users表）',
+                album_id INT NOT NULL COMMENT '专辑ID（关联用户专属专辑表/album_pool）',
+                listen_date DATE NOT NULL COMMENT '收听日期（按天聚合）',
+                duration_seconds FLOAT NOT NULL DEFAULT 0 COMMENT '当天累计收听秒数',
+                UNIQUE KEY uniq_user_album_date (user_id, album_id, listen_date),
+                INDEX idx_user_date (user_id, listen_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户听取时长按天记录表（v0.7 P2 统计柱状图数据源）';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ user_listening_log表 创建/检查成功！")
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ 创建user_listening_log表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
 def create_user_recommend():
     """创建用户推荐数据表，用于每日推荐 ✅修复外键名重复+打印文案错误"""
     db = None
@@ -513,6 +544,8 @@ def init_base_tables():
         create_user_album_intro_table()
         create_user_playlist_table()
         create_user_recommend()
+        # v0.7 P2：按天听取记录表（统计柱状图数据源）
+        create_user_listening_log()
 
         create_album_tags()
         create_album_singers()

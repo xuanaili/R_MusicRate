@@ -36,9 +36,12 @@
         :mainColorDark="mainColorDark"
         :mainColorDarkDouble="mainColorDarkDouble"
       />
-      <div v-else class="uc-placeholder">
-        <p>音乐统计（近N天听取时长柱状图等）将在 <b>v0.7 P2</b> 上线</p>
-      </div>
+      <StatsPanel
+        v-else
+        :mainColor="mainColor"
+        :mainColorDark="mainColorDark"
+        :mainColorDarkDouble="mainColorDarkDouble"
+      />
     </div>
   </div>
 </template>
@@ -46,10 +49,11 @@
 <script>
 import ProfilePanel from '@/components/user/ProfilePanel.vue'
 import AppearancePanel from '@/components/user/AppearancePanel.vue'
+import StatsPanel from '@/components/user/StatsPanel.vue'
 
 export default {
   name: 'UserCenter',
-  components: { ProfilePanel, AppearancePanel },
+  components: { ProfilePanel, AppearancePanel, StatsPanel },
   props: {
     mainColor: { type: String, default: 'transparent' },
     mainColorDark: { type: String, default: 'transparent' },
@@ -125,14 +129,5 @@ export default {
   overflow-y: auto;
   padding-top: 12px;
   box-sizing: border-box;
-}
-
-.uc-placeholder {
-  padding: 40px 12px;
-  text-align: center;
-  color: #999;
-  font-size: 13px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 8px;
 }
 </style>

@@ -1,0 +1,212 @@
+# MusicRate\backend\tests\test_user_stats.py 音乐统计口径纯逻辑单测（v0.7 P2，零 DB 依赖）
+# 测试对象：backend/utils/user_stats.py
+# 口径：按天累加 / 近N天补零序列 / 标签分布 top8 / 已评分判断 / 防重复计数
+import datetime
+
+import pytest
+
+from backend.utils.user_stats import (
+    accumulate_daily_logs,
+    aggregate_stats,
+    build_score_distribution,
+    build_tag_distribution,
+    has_review,
+    is_scored,
+    parse_days_param,
+)
+
+
+class TestScoredReview:
+    """已评分 / 听后感判断：my_score / review 非空且非 "[]" """
+
+    def test_is_scored_none(self):
+        assert is_scored(None) is False
+
+    def test_is_scored_empty_string(self):
+        assert is_scored("") is False
+
+    def test_is_scored_empty_array(self):
+        # "[]" 表示存了数组但未打分 → 不算已评分
+        assert is_scored("[]") is False
+
+    def test_is_scored_zero_scores(self):
+        # 数组全 0 仍算已评分（口径：非空数组即已评分）
+        assert is_scored("[0, 0, 0]") is True
+
+    def test_is_scored_valid(self):
+        assert is_scored("[8.5, 9.0]") is True
+
+    def test_is_scored_invalid_json(self):
+        assert is_scored("not-json") is False
+
+    def test_has_review_none(self):
+        assert has_review(None) is False
+
+    def test_has_review_empty_array(self):
+        assert has_review("[]") is False
+
+    def test_has_review_valid(self):
+        assert has_review('[{"content": "好听"}]') is True
+
+
+class TestAccumulateDailyLogs:
+    """按天累加 + 近N天补零序列（柱状图数据源）"""
+
+    def _iso(self, d):
+        return d.isoformat()
+
+    def test_zero_fill_full_window(self):
+        # 无任何记录 → 近N天全补 0，天数=N，含今天
+        today = datetime.date.today()
+        result = accumulate_daily_logs([], 7)
+        assert len(result) == 7
+        assert result[-1]['date'] == today.isoformat()
+        assert result[0]['date'] == (today - datetime.timedelta(days=6)).isoformat()
+        assert all(item['duration'] == 0.0 for item in result)
+
+    def test_accumulate_same_day_multiple_rows(self):
+        # 同一天多张专辑 → 按天累加
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': today, 'duration_seconds': 100.0},
+            {'listen_date': today, 'duration_seconds': 50.5},
+        ]
+        result = accumulate_daily_logs(rows, 7)
+        last = result[-1]
+        assert last['duration'] == 150.5
+        # 其他天补 0
+        assert sum(item['duration'] for item in result[:-1]) == 0.0
+
+    def test_accumulate_string_date(self):
+        # DB 返回字符串日期 'YYYY-MM-DD' 也能解析
+        today = datetime.date.today()
+        yesterday = today - datetime.timedelta(days=1)
+        rows = [{'listen_date': yesterday.isoformat(), 'duration_seconds': 30.0}]
+        result = accumulate_daily_logs(rows, 7)
+        assert result[-2]['date'] == yesterday.isoformat()
+        assert result[-2]['duration'] == 30.0
+
+    def test_out_of_window_ignored(self):
+        # 早于窗口起点的记录不参与近N天序列
+        today = datetime.date.today()
+        old = today - datetime.timedelta(days=10)
+        rows = [{'listen_date': old, 'duration_seconds': 999.0}]
+        result = accumulate_daily_logs(rows, 7)
+        assert all(item['duration'] == 0.0 for item in result)
+
+    def test_invalid_date_skipped(self):
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': 'not-a-date', 'duration_seconds': 10.0},
+            {'listen_date': today, 'duration_seconds': 5.0},
+        ]
+        result = accumulate_daily_logs(rows, 7)
+        assert result[-1]['duration'] == 5.0
+
+
+class TestTagDistribution:
+    """标签分布：逐行解析 tags 取前 top_n 个高频标签"""
+
+    def test_top8_desc(self):
+        albums = [{'tags': '["Pop【流行】","Rock【摇滚】"]'}] * 4
+        albums.append({'tags': '["Jazz【爵士】"]'})
+        result = build_tag_distribution(albums)
+        # 3 个不同标签：频次降序 Pop(4)、Rock(4)、Jazz(1)，同频按名称排
+        assert len(result) == 3
+        assert result[0] == {'name': 'Pop【流行】', 'value': 4}
+        assert result[1] == {'name': 'Rock【摇滚】', 'value': 4}
+        assert result[2] == {'name': 'Jazz【爵士】', 'value': 1}
+
+    def test_respects_top_n(self):
+        albums = [
+            {'tags': json_str(t)} for t in [
+                ['a'], ['b'], ['c'], ['d'], ['e'], ['f'], ['g'], ['h'], ['i'], ['j'],
+            ]
+        ]
+        result = build_tag_distribution(albums)
+        # 10 个不同标签 → 只取前 8
+        assert len(result) == 8
+
+    def test_empty_and_none_tags(self):
+        albums = [
+            {'tags': ''},
+            {'tags': None},
+            {'tags': '[]'},
+            {'tags': '["a"]'},
+        ]
+        result = build_tag_distribution(albums)
+        assert result == [{'name': 'a', 'value': 1}]
+
+
+class TestScoreDistribution:
+    """评分分布：按总分分桶，0 分未评分不计入"""
+
+    def test_bucket_count(self):
+        albums = [
+            {'score': 0},       # 未评分 → 不计入
+            {'score': 5},       # 0-9
+            {'score': 42},      # 40-49
+            {'score': 100},     # 90-100
+            {'score': 95},      # 90-100
+            {'score': None},    # 缺失 → 不计入
+        ]
+        result = build_score_distribution(albums)
+        assert len(result) == 10  # 10 个桶
+        assert result[0] == {'bucket': '0-9', 'count': 1}
+        assert result[4] == {'bucket': '40-49', 'count': 1}
+        assert result[9] == {'bucket': '90-100', 'count': 2}
+
+
+class TestParseDays:
+    def test_valid_days(self):
+        assert parse_days_param(7) == 7
+        assert parse_days_param(14) == 14
+        assert parse_days_param(30) == 30
+        assert parse_days_param('7') == 7
+
+    def test_invalid_falls_back(self):
+        assert parse_days_param(None) == 7
+        assert parse_days_param('abc') == 7
+        assert parse_days_param(3) == 7
+        assert parse_days_param(100) == 7
+
+
+class TestAggregateStats:
+    """统计聚合纯函数：防重复计数口径（总时长只取 albums.listening_duration，不与按天记录相加）"""
+
+    def test_total_duration_uses_albums_only(self):
+        # albums 累计 250s，按天记录累计也是 250s（同一秒数写入两者）→ 总时长必须取 albums 的 250，绝不相加成 500
+        today = datetime.date.today()
+        album_rows = [
+            {'my_score': '[8.0]', 'review': '[]', 'listening_duration': 150.0, 'score': 80, 'tags': '["Pop【流行】"]'},
+            {'my_score': '[]', 'review': '[]', 'listening_duration': 100.0, 'score': 0, 'tags': '[]'},
+        ]
+        daily_rows = [
+            {'listen_date': today, 'duration_seconds': 150.0},
+            {'listen_date': today, 'duration_seconds': 100.0},
+        ]
+        stats = aggregate_stats(album_rows, daily_rows, 7)
+        assert stats['album_count'] == 2
+        assert stats['scored_count'] == 1          # 第二张 my_score=[] 不算
+        assert stats['review_count'] == 0
+        assert stats['total_duration'] == 250.0    # 不与 daily 相加
+        # 按天序列只反映 user_listening_log
+        assert stats['daily_listening'][-1]['duration'] == 250.0
+        # 标签分布 top8
+        assert stats['tag_distribution'] == [{'name': 'Pop【流行】', 'value': 1}]
+        # 评分分布：只有 80 分计入
+        assert sum(b['count'] for b in stats['score_distribution']) == 1
+
+    def test_empty_rows(self):
+        stats = aggregate_stats([], [], 7)
+        assert stats['album_count'] == 0
+        assert stats['scored_count'] == 0
+        assert stats['review_count'] == 0
+        assert stats['total_duration'] == 0.0
+        assert len(stats['daily_listening']) == 7
+        assert stats['tag_distribution'] == []
+
+
+def json_str(tags):
+    import json
+    return json.dumps(tags, ensure_ascii=False)
