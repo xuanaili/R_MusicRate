@@ -12,6 +12,7 @@ import pymysql
 
 from ..utils.intro import get_user_album_intro, save_user_album_intro
 from ..utils.score import calculate_album_total_score
+from ..utils.last_listened import last_listened_sort_key
 
 
 def register_album_routes(app):
@@ -36,7 +37,7 @@ def register_album_routes(app):
             search_keyword = request.args.get('search_keyword', '').strip()
             tag_keyword = request.args.get('tag_keyword', '').strip()
 
-            VALID_SORT_FIELDS = ['album_name', 'release_year', 'singer', 'my_score', 'created_at', 'listening_duration']
+            VALID_SORT_FIELDS = ['album_name', 'release_year', 'singer', 'my_score', 'created_at', 'listening_duration', 'last_listened']
             if sort_by not in VALID_SORT_FIELDS:
                 sort_by = 'album_name'
             if sort_order not in ['asc', 'desc']:
@@ -103,6 +104,12 @@ def register_album_routes(app):
                     key=lambda x: x['calculated_score'],
                     reverse=(sort_order == 'desc')
                 )
+            elif sort_by == 'last_listened':
+                # 最近收听排序：最新收听在前，从未收听（缺字段/None）固定排最后
+                all_albums.sort(
+                    key=lambda x: last_listened_sort_key(x, sort_order),
+                    reverse=(sort_order == 'desc')
+                )
             else:
                 # 其他字段按原始值排序
                 all_albums.sort(
@@ -155,6 +162,7 @@ def register_album_routes(app):
                     "is_customized": album.get("is_customized", 0),
                     "tracks_time": safe_json_loads(album.get("tracks_time")),
                     "listening_duration": album.get("listening_duration", 0),
+                    "last_listened": album.get("last_listened"),
                     # 现在所有专辑都有这个字段了
                     "calculated_score": album.get('calculated_score', 0.0)
                 }

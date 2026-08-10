@@ -2,6 +2,7 @@ import pymysql
 from flask import jsonify
 import traceback
 import time
+from datetime import datetime
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
 
@@ -138,3 +139,64 @@ def register_listening_routes(app):
             print(f"❌ 暂停播放计时出错：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": f"暂停计时并保存失败：{str(e)}"}), 500
+
+    # ========== 核心接口3：记录最近收听时间 (打开专辑详情页触发，用于「最近收听」排序) ==========
+    @app.route('/api/album/listening/touch/<int:album_id>', methods=['POST'])
+    @login_required
+    def touch_last_listened(album_id):
+        try:
+            # 1. 获取当前登录用户ID & 校验
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录，无法记录收听！"}), 401
+
+            # 2. 获取用户专属专辑表名 + 数据库连接
+            table_name = get_album_table_name(current_user_id)
+            db = get_db()
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+
+            # 3. 【重要】先检测字段是否存在，不存在则自动新增 last_listened 字段，兼容历史表
+            cursor.execute(f'''
+                SELECT COUNT(*) as count FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'last_listened'
+            ''', (table_name,))
+            field_count = cursor.fetchone()
+            field_exists = field_count.get('count') > 0 if field_count else False
+            if not field_exists:
+                cursor.execute(f'''
+                    ALTER TABLE `{table_name}`
+                    ADD COLUMN last_listened DATETIME NULL COMMENT '最近收听时间'
+                ''')
+                print(f"✅ 为用户{current_user_id}的专辑表{table_name}补充 last_listened 字段")
+
+            # 4. 校验专辑存在
+            cursor.execute(f'''
+                SELECT id FROM `{table_name}` WHERE id = %s
+            ''', (album_id,))
+            album_data = cursor.fetchone()
+            if not album_data:
+                cursor.close()
+                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑，无法记录收听！"}), 404
+
+            # 5. 更新最近收听时间为当前时间
+            cursor.execute(f'''
+                UPDATE `{table_name}` SET last_listened = NOW() WHERE id = %s
+            ''', (album_id,))
+            db.commit()
+            cursor.close()
+
+            # 返回成功响应
+            return jsonify({
+                "code": 200,
+                "msg": "最近收听时间已更新！",
+                "data": {
+                    "album_id": album_id,
+                    "user_id": current_user_id,
+                    "last_listened": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+            })
+        except Exception as e:
+            db.rollback() if 'db' in locals() else None
+            print(f"❌ 记录最近收听时间出错：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": f"记录最近收听失败：{str(e)}"}), 500

@@ -211,11 +211,12 @@ export default {
         page_size: 5,
         total_pages: 0
       },
-      // 排序参数 默认添加时间+降序
-      sortBy: 'my_score',
-      sortOrder: 'asc',
-      // ✅ ✅ ✅ 核心新增：添加 听取时间 排序选项
+      // 排序参数 默认最近收听+降序（最新收听的专辑排最前）
+      sortBy: 'last_listened',
+      sortOrder: 'desc',
+      // ✅ ✅ ✅ 排序选项：最近收听作为默认排序维度
       sortByMap: {
+        last_listened: '最近收听',
         album_name: '专辑名称',
         release_year: '发行年份',
         singer: '歌手',

@@ -574,6 +574,7 @@ async created() {
 
   await this.getUserPlaylistData();
   await this.getAlbumDetail(Number(albumId));
+  await this.reportLastListened(); // 打开专辑时上报最近收听时间（用于「最近收听」排序）
   await this.getAlbumPoolRealId();
 
   // ====== 新增：加载歌词 ======
@@ -1135,6 +1136,22 @@ togglePlayPause() {
     });
   }
 },
+
+    // 新增：打开专辑详情页时上报最近收听时间（用于「最近收听」排序）
+    async reportLastListened() {
+      const token = localStorage.getItem('token') || '';
+      if (!token || !this.album.id) return;
+      try {
+        await this.$axios.post(
+            `/api/album/listening/touch/${this.album.id}`,
+            {},
+            {headers: {Authorization: token}}
+        );
+        console.log(`✅ 上报最近收听：专辑ID=${this.album.id}`);
+      } catch (err) {
+        console.log(`ℹ️ 上报最近收听失败(不影响使用)：`, err.message);
+      }
+    },
 
     // 新增：调用后端 开始播放计时API
     async startListeningTimer() {
