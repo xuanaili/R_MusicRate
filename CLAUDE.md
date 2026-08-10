@@ -25,7 +25,18 @@ npm run lint      # ESLint 检查
 python -m backend.run   # 启动 Flask http://0.0.0.0:5000（Windows 下会自动启动 MySQL80 服务）
 ```
 
-项目暂无测试框架。`backend/test.py` 为空文件，`frontend/playwright` 尚未配置。
+### 测试（pytest）
+
+测试统一放在 `backend/tests/`，使用 pytest 框架（已装入便携 Python）：
+```bash
+portable\python\python.exe -m pytest                 # 快速单测（默认跳过 realdata）
+portable\python\python.exe -m pytest -m realdata     # 真实 DB/网络集成测试
+portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 单文件/定向
+```
+- 纯逻辑单测不依赖 MySQL / 网络，改完可直接跑；首批参考 `backend/tests/test_score.py`（评分计算）、`test_json.py`（safe_json_loads）
+- `pytest.ini` 已配 `testpaths = backend/tests`（避免误收 site-packages 自带测试）+ `addopts = -m "not realdata"`
+- 开发/测试流程详见 `ai/skill/20260810_feature_development_workflow.md` 与 `20260810_testing_workflow.md`
+- `backend/test.py` 为空文件，`frontend/playwright` 尚未配置（未使用）
 
 ## 架构
 
@@ -122,15 +133,25 @@ python -m backend.run   # 启动 Flask http://0.0.0.0:5000（Windows 下会自�
 ## 铁律
 - 每次修改，都要git上传，并说明修改内容
 - 开发新功能前，必须先阅读 `ai/skill/` 目录下的规则文件，避免重复踩坑
+- **新需求（新对话）启动时，先同时加载「开发 skill」`ai/skill/20260810_feature_development_workflow.md` +「测试 skill」`ai/skill/20260810_testing_workflow.md`**，两者成对使用：测试先行→实现→跑测试→提交，互相验证修改；测试失败 = 改代码或按新需求改测试，不得静默跳过
 
 ## 对话结束归档
 
-当用户说"结束对话"、"对话结束"、"归档"等关键词时，**必须**执行归档流程，不能只说"好的"就结束：
+当用户说"结束对话"、"对话结束"、"归档"等关键词时，**必须**依次执行【优化复盘】+【归档】两个步骤，不能只说"好的"就结束。
+
+### 第一步：优化复盘（先）
+
+在回复中先总结本次对话：
+1. 本次流程中哪些环节浪费了时间/轮次（如：应先建单元测试调对再批量跑、Windows 环境坑、重复验证、未测真实接口等）
+2. 下次解决同类问题的快速命中清单（哪些文件/函数可直接复用、只改哪些参数/字典）
+优化复盘内容须并入第二步生成的归档文档，作为独立小节。
+
+### 第二步：归档（后）
 
 1. 回顾本次对话，判断内容属于哪个 `ai/` 子目录：
    - `ai_case_notes/` — 解决了 bug、排查了问题、修复了错误
    - `knowledge/` — 学习了技术、记录了配置方法、整理了参考信息
    - `skill/` — 总结了工作流程、制定了编码规范、提炼了操作步骤
 2. 读取对应子目录的 `00_template.md` 模板
-3. 按模板格式生成总结文档，命名规则 `YYYYMMDD_简短英文描述.md`
+3. 按模板格式生成总结文档，命名规则 `YYYYMMDD_简短英文描述.md`，并把第一步的优化复盘并入（独立小节）
 4. 告知用户文件已保存的路径和简要内容
