@@ -12,8 +12,12 @@ def login_required(func):
         if request.method == 'OPTIONS':
             return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
         try:
-            # 获取请求头中的token
-            token = request.headers.get('Authorization')
+            # 获取请求头中的token（兼容 'Bearer <token>' 与裸 token 两种写法：
+            # 前端重构后部分请求（今日推荐/音乐专题/专辑池详情等）带 Bearer 前缀，
+            # 而拦截器走裸 token —— 统一剥掉前缀后按原始 token 精确匹配）
+            token = request.headers.get('Authorization') or ''
+            if token.lower().startswith('bearer '):
+                token = token[7:].strip()
             if not token:
                 return jsonify({"code": 401, "msg": "请先登录！"}), 401
 
