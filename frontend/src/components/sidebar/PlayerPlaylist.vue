@@ -1,6 +1,24 @@
 <template>
   <div class="playlist-root-container">
     <div class="playlist-sidebar" v-show="visible">
+      <!-- v0.7：模式切换 - 歌单 / 个人中心 -->
+      <div class="sidebar-mode-toggle" :style="{ borderBottomColor: mainColorDark }">
+        <div
+          class="mode-toggle-btn"
+          :class="{ active: sidebarMode === 'playlist' }"
+          :style="modeBtnStyle('playlist')"
+          @click="sidebarMode = 'playlist'"
+        >歌单</div>
+        <div
+          class="mode-toggle-btn"
+          :class="{ active: sidebarMode === 'user' }"
+          :style="modeBtnStyle('user')"
+          @click="sidebarMode = 'user'"
+        >个人中心</div>
+      </div>
+
+      <!-- 歌单模式：原有内容保持不变 -->
+      <template v-if="sidebarMode === 'playlist'">
       <!-- 顶部横向歌单列表 - 可滚动+加号新建+叉号删除+默认选中+拖拽排序 -->
       <div class="playlist-tab-container">
         <div
@@ -165,14 +183,27 @@
           </div>
         </div>
       </div>
+      </template>
+
+      <!-- 个人中心模式：复用公共 UserCenter 组件（资料/改密码/退出登录） -->
+      <UserCenter
+        v-else
+        :mainColor="mainColorDark"
+        :mainColorDark="mainColorDark"
+        :mainColorDarkDouble="mainColorDarkDouble"
+      />
     </div>
     <div class="playlist-mask" v-show="visible" @click="handleClose"></div>
   </div>
 </template>
 
 <script>
+// v0.7：个人用户中心（歌单/个人中心 模式切换）
+import UserCenter from '@/components/user/UserCenter.vue'
+
 export default {
   name: 'PlayerPlaylist',
+  components: { UserCenter },
   props: {
     visible: {type: Boolean, required: true, default: false},
     mainColorDark: {type: String, required: true},
@@ -219,7 +250,9 @@ export default {
       // 新增：歌单标签拖拽相关状态
       tabDragStartIndex: -1,
       tabDragPlaceholderIndex: -1,
-      isTabDragging: false
+      isTabDragging: false,
+      // v0.7：侧边栏模式 - 歌单 / 个人中心
+      sidebarMode: 'playlist'
     };
   },
   computed: {
@@ -366,6 +399,13 @@ export default {
     this.isMounted = false;
   },
   methods: {
+    // v0.7：模式切换按钮样式
+    modeBtnStyle(mode) {
+      if (this.sidebarMode === mode) {
+        return { backgroundColor: this.mainColorDark, color: '#fff' };
+      }
+      return { color: this.mainColorDark };
+    },
     safeBackupPlaylistData() {
       const now = Date.now();
       // ✅ 修复8：防抖时间缩短，且允许强制备份（传true跳过防抖）
@@ -875,6 +915,30 @@ export default {
   gap: 15px;
   transform: translateZ(0);
   will-change: transform;
+}
+
+/* v0.7：歌单/个人中心 模式切换 */
+.sidebar-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding-bottom: 10px;
+  border-bottom: 2px solid;
+  flex-shrink: 0;
+}
+
+.mode-toggle-btn {
+  padding: 5px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .playlist-tab-container {

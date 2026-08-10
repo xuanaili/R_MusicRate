@@ -245,6 +245,7 @@ def create_users():
                 is_admin TINYINT DEFAULT 0 COMMENT '是否管理员（0=否，1=是）',
                 donate_amount DECIMAL(10,2) DEFAULT 0.00 COMMENT '捐款数',
                 album_count INT DEFAULT 0 COMMENT '收藏专辑数',
+                avatar VARCHAR(255) DEFAULT '' COMMENT '用户头像URL（未上传为空串，前端回退首字母圆形头像）',
                 token VARCHAR(100) DEFAULT "" COMMENT '登录令牌'
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表（重构版）';
         ''')
@@ -463,6 +464,41 @@ CREATE TABLE IF NOT EXISTS album_share (
         print(traceback.format_exc())
         raise e
 
+# ========== ✅ users表 avatar 列幂等迁移（v0.7 P0） ==========
+def needs_avatar_column(existing_columns):
+    """纯函数：判断 users 表是否需要新增 avatar 列（缺列→需迁移，已存在→幂等跳过）
+    information_schema 列名大小写不敏感，统一转小写比较
+    """
+    return 'avatar' not in [c.lower() for c in existing_columns]
+
+
+def ensure_users_avatar_column():
+    """幂等迁移：users 表缺 avatar 列则 ALTER 新增（VARCHAR(255) 存图片URL，默认空串）
+    查询 information_schema.columns 判断，缺列才 ALTER，重复启动不报错（复用 BookRate v0.4 已验证模式）
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+            SELECT COLUMN_NAME FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'users'
+        ''', (MYSQL_CONFIG['db'],))
+        columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+        if needs_avatar_column(columns):
+            cursor.execute("ALTER TABLE users ADD COLUMN avatar VARCHAR(255) DEFAULT '' COMMENT '用户头像URL（未上传为空串，前端回退首字母圆形头像）'")
+            db.commit()
+            print("✅ users表 avatar 列迁移完成")
+        else:
+            print("✅ users表 avatar 列已存在，跳过迁移")
+        cursor.close()
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ users表 avatar 列迁移失败：{str(e)}")
+        traceback.print_exc()
+        raise e
+
+
 # ========== ✅✅✅ 核心：初始化所有基础表 ==========
 def init_base_tables():
     """初始化基础表"""
@@ -472,6 +508,8 @@ def init_base_tables():
         create_album_comments()
         create_album_pool()
         create_users()
+        # v0.7：users 表 avatar 列幂等迁移（旧库补列）
+        ensure_users_avatar_column()
         create_user_album_intro_table()
         create_user_playlist_table()
         create_user_recommend()

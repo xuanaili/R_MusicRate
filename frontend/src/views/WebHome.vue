@@ -30,8 +30,14 @@
         </div>
 
         <div class="user-info">
-          <span class="username">{{ username }}</span>
-          <button class="logout-btn" @click="logout">退出登录</button>
+          <!-- v0.7：右上角头像+用户名触发器，点击弹个人中心抽屉 -->
+          <UserAvatar
+            :username="username"
+            :avatar="userAvatar"
+            :main-color-dark="mainColorDark"
+            :main-color-dark-double="mainColorDarkDouble"
+            @click="showUserCenter = true"
+          />
         </div>
       </div>
 
@@ -167,6 +173,18 @@
         />
       </div>
     </div>
+
+    <!-- v0.7：个人中心独立抽屉（与播放列表侧边栏同款样式，复用公共 UserCenter） -->
+    <div class="uc-mask" v-show="showUserCenter" @click="showUserCenter = false"></div>
+    <div class="uc-drawer" v-show="showUserCenter">
+      <UserCenter
+        dismissible
+        :mainColor="mainColor"
+        :mainColorDark="mainColorDark"
+        :mainColorDarkDouble="mainColorDarkDouble"
+        @close="showUserCenter = false"
+      />
+    </div>
   </div>
 </template>
 
@@ -182,6 +200,9 @@ import SearchAlbumPool from '@/components/searchMusic/SearchAlbumPool.vue'
 // ✅ 引入两个占位组件
 import PlayList from '@/components/myMusic/PlayList.vue'
 import YearMusic from '@/components/myMusic/YearMusic.vue'
+// v0.7：个人用户中心（右上角头像入口 + 独立抽屉）
+import UserAvatar from '@/components/user/UserAvatar.vue'
+import UserCenter from '@/components/user/UserCenter.vue'
 
 export default {
   name: 'WebHome',
@@ -195,13 +216,18 @@ export default {
     MusicList,
     SearchAlbumPool,
     PlayList,
-    YearMusic
+    YearMusic,
+    // v0.7：个人用户中心
+    UserAvatar,
+    UserCenter
   },
   data() {
     return {
       activeMainTab: 'discover',
       activeSubTab: 'recommend',
       username: '',
+      userAvatar: '',
+      showUserCenter: false,
       coverBgUrl: localStorage.getItem('persistCoverBg') || '',
       mainColor: localStorage.getItem('persistMainColor') || 'transparent',
       mainColorDark: localStorage.getItem('persistMainColorDark') || 'transparent',
@@ -262,22 +288,26 @@ export default {
       return
     }
     this.initThemeColor()
+    // v0.7：拉取用户信息（头像/资料），右上角 UserAvatar 展示
+    this.fetchUserInfo()
   },
   methods: {
+    fetchUserInfo() {
+      this.$axios.get('/api/user/info').then(res => {
+        if (res.data.code === 200 && res.data.data) {
+          this.userAvatar = res.data.data.avatar || ''
+          if (res.data.data.username) {
+            this.username = res.data.data.username
+          }
+        }
+      }).catch(err => {
+        console.error('获取用户信息失败：', err)
+      })
+    },
     initThemeColor() {
       this.mainColor = localStorage.getItem('persistMainColor') || 'transparent';
       this.mainColorDark = localStorage.getItem('persistMainColorDark') || 'transparent';
       this.mainColorDarkDouble = localStorage.getItem('persistMainColorDarkDouble') || 'transparent';
-    },
-    logout() {
-      try {
-        localStorage.clear()
-        this.$router.replace('/login')
-        alert('退出登录成功！')
-      } catch (err) {
-        console.error('退出登录失败：', err)
-        window.location.href = '/#/login'
-      }
     },
 // 1. 修改 setActiveTab 方法
     setActiveTab() {
@@ -446,14 +476,38 @@ export default {
   font-weight: 500;
 }
 
-.logout-btn {
-  padding: 6px 12px;
-  background: v-bind(mainColorDarkDouble);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
+/* v0.7：个人中心独立抽屉（与播放列表侧边栏同款固定右侧样式） */
+.uc-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 9998;
+}
+
+.uc-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 380px;
+  height: 100vh;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border-left: 1px solid rgba(255, 255, 255, 0.5);
+  z-index: 9999;
+  padding: 20px 15px 15px;
+  box-sizing: border-box;
+  color: #333;
+  font-family: "Microsoft YaHei", "SimHei", sans-serif;
+  display: flex;
+  flex-direction: column;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .sub-tab-list {
