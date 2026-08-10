@@ -150,34 +150,47 @@ export default {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = 10;
-        canvas.height = 10;
-        ctx.drawImage(img, 0, 0, 10, 10);
-        const data = ctx.getImageData(0, 0, 10, 10).data;
-        let r = 0, g = 0, b = 0, c = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          r += data[i];
-          g += data[i + 1];
-          b += data[i + 2];
-          c++
+        // canvas 读取可能因跨域/图片格式抛异常（SecurityError 等）——捕获后落兜底色，绝不静默失败
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = 10;
+          canvas.height = 10;
+          ctx.drawImage(img, 0, 0, 10, 10);
+          const data = ctx.getImageData(0, 0, 10, 10).data;
+          let r = 0, g = 0, b = 0, c = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+            c++
+          }
+          r = Math.floor(r / c);
+          g = Math.floor(g / c);
+          b = Math.floor(b / c);
+          const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+          this.mainColor = hex;
+          this.mainColorDark = this.darkenColor(hex, 0.3);
+          this.mainColorDarkDouble = this.darkenColor(hex, 0.5);
+          this.$emit('sendThemeColor', {
+            mainColor: this.mainColor,
+            mainColorDark: this.mainColorDark,
+            mainColorDarkDouble: this.mainColorDarkDouble
+          })
+        } catch (e) {
+          console.error('[Theme] 封面取色异常（canvas 被污染/跨域）：', e, 'cover:', imgUrl);
+          this.mainColor = 'transparent';
+          this.mainColorDark = 'transparent';
+          this.mainColorDarkDouble = 'transparent';
+          this.$emit('sendThemeColor', {
+            mainColor: this.mainColor,
+            mainColorDark: this.mainColorDark,
+            mainColorDarkDouble: this.mainColorDarkDouble
+          })
         }
-        r = Math.floor(r / c);
-        g = Math.floor(g / c);
-        b = Math.floor(b / c);
-        const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
-        this.mainColor = hex;
-        this.mainColorDark = this.darkenColor(hex, 0.3);
-        this.mainColorDarkDouble = this.darkenColor(hex, 0.5);
-
-        this.$emit('sendThemeColor', {
-          mainColor: this.mainColor,
-          mainColorDark: this.mainColorDark,
-          mainColorDarkDouble: this.mainColorDarkDouble
-        })
       };
       img.onerror = () => {
+        console.error('[Theme] 封面图片加载失败（onerror）：', imgUrl);
         this.mainColor = 'transparent';
         this.mainColorDark = 'transparent';
         this.mainColorDarkDouble = 'transparent';

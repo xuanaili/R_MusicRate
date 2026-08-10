@@ -352,7 +352,10 @@ export default {
     },
     getThemeColor(colorObj) {
       // 提取失败时 DailyRecommend 会 emit transparent —— 此时保留已持久化的主题，不让瞬时失败覆盖掉
-      if (!colorObj || !colorObj.mainColor || colorObj.mainColor === 'transparent') return
+      if (!colorObj || !colorObj.mainColor || colorObj.mainColor === 'transparent') {
+        console.warn('[Theme] WebHome 收到透明主题，保留现有：', this.mainColor, colorObj)
+        return
+      }
       this.mainColor = colorObj.mainColor
       this.mainColorDark = colorObj.mainColorDark
       this.mainColorDarkDouble = colorObj.mainColorDarkDouble
