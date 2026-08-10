@@ -203,6 +203,8 @@ import YearMusic from '@/components/myMusic/YearMusic.vue'
 // v0.7：个人用户中心（右上角头像入口 + 独立抽屉）
 import UserAvatar from '@/components/user/UserAvatar.vue'
 import UserCenter from '@/components/user/UserCenter.vue'
+// 主题色合法性兜底 + 坏值修复（localStorage 可能存着 transparent，文字会变透明）
+import { getSavedTheme } from '@/utils/themeColor'
 
 export default {
   name: 'WebHome',
@@ -222,6 +224,7 @@ export default {
     UserCenter
   },
   data() {
+    const theme = getSavedTheme() // 读主题色并修复坏值（transparent → 默认色）
     return {
       activeMainTab: 'discover',
       activeSubTab: 'recommend',
@@ -229,9 +232,9 @@ export default {
       userAvatar: '',
       showUserCenter: false,
       coverBgUrl: localStorage.getItem('persistCoverBg') || '',
-      mainColor: localStorage.getItem('persistMainColor') || 'transparent',
-      mainColorDark: localStorage.getItem('persistMainColorDark') || 'transparent',
-      mainColorDarkDouble: localStorage.getItem('persistMainColorDarkDouble') || 'transparent'
+      mainColor: theme.mainColor,
+      mainColorDark: theme.mainColorDark,
+      mainColorDarkDouble: theme.mainColorDarkDouble
     }
   },
   computed: {
@@ -313,9 +316,10 @@ export default {
       this.userAvatar = (e && e.detail) || ''
     },
     initThemeColor() {
-      this.mainColor = localStorage.getItem('persistMainColor') || 'transparent';
-      this.mainColorDark = localStorage.getItem('persistMainColorDark') || 'transparent';
-      this.mainColorDarkDouble = localStorage.getItem('persistMainColorDarkDouble') || 'transparent';
+      const theme = getSavedTheme() // 读主题色并修复坏值（transparent → 默认色）
+      this.mainColor = theme.mainColor
+      this.mainColorDark = theme.mainColorDark
+      this.mainColorDarkDouble = theme.mainColorDarkDouble
     },
 // 1. 修改 setActiveTab 方法
     setActiveTab() {

@@ -9,19 +9,19 @@
     <!-- 统计卡片 -->
     <div class="stats-cards">
       <div class="stat-card common-card">
-        <div class="stat-value" :style="{ color: mainColorDarkDouble }">{{ stats.album_count }}</div>
+        <div class="stat-value" :style="{ color: safeMainColorDarkDouble }">{{ stats.album_count }}</div>
         <div class="stat-label">专辑总数</div>
       </div>
       <div class="stat-card common-card">
-        <div class="stat-value" :style="{ color: mainColorDarkDouble }">{{ stats.scored_count }}</div>
+        <div class="stat-value" :style="{ color: safeMainColorDarkDouble }">{{ stats.scored_count }}</div>
         <div class="stat-label">已评分</div>
       </div>
       <div class="stat-card common-card">
-        <div class="stat-value" :style="{ color: mainColorDarkDouble }">{{ formatDuration(stats.total_duration) }}</div>
+        <div class="stat-value" :style="{ color: safeMainColorDarkDouble }">{{ formatDuration(stats.total_duration) }}</div>
         <div class="stat-label">听取总时长</div>
       </div>
       <div class="stat-card common-card">
-        <div class="stat-value" :style="{ color: mainColorDarkDouble }">{{ stats.review_count }}</div>
+        <div class="stat-value" :style="{ color: safeMainColorDarkDouble }">{{ stats.review_count }}</div>
         <div class="stat-label">听后感</div>
       </div>
     </div>
@@ -36,7 +36,7 @@
             :key="d"
             class="days-btn"
             :class="{ active: days === d }"
-            :style="days === d ? { backgroundColor: mainColorDark, color: '#fff' } : { color: mainColorDark }"
+            :style="days === d ? { backgroundColor: safeMainColorDark, color: '#fff' } : { color: safeMainColorDark }"
             @click="handleDaysChange(d)"
           >{{ d }}天</button>
         </div>
@@ -63,6 +63,8 @@
 
 <script>
 import * as echarts from 'echarts/dist/echarts.min.js'
+// 主题色合法性兜底：props 传入 'transparent' 时（localStorage 坏值），图表渐变色不能直接用
+import { sanitizeThemeColor } from '@/utils/themeColor'
 
 const DEFAULT_STATS = {
   album_count: 0,
@@ -98,7 +100,11 @@ export default {
     isScoreEmpty() {
       const list = this.stats.score_distribution || []
       return list.every(b => b.count === 0)
-    }
+    },
+    // 兜底后的主题色：'transparent'/坏值一律换成默认 #409eff，避免文字透明、渐变色抛 addColorStop 异常
+    safeMainColor() { return sanitizeThemeColor(this.mainColor) },
+    safeMainColorDark() { return sanitizeThemeColor(this.mainColorDark) },
+    safeMainColorDarkDouble() { return sanitizeThemeColor(this.mainColorDarkDouble) }
   },
   created() {
     this.fetchStats()
@@ -158,8 +164,8 @@ export default {
           type: 'category',
           data: list.map(d => d.date.slice(5)),
           axisTick: { show: false },
-          axisLine: { lineStyle: { color: this.mainColorDark || '#e5e5e5' } },
-          axisLabel: { fontSize: 11, color: this.mainColorDark || '#666', rotate: list.length > 12 ? 45 : 0 }
+          axisLine: { lineStyle: { color: this.safeMainColorDark || '#e5e5e5' } },
+          axisLabel: { fontSize: 11, color: this.safeMainColorDark || '#666', rotate: list.length > 12 ? 45 : 0 }
         },
         yAxis: {
           type: 'value',
@@ -167,7 +173,7 @@ export default {
           axisTick: { show: false },
           axisLine: { show: false },
           splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
-          axisLabel: { fontSize: 11, color: this.mainColorDark || '#666' }
+          axisLabel: { fontSize: 11, color: this.safeMainColorDark || '#666' }
         },
         series: [{
           data: list.map(d => d.duration),
@@ -175,8 +181,8 @@ export default {
           barMaxWidth: 22,
           itemStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: this.mainColor || 'rgba(64,158,255,0.85)' },
-              { offset: 1, color: `${this.mainColor || 'rgba(64,158,255,0.85)'}33` }
+              { offset: 0, color: this.safeMainColor || 'rgba(64,158,255,0.85)' },
+              { offset: 1, color: `${this.safeMainColor || 'rgba(64,158,255,0.85)'}33` }
             ]),
             borderRadius: [3, 3, 0, 0]
           }
@@ -209,7 +215,7 @@ export default {
           min: 0,
           max: maxValue + 1,
           splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
-          axisLabel: { fontSize: 11, color: this.mainColorDark || '#666' }
+          axisLabel: { fontSize: 11, color: this.safeMainColorDark || '#666' }
         },
         series: [{
           type: 'scatter',
@@ -218,8 +224,8 @@ export default {
           itemStyle: {
             color: new echarts.graphic.RadialGradient(0.4, 0.3, 1, [
               { offset: 0, color: '#ffffff' },
-              { offset: 0.35, color: this.mainColor || 'rgba(64,158,255,0.85)' },
-              { offset: 1, color: this.mainColorDark || 'rgba(64,158,255,0.5)' }
+              { offset: 0.35, color: this.safeMainColor || 'rgba(64,158,255,0.85)' },
+              { offset: 1, color: this.safeMainColorDark || 'rgba(64,158,255,0.5)' }
             ]),
             borderColor: '#fff',
             borderWidth: 1,
@@ -256,8 +262,8 @@ export default {
           type: 'category',
           data: list.map(b => b.bucket),
           axisTick: { show: false },
-          axisLine: { lineStyle: { color: this.mainColorDark || '#e5e5e5' } },
-          axisLabel: { fontSize: 11, color: this.mainColorDark || '#666', rotate: 30 }
+          axisLine: { lineStyle: { color: this.safeMainColorDark || '#e5e5e5' } },
+          axisLabel: { fontSize: 11, color: this.safeMainColorDark || '#666', rotate: 30 }
         },
         yAxis: {
           type: 'value',
@@ -265,14 +271,14 @@ export default {
           axisTick: { show: false },
           axisLine: { show: false },
           splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
-          axisLabel: { fontSize: 11, color: this.mainColorDark || '#666' }
+          axisLabel: { fontSize: 11, color: this.safeMainColorDark || '#666' }
         },
         series: [{
           data: list.map(b => b.count),
           type: 'bar',
           barMaxWidth: 24,
           itemStyle: {
-            color: this.mainColorDark || 'rgba(64,158,255,0.7)',
+            color: this.safeMainColorDark || 'rgba(64,158,255,0.7)',
             borderRadius: [3, 3, 0, 0]
           }
         }]

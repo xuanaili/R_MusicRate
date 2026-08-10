@@ -349,6 +349,8 @@ import EditTag from '@/components/sidebar/EditTag.vue'
 import AlbumPoolItem from '@/components/item/AlbumPoolItem.vue'
 import TagBubbleChart from '@/components/TagBubbleChart.vue'
 import * as echarts from 'echarts/dist/echarts.min.js'
+// 主题色合法性兜底：localStorage 坏值 transparent → 默认色
+import { sanitizeThemeColor } from '@/utils/themeColor'
 
 export default {
   name: 'TagDetail',
@@ -543,19 +545,20 @@ goToMusicCategory() {
     switchIntroTab(tabType) {
       this.introActiveTab = tabType // 直接切换，不再有"全部显示"状态
     },
-    // 初始化主题色【和首页一致】
+    // 初始化主题色【和首页一致】；localStorage 可能存着 transparent 坏值 → 兜底默认色，避免文字/图表透明
     initThemeColor() {
-      this.localMainColor = localStorage.getItem('persistMainColor') || 'transparent';
-      this.localMainColorDark = localStorage.getItem('persistMainColorDark') || '#333';
-      this.localMainColorDarkDouble = localStorage.getItem('persistMainColorDarkDouble') || '#111';
+      this.localMainColor = sanitizeThemeColor(localStorage.getItem('persistMainColor'));
+      this.localMainColorDark = sanitizeThemeColor(localStorage.getItem('persistMainColorDark'));
+      this.localMainColorDarkDouble = sanitizeThemeColor(localStorage.getItem('persistMainColorDarkDouble'));
       this.coverBgUrl = localStorage.getItem('persistCoverBg') || '';
     },
     // 获取封面背景【和首页一致】
     getCoverBgUrl(url) {
       this.coverBgUrl = url
     },
-    // 获取主题色【和首页一致】
+    // 获取主题色【和首页一致】；取色失败时子组件会 emit transparent → 保留现有主题，不让瞬时失败覆盖/写回坏值
     getThemeColor(colorObj) {
+      if (!colorObj || !colorObj.mainColor || colorObj.mainColor === 'transparent') return
       this.localMainColor = colorObj.mainColor
       this.localMainColorDark = colorObj.mainColorDark
       this.localMainColorDarkDouble = colorObj.mainColorDarkDouble
