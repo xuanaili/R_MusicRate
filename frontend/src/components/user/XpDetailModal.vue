@@ -19,7 +19,7 @@
 
         <!-- 详情主体 -->
         <div v-else-if="detail">
-          <!-- 等级大卡：Lv + 称号 + 进度条 + 距下一级 -->
+          <!-- 等级大卡：Lv + 称号 + 进度条 + 距下一级 + 总听歌经验（完整历史） -->
           <div class="xp-level-card">
             <div class="xp-level-row">
               <span class="xp-level-num" :style="{ color: safeMainColorDark }">Lv.{{ detail.level }}</span>
@@ -32,25 +32,25 @@
               <span>总经验 {{ formatXp(detail.total_xp) }}</span>
               <span>距 Lv.{{ detail.level + 1 }} 还差 {{ formatXp(detail.next_level_xp) }}</span>
             </div>
+            <div class="xp-total-listen">🎧 总听歌经验 {{ formatXp(detail.total_listening_xp) }}（完整历史）</div>
           </div>
 
-          <!-- 今日 + 累计卡片 -->
-          <div class="xp-summary-grid">
-            <div class="xp-summary-card common-card">
-              <div class="xp-summary-value" :style="{ color: safeMainColorDarkDouble }">{{ formatXp(detail.today_xp) }}</div>
-              <div class="xp-summary-label">今日经验</div>
-            </div>
-            <div class="xp-summary-card common-card">
-              <div class="xp-summary-value" :style="{ color: safeMainColorDarkDouble }">{{ formatXp(detail.today_listening) }}</div>
-              <div class="xp-summary-label">今日听歌</div>
-            </div>
-            <div class="xp-summary-card common-card">
-              <div class="xp-summary-value" :style="{ color: safeMainColorDarkDouble }">{{ formatXp(detail.today_bonus) }}</div>
-              <div class="xp-summary-label">今日加分</div>
-            </div>
-            <div class="xp-summary-card common-card">
-              <div class="xp-summary-value" :style="{ color: safeMainColorDarkDouble }">{{ formatXp(detail.total_listening_xp) }}</div>
-              <div class="xp-summary-label">总听歌经验<span class="xp-note">（完整历史）</span></div>
+          <!-- 今日经验：合计 + 听歌 + 加分（单卡片内三栏，比四张独立小卡更清爽） -->
+          <div class="xp-today-card common-card">
+            <div class="card-title">今日经验</div>
+            <div class="xp-today-grid">
+              <div class="xp-today-item xp-today-main">
+                <div class="xp-today-value" :style="{ color: safeMainColorDark }">{{ formatXp(detail.today_xp) }}</div>
+                <div class="xp-today-label">合计</div>
+              </div>
+              <div class="xp-today-item">
+                <div class="xp-today-value" :style="{ color: safeMainColorDarkDouble }">{{ formatXp(detail.today_listening) }}</div>
+                <div class="xp-today-label">听歌</div>
+              </div>
+              <div class="xp-today-item">
+                <div class="xp-today-value" :style="{ color: safeMainColorDarkDouble }">{{ formatXp(detail.today_bonus) }}</div>
+                <div class="xp-today-label">加分</div>
+              </div>
             </div>
           </div>
 
@@ -156,8 +156,6 @@ export default {
     visible(val) {
       if (val) {
         this.fetchDetail()
-        // 等 DOM 渲染完成后再初始化图表
-        this.$nextTick(() => this.renderChart())
       } else {
         this.disposeChart()
       }
@@ -173,7 +171,6 @@ export default {
       this.$axios.get('/api/user/xp-detail').then(res => {
         if (res.data.code === 200 && res.data.data) {
           this.detail = { ...EMPTY_DETAIL, ...res.data.data }
-          this.$nextTick(() => this.renderChart())
         } else {
           this.loadError = res.data.msg || '接口返回异常'
         }
@@ -181,6 +178,9 @@ export default {
         this.loadError = (err.response && (err.response.data && err.response.data.msg || `HTTP ${err.response.status}`)) || err.message
       }).finally(() => {
         this.loading = false
+        // 图表初始化必须在 loading 置 false 且 detail 分支渲染完成后执行：
+        // 此前在 .then 里 $nextTick 时 loading 仍为 true → 页面还停在加载态 → 图表容器不存在 → 图不显示
+        this.$nextTick(() => this.renderChart())
       })
     },
     // ===== 近 7 天堆叠柱状图（听歌 + 加分） =====
@@ -417,28 +417,45 @@ export default {
   color: #888;
 }
 
-/* 今日 + 累计卡片 */
-.xp-summary-grid {
+/* 总听歌经验（完整历史）：等级卡底部一行 */
+.xp-total-listen {
+  font-size: 12px;
+  color: #888;
+  padding-top: 8px;
+  margin-top: 2px;
+  border-top: 1px dashed #eee;
+}
+
+/* 今日经验：单卡片内三栏（合计 / 听歌 / 加分），合计字号加大突出 */
+.xp-today-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.xp-summary-card {
+  grid-template-columns: repeat(3, 1fr);
   text-align: center;
-  padding: 10px 4px;
 }
 
-.xp-summary-value {
+.xp-today-item {
+  padding: 4px 0;
+}
+
+.xp-today-item + .xp-today-item {
+  border-left: 1px solid #f0f0f0;
+}
+
+.xp-today-main .xp-today-value {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.xp-today-value {
   font-size: 16px;
   font-weight: 700;
   line-height: 1.3;
 }
 
-.xp-summary-label {
+.xp-today-label {
   font-size: 11px;
   color: #888;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 /* 通用卡片 */
@@ -549,10 +566,4 @@ export default {
   font-weight: 700;
 }
 
-/* 窄屏：今日卡片两列 */
-@media (max-width: 380px) {
-  .xp-summary-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
 </style>
