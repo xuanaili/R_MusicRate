@@ -142,24 +142,22 @@
                       @change="handleLrcFileUpload"
                     >
 
-                    <button
-                      class="batch-fetch-lyric-btn"
-                      :style="{backgroundColor: mainColorDarkDouble}"
-                      @click="startBatchFetchLyrics"
-                      :disabled="!trackList.length || batchFetchLoading"
+                    <input
+                      ref="wholeLrcFileInput"
+                      type="file"
+                      accept=".lrc"
+                      class="lrc-file-input"
+                      @change="handleWholeTrackLrcUpload"
                     >
-                      <i class="icon-batch-fetch">🔄</i>
-                      <span v-if="!batchFetchLoading">一键获取所有歌词</span>
-                      <span v-if="batchFetchLoading">处理中: {{batchFetchCurrent}}/{{batchFetchTotal}}</span>
-                    </button>
-
                     <button
-                        class="auto-fetch-lyric-btn"
-                        :style="{backgroundColor: mainColorDark}"
-                        @click="showAutoFetchLyricModal = true"
-                        :disabled="!trackList[selectedTrackIndex]?.name"
+                      class="whole-lrc-upload-btn"
+                      :style="{backgroundColor: mainColor}"
+                      @click="triggerWholeLrcFileInput"
+                      :disabled="wholeLrcUploadLoading"
                     >
-                      <i class="icon-fetch">📝</i> 从QQ音乐获取歌词
+                      <i class="icon-whole-lrc">🎵</i>
+                      <span v-if="!wholeLrcUploadLoading">上传整轨LRC（绝对时间）</span>
+                      <span v-if="wholeLrcUploadLoading">上传中...</span>
                     </button>
                     <button
                         class="modal-save-all-btn"
@@ -234,106 +232,6 @@
           </div>
         </div>
 
-        <!-- 自动获取歌词弹窗 -->
-        <div v-if="showAutoFetchLyricModal" class="lyric-modal-mask" @click="closeAutoFetchModal">
-          <div class="auto-fetch-modal-content" @click.stop>
-            <div class="lyric-modal-header">
-              <h3>从QQ音乐获取歌词 - {{ trackList[selectedTrackIndex]?.name || '当前单曲' }}</h3>
-              <span class="close-btn" @click="showAutoFetchLyricModal = false">×</span>
-            </div>
-            <div class="auto-fetch-modal-body">
-              <div class="song-info-group">
-                <label class="song-info-label">歌曲信息</label>
-                <div class="song-info-fields">
-                  <div class="info-field">
-                    <span class="field-name">歌曲名：</span>
-                    <input
-                        v-model="fetchSongName"
-                        class="info-input"
-                        placeholder="请输入歌曲名"
-                    />
-                  </div>
-                  <div class="info-field">
-                    <span class="field-name">歌手名：</span>
-                    <input
-                        v-model="fetchArtist"
-                        class="info-input"
-                        placeholder="请输入歌手名"
-                    />
-                  </div>
-                  <div class="info-field">
-                    <span class="field-name">时长(秒)：</span>
-                    <input
-                        v-model.number="fetchDuration"
-                        class="info-input"
-                        type="number"
-                        placeholder="可选，用于精准匹配"
-                        disabled
-                    />
-                  </div>
-                  <div class="info-field" style="display: none;">
-                    <span class="field-name">网易云链接：</span>
-                    <input
-                        v-model="fetchNeteaseUrl"
-                        class="info-input"
-                        placeholder="例如：https://music.163.com/#/song?id=3315852235"
-                        disabled
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <button
-                  class="fetch-lyric-btn"
-                  :style="{backgroundColor: mainColorDark}"
-                  @click="fetchLyrics"
-                  :disabled="fetchLoading || (!fetchSongName.trim())"
-              >
-                <span v-if="fetchLoading">获取中...</span>
-                <span v-else>从QQ音乐获取歌词</span>
-              </button>
-
-              <div v-if="fetchResult" class="lyric-result-group">
-                <label class="lyric-result-label">QQ音乐歌词</label>
-                <div class="lyric-source-tabs">
-                  <button
-                      class="source-tab active"
-                  >
-                    QQ音乐
-                    <span v-if="fetchResult.qq?.status === 'success'" class="success-tag">✓</span>
-                    <span v-if="fetchResult.qq?.status === 'failed'" class="failed-tag">✗</span>
-                  </button>
-                </div>
-
-                <div class="lyric-preview-container">
-                  <textarea
-                      v-model="selectedLyricContent"
-                      class="lyric-preview-textarea"
-                      readonly
-                      placeholder="暂无歌词..."
-                  ></textarea>
-                </div>
-
-                <button
-                    class="fill-lyric-btn"
-                    :style="{backgroundColor: mainColorDarkDouble}"
-                    @click="fillLyricToInput"
-                    :disabled="!selectedLyricContent.trim()"
-                >
-                  填入歌词输入框
-                </button>
-              </div>
-            </div>
-            <div class="lyric-modal-footer">
-              <button
-                  class="modal-cancel-btn"
-                  @click="showAutoFetchLyricModal = false"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -420,23 +318,8 @@ export default {
       isScrolling: false,
       showUploadBtn: false,
       trackDropdownOpen: false,
-      showAutoFetchLyricModal: false,
-      fetchSongName: '',
-      fetchArtist: this.album.singer || '',
-      fetchDuration: 0,
-      fetchNeteaseUrl: '',
-      fetchLoading: false,
-      fetchResult: null,
-      lyricSources: [
-        {key: 'qq', name: 'QQ音乐'}
-      ],
-      selectedSource: 'qq',
-      selectedLyricContent: '',
       scrollAnimationTimer: null,
-      batchFetchLoading: false,
-      batchFetchCurrent: 0,
-      batchFetchTotal: 0,
-      batchFetchTimer: null,
+      wholeLrcUploadLoading: false,
       batchUploadLoading: false,
       batchUploadCurrent: 0,
       batchUploadTotal: 0,
@@ -509,7 +392,6 @@ export default {
           this.initTrackList(true);
         }
         this.initTrackList(true);
-        this.fetchArtist = newVal.singer || '';
       }, deep: true
     },
     selectedTrackIndex: {
@@ -518,21 +400,6 @@ export default {
         this.currentTrackLyricContent = trackLyrics.lyric;
         this.currentTrackTranslateContent = trackLyrics.translate;
         this.currentTranslateLang = trackLyrics.lang || 'CN';
-
-        if (this.trackList[newVal]) {
-          this.fetchSongName = this.trackList[newVal].name || '';
-          if (!this.fetchArtist) {
-            this.fetchArtist = this.album.singer || '';
-          }
-          const currentTrack = this.trackList[newVal];
-          const nextTrack = this.trackList[newVal + 1];
-          if (currentTrack && nextTrack) {
-            this.fetchDuration = Math.round(nextTrack.sec - currentTrack.sec);
-          } else {
-            this.fetchDuration = 0;
-          }
-          this.fetchNeteaseUrl = '';
-        }
       },
       immediate: true
     },
@@ -573,29 +440,6 @@ export default {
       },
       immediate: true,
       deep: true
-    },
-    selectedSource: {
-      handler(newVal) {
-        if (this.fetchResult && this.fetchResult[newVal]) {
-          this.selectedLyricContent = this.fetchResult[newVal].lyric || '';
-        } else {
-          this.selectedLyricContent = '';
-        }
-        this.autoSelectFirstSuccessSource();
-      },
-      immediate: true
-    },
-    fetchResult: {
-      handler(newVal) {
-        if (newVal) {
-          this.autoSelectFirstSuccessSource();
-          this.$nextTick(() => {
-            this.fillLyricToInput();
-          });
-        }
-      },
-      immediate: true,
-      deep: true
     }
   },
   mounted() {
@@ -613,7 +457,6 @@ export default {
     document.removeEventListener('click', this.handleClickOutside);
 
     clearTimeout(this.scrollAnimationTimer);
-    if (this.batchFetchTimer) clearTimeout(this.batchFetchTimer);
     if (this.batchUploadTimer) clearTimeout(this.batchUploadTimer);
 
     if (this.$refs.originalLyricTextarea) {
@@ -848,41 +691,6 @@ export default {
       return new Promise(r => setTimeout(r, ms));
     },
 
-    async fetchLyrics() {
-      if (!this.fetchSongName.trim()) {
-        this.$message?.warning('歌曲名不能为空！');
-        return;
-      }
-      this.fetchLoading = true;
-      this.fetchResult = null;
-      this.selectedLyricContent = '';
-      try {
-        const res = await this.$axios.post('/api/lyric/fetch_auto', {
-          song_name: this.fetchSongName.trim(),
-          artist: this.fetchArtist.trim(),
-          duration: this.fetchDuration
-        }, {headers: {Authorization: localStorage.getItem('token') || ''}});
-
-        if (res.data.code === 200) {
-          this.fetchResult = res.data.data.lyrics;
-          const hasLyric = res.data.data.summary.success_count > 0;
-
-          if (hasLyric) {
-            this.$message?.success('从QQ音乐获取歌词成功！');
-            this.$nextTick(() => {
-              this.fillLyricToInput();
-            });
-          } else {
-            this.$message?.warning('QQ音乐未找到该歌曲的歌词');
-          }
-        }
-      } catch (e) {
-        this.$message?.error('获取失败：' + (e.response?.data?.msg || e.message));
-      } finally {
-        this.fetchLoading = false;
-      }
-    },
-
     parseLrcToStandardFormat(lrcText) {
       if (!lrcText) return '';
       const lines = lrcText.trim().split('\n');
@@ -929,39 +737,6 @@ export default {
         const s = this.parseLrcToStandardFormat(c);
         if (s) this.currentTrackTranslateContent = s;
       }
-    },
-
-    autoSelectFirstSuccessSource() {
-      if (!this.fetchResult) return;
-      const ok = this.lyricSources.find(s =>
-        this.fetchResult[s.key]?.status === 'success' && this.fetchResult[s.key]?.lyric?.trim()
-      );
-      if (ok) {
-        this.selectedSource = ok.key;
-        this.selectedLyricContent = this.fetchResult[ok.key].lyric;
-      }
-    },
-
-    fillLyricToInput() {
-      if (!this.selectedLyricContent.trim()) {
-        this.autoSelectFirstSuccessSource();
-      }
-
-      if (!this.selectedLyricContent.trim()) return;
-
-      const std = this.parseLrcToStandardFormat(this.selectedLyricContent);
-      if (!std) return;
-
-      this.currentTrackLyricContent = std;
-      this.$message?.success('已填入并格式化歌词');
-    },
-
-    closeAutoFetchModal() {
-      this.showAutoFetchLyricModal = false;
-      this.fetchResult = null;
-      this.selectedLyricContent = '';
-      this.selectedSource = 'qq';
-      this.fetchNeteaseUrl = '';
     },
 
     toggleTrackDropdown() {
@@ -1189,61 +964,62 @@ export default {
       }
     },
 
-    async startBatchFetchLyrics() {
-      if (!this.trackList.length) return;
-      if (!window.confirm('确定从QQ音乐批量获取所有歌词？')) return;
+    // ========== 【新增 v0.8】整轨 LRC 文件上传（绝对时间覆盖全专辑，仅管理员） ==========
+    triggerWholeLrcFileInput() {
+      const fileInput = this.$refs.wholeLrcFileInput;
+      if (fileInput) fileInput.click();
+    },
 
-      this.batchFetchLoading = true;
-      this.batchFetchCurrent = 0;
-      this.batchFetchTotal = this.trackList.length;
-
-      for (let i = 0; i < this.trackList.length; i++) {
-        this.batchFetchCurrent = i + 1;
-        await this.$nextTick();
-
-        try {
-          this.selectedTrackIndex = i;
-          await this.$nextTick();
-
-          const res = await this.$axios.post('/api/lyric/fetch_auto', {
-            song_name: this.trackList[i].name.trim(),
-            artist: this.album.singer || '',
-            duration: 0
-          }, {headers: {Authorization: localStorage.getItem('token') || ''}});
-
-          if (res.data.code === 200 && res.data.data.summary.success_count > 0) {
-            const qqLyric = res.data.data.lyrics.qq.lyric;
-            const stdLyric = this.parseLrcToStandardFormat(qqLyric);
-            this.trackLyricsMap[i] = {
-              ...this.trackLyricsMap[i],
-              lyric: stdLyric
-            };
-
-            if (i === this.selectedTrackIndex) {
-              this.currentTrackLyricContent = stdLyric;
-            }
-
-            this.$message?.success(`成功获取《${this.trackList[i].name}》的歌词`);
-          } else {
-            this.$message?.warning(`未找到《${this.trackList[i].name}》的歌词`);
-          }
-        } catch (e) {
-          console.error(`获取第${i+1}首歌歌词失败`, e);
-          this.$message?.error(`获取《${this.trackList[i].name}》歌词失败`);
-        }
-
-        await this.sleep(1500);
+    async handleWholeTrackLrcUpload(e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.lrc')) {
+        this.$message?.warning('仅支持 .lrc 格式文件');
+        e.target.value = '';
+        return;
       }
 
-      this.batchFetchLoading = false;
-      this.$message?.success(`批量获取完成！共处理 ${this.batchFetchTotal} 首歌曲`);
+      this.wholeLrcUploadLoading = true;
+      try {
+        const formData = new FormData();
+        formData.append('lrc_file', file);
+        const res = await this.$axios.post(
+          `/api/album/lyric/upload/${this.album.source_pool_id || this.album.id}`,
+          formData,
+          {
+            headers: {
+              Authorization: localStorage.getItem('token') || '',
+              'Content-Type': 'multipart/form-data'
+            }
+          }
+        );
+        if (res.data.code === 200) {
+          const data = res.data.data;
+          const lyricsData = {
+            lyric_text: data.lyric_text,
+            lyric_translate: data.lyric_translate || '{}'
+          };
+          this.showUploadLyricModal = false;
+          this.$message?.success('整轨 LRC 上传成功，已按单曲时间戳自动切分！');
+          // 触发父组件 update:lyrics → 更新 album.lyric_text/lyric_translate → lyrics watcher
+          // 调 initTrackLyricsMap 按 tracks_time 自动切分到各单曲（与逐单曲保存同机制）
+          this.$emit('update:lyrics', lyricsData);
+        } else {
+          this.$message?.error(res.data.msg || '整轨 LRC 上传失败');
+        }
+      } catch (err) {
+        this.$message?.error('整轨 LRC 上传异常：' + (err.response?.data?.msg || err.message));
+      } finally {
+        this.wholeLrcUploadLoading = false;
+        e.target.value = '';
+      }
     }
   }
 };
 </script>
 <style scoped>
 /* 样式部分保持不变 */
-.batch-fetch-lyric-btn {
+.whole-lrc-upload-btn {
   padding: 6px 12px;
   border: none;
   border-radius: 4px;
@@ -1254,12 +1030,12 @@ export default {
   margin-right: 8px;
 }
 
-.batch-fetch-lyric-btn:disabled {
+.whole-lrc-upload-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
 
-.batch-fetch-lyric-btn:hover:not(:disabled) {
+.whole-lrc-upload-btn:hover:not(:disabled) {
   opacity: 0.9;
   transform: scale(1.02);
 }
@@ -1584,15 +1360,6 @@ export default {
   padding: 0;
 }
 
-.auto-fetch-modal-content {
-  width: 80%;
-  max-width: 900px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  padding: 0;
-}
-
 .lyric-modal-header {
   padding: 16px 20px;
   border-bottom: 1px solid #eee;
@@ -1625,157 +1392,6 @@ export default {
 
 .lyric-modal-body {
   padding: 20px;
-}
-
-.auto-fetch-modal-body {
-  padding: 20px;
-}
-
-.song-info-group {
-  margin-bottom: 20px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #eee;
-}
-
-.song-info-label {
-  display: block;
-  margin-bottom: 12px;
-  font-size: 14px;
-  color: #333;
-  font-weight: 600;
-}
-
-.song-info-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.info-field {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.field-name {
-  width: 80px;
-  font-size: 14px;
-  color: #666;
-  text-align: right;
-}
-
-.info-input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  color: #333;
-}
-
-.fetch-lyric-btn {
-  width: 100%;
-  padding: 12px;
-  border: none;
-  border-radius: 4px;
-  color: white;
-  cursor: pointer;
-  font-size: 16px;
-  transition: all 0.2s;
-  margin-bottom: 20px;
-}
-
-.fetch-lyric-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.lyric-result-group {
-  margin-top: 20px;
-}
-
-.lyric-result-label {
-  display: block;
-  margin-bottom: 12px;
-  font-size: 14px;
-  color: #333;
-  font-weight: 600;
-}
-
-.lyric-source-tabs {
-  display: flex;
-  gap: 5px;
-  margin-bottom: 15px;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 10px;
-}
-
-.source-tab {
-  padding: 8px 16px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: white;
-  color: #333;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.source-tab.active {
-  background-color: v-bind(mainColorDark);
-  color: white;
-  border-color: v-bind(mainColorDark);
-}
-
-.source-tab:hover:not(.active) {
-  border-color: v-bind(mainColor);
-  color: v-bind(mainColorDark);
-}
-
-.success-tag {
-  color: #4cd964;
-  font-weight: bold;
-}
-
-.failed-tag {
-  color: #ff3b30;
-  font-weight: bold;
-}
-
-.lyric-preview-container {
-  margin-bottom: 15px;
-}
-
-.lyric-preview-textarea {
-  width: 100%;
-  height: 200px;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  line-height: 1.6;
-  resize: vertical;
-  background-color: #f9f9f9;
-}
-
-.fill-lyric-btn {
-  width: 100%;
-  padding: 10px;
-  border: none;
-  border-radius: 4px;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-  margin-bottom: 10px;
-}
-
-.fill-lyric-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
 }
 
 .track-select-group {
@@ -1811,21 +1427,6 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
-}
-
-.auto-fetch-lyric-btn {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.auto-fetch-lyric-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
 }
 
 .translate-lang-select {
