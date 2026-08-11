@@ -481,11 +481,19 @@ export default {
             if (this.audioSrc && this.isPlaying) {
               await this.pauseListeningTimer();
             }
+            // 是否为组件首次挂载（immediate 触发的初始监听）：此时 album.id 还是 data 默认值 0，
+            // created() 已上报过最近收听，避免这里再重复上报一次
+            const isInitialRoute = !this.album.id;
             this.resetAlbumPageData();
             this.getAlbumDetail(albumId).then(() => {
               this.getAlbumPoolRealId();
               this.checkUserComment();
               this.getPublicComments();
+              // 切到新专辑后上报最近收听时间（自动播放完跳下一张/手动切换专辑都走这里），
+              // 必须在 getAlbumDetail 完成后调用，确保 this.album.id 已是新专辑
+              if (!isInitialRoute) {
+                this.reportLastListened();
+              }
               setTimeout(() => {
                 if (this.album.source_pool_id) {
                   this.getAlbumAudioInfo().then(() => {
