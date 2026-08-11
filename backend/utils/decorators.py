@@ -44,3 +44,27 @@ def login_required(func):
             return jsonify({"code": 500, "msg": f"登录校验出错：{str(e)}"}), 500
 
     return wrapper
+
+
+def is_admin_user(user_id):
+    """判断用户是否为管理员（真实校验 users.is_admin），返回 bool
+    参考 audio_resource.py 的真实管理员校验模式；save/upload 歌词等管理员专属接口复用，
+    修复历史「硬编码 is_admin=True」的权限漏洞
+    """
+    if not user_id:
+        return False
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('SELECT is_admin FROM users WHERE user_id = %s', (user_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        if not row:
+            return False
+        # MYSQL_CONFIG 全局 cursorclass=DictCursor → row 为 dict；兼容 tuple 游标
+        is_admin = row.get('is_admin') if isinstance(row, dict) else row[0]
+        return is_admin == 1
+    except Exception as e:
+        print(f"❌ 校验管理员权限失败：{str(e)}")
+        traceback.print_exc()
+        return False
