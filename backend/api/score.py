@@ -4,6 +4,7 @@ import traceback
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
 from backend.utils.user import add_bonus_xp
+from backend.utils.xp import XP_RATING
 from backend.utils.score import normalize_score_list
 import pymysql
 
@@ -65,7 +66,7 @@ def register_score_routes(app):
             # v0.7.1 P0：评分保存成功 +5 经验（仅评分实际变化时发放，受每日上限约束），返回本次实际加分供 toast
             xp_gained = 0.0
             if score_changed:
-                xp_gained, _, _, _ = add_bonus_xp(current_user_id, 5)
+                xp_gained, _, _, _ = add_bonus_xp(current_user_id, 5, XP_RATING)
 
             return jsonify({
                 "code": 200,

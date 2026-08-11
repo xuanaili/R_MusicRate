@@ -6,6 +6,7 @@ from datetime import datetime
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
 from backend.utils.user import add_bonus_xp
+from backend.utils.xp import XP_COMMENT
 import pymysql
 
 def register_comment_routes(app):
@@ -146,7 +147,7 @@ def register_comment_routes(app):
             cursor.close()
 
             # v0.7.1 P0：评论【新增】成功 +10 经验（受每日上限约束），只计新增不计编辑
-            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 10)
+            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 10, XP_COMMENT)
 
             return jsonify({
                 "code": 200,
@@ -253,7 +254,7 @@ def register_comment_routes(app):
             cursor.close()
 
             # v0.7.1 P0：公共评论【新增】成功 +10 经验（受每日上限约束；唯一性校验天然防刷）
-            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 10)
+            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 10, XP_COMMENT)
 
             return jsonify({
                 "code": 200,

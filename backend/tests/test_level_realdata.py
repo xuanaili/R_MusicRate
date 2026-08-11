@@ -8,17 +8,18 @@ import pytest
 from backend import create_app
 from backend.api.listening import PLAYING_TIMER_CACHE
 from backend.config import MYSQL_CONFIG
-from backend.utils.db import ensure_users_xp_columns, get_album_table_name, get_db
+from backend.utils.db import create_user_xp_log, ensure_users_xp_columns, get_album_table_name, get_db
 from backend.utils.level import compute_level
 from backend.utils.user import add_bonus_xp
 
 
 @pytest.fixture(scope='module', autouse=True)
 def _ensure_migration():
-    """模块级自动执行：确保 users 表等级经验四列已迁移（自足，不依赖后端已启动过）"""
+    """模块级自动执行：确保 users 等级经验四列已迁移 + user_xp_log 明细表已建（自足，不依赖后端已启动过）"""
     app = create_app()
     with app.app_context():
         ensure_users_xp_columns()
+        create_user_xp_log()
 
 
 @pytest.fixture(scope='module')
@@ -133,7 +134,7 @@ def test_bonus_xp_daily_cap(client, test_user):
     gained_list = []
     for _ in range(6):
         with client.application.app_context():
-            gained, _, _, _ = add_bonus_xp(user_id, 20)
+            gained, _, _, _ = add_bonus_xp(user_id, 20, 'review')
         gained_list.append(gained)
     assert gained_list[:5] == [20.0] * 5
     assert gained_list[5] == 0.0
@@ -148,8 +149,8 @@ def test_bonus_xp_partial_when_near_cap(client, test_user):
     """接近上限时部分加分：已加 90 再加 20 → 实际只加 10"""
     user_id = test_user['user_id']
     with client.application.app_context():
-        add_bonus_xp(user_id, 90)
-        gained, new_xp, _, _ = add_bonus_xp(user_id, 20)
+        add_bonus_xp(user_id, 90, 'review')
+        gained, new_xp, _, _ = add_bonus_xp(user_id, 20, 'review')
     assert gained == 10.0
     assert new_xp == 100.0
 
@@ -160,7 +161,7 @@ def test_user_info_returns_level_fields(client, test_user):
     user_id = test_user['user_id']
     # 先加一点经验，再查 info
     with client.application.app_context():
-        add_bonus_xp(user_id, 20)
+        add_bonus_xp(user_id, 20, 'review')
     row = _get_user_row(client, user_id)
     r = client.get('/api/user/info', headers=test_user['headers']).get_json()
     assert r['code'] == 200, r
@@ -212,3 +213,66 @@ def test_score_save_changed_gives_xp(client, test_user):
     assert r['code'] == 200, r
     assert r['data']['xp_gained'] == 5.0
     assert _get_user_row(client, user_id)['xp'] == xp_before + 5.0
+
+
+@pytest.mark.realdata
+def test_bonus_xp_writes_log(client, test_user):
+    """v0.7.2：add_bonus_xp 写 user_xp_log 明细——每次实际加分写一行；打满每日上限后 gained=0 不写新行；
+    log 加分合计与 users.bonus_xp_today 严格一致（同事务写入）"""
+    user_id = test_user['user_id']
+    # 5 次听后感 +20 → 每次写一条 log
+    for _ in range(5):
+        with client.application.app_context():
+            add_bonus_xp(user_id, 20, 'review')
+    # 第 6 次打满上限 → gained=0，不写 log（防 +0 噪音）
+    with client.application.app_context():
+        gained, _, _, _ = add_bonus_xp(user_id, 20, 'review')
+    assert gained == 0.0
+
+    app = client.application
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('SELECT xp_type, amount FROM user_xp_log WHERE user_id = %s ORDER BY id', (user_id,))
+        rows = cursor.fetchall()
+        cursor.execute('SELECT bonus_xp_today FROM users WHERE user_id = %s', (user_id,))
+        today_bonus = cursor.fetchone()['bonus_xp_today']
+        cursor.execute(
+            'SELECT COALESCE(SUM(amount), 0) AS s FROM user_xp_log WHERE user_id = %s AND xp_type != %s',
+            (user_id, 'listening'))
+        log_sum = cursor.fetchone()['s']
+        cursor.close()
+
+    assert len(rows) == 5  # 只有 5 次实际加分写了 log
+    assert all(r['xp_type'] == 'review' for r in rows)
+    assert [r['amount'] for r in rows] == [20.0] * 5
+    assert log_sum == today_bonus == 100.0
+
+
+@pytest.mark.realdata
+def test_pause_writes_listening_log(client, test_user):
+    """v0.7.2：pause 接口写 user_xp_log 收听明细——play_seconds>0 写一条（xp_type=listening）"""
+    user_id = test_user['user_id']
+    album_id = _insert_user_album(client, user_id)
+
+    now = time.time()
+    PLAYING_TIMER_CACHE[f'{user_id}_{album_id}'] = {'start_timestamp': now - 2, 'origin_duration': 0.0}
+    r = client.post(
+        f'/api/album/listening/pause/{album_id}',
+        json={'progress_seconds': 1},
+        headers=test_user['headers'],
+    ).get_json()
+    assert r['code'] == 200, r
+    play_seconds = r['data']['this_play_seconds']
+
+    app = client.application
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('SELECT xp_type, amount FROM user_xp_log WHERE user_id = %s', (user_id,))
+        rows = cursor.fetchall()
+        cursor.close()
+
+    assert len(rows) == 1
+    assert rows[0]['xp_type'] == 'listening'
+    assert rows[0]['amount'] == pytest.approx(play_seconds, abs=0.1)

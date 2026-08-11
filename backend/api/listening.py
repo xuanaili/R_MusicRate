@@ -6,6 +6,7 @@ from datetime import datetime
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
 from backend.utils.level import compute_level
+from backend.utils.xp import XP_LISTENING
 
 # 全局内存存储 播放计时状态 - key: f"{user_id}_{album_id}", value: 开始时间戳
 PLAYING_TIMER_CACHE = {}
@@ -191,6 +192,13 @@ def register_listening_routes(app):
                 SET xp = %s, listening_total = COALESCE(listening_total, 0) + %s, level = %s
                 WHERE user_id = %s
             ''', (new_xp, play_seconds, new_level, current_user_id))
+            # v0.7.2：收听经验明细（1 秒 = 1 XP），仅 play_seconds > 0 时写（防 0 值噪音），
+            # 与 users 累计列同事务同 commit——保证 SUM(user_xp_log listening) 与 listening_total 增量一致
+            if play_seconds > 0:
+                cursor.execute('''
+                    INSERT INTO user_xp_log (user_id, xp_type, amount)
+                    VALUES (%s, %s, %s)
+                ''', (current_user_id, XP_LISTENING, play_seconds))
             db.commit()
 
             # 7. 清除内存中的播放状态，释放缓存 + 关闭游标

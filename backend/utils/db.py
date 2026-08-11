@@ -230,6 +230,39 @@ def create_user_listening_log():
         raise e
 
 
+# ========== ✅ v0.7.2：用户经验明细表 user_xp_log ==========
+def create_user_xp_log():
+    """创建用户经验明细表（v0.7.2 起，每次获得经验写一条：来源 + 数额 + 时间）
+
+    与 users 表累计列（xp/listening_total/bonus_xp_today）【同事务写入、仅 amount>0 时写】，
+    保证 SUM(user_xp_log) 与累计值严格一致、明细流无 +0 噪音；不回填历史（此前无记录）。
+    - xp_type 枚举：listening（听歌 1秒=1XP）/ rating（评分 +5）/ review（听后感 +20）/ comment（评论 +10）
+    - 索引 (user_id, created_at) 支撑「近7天按天聚合 + 最近明细流倒序」
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_xp_log (
+                id INT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+                user_id INT NOT NULL COMMENT '用户ID（关联users表）',
+                xp_type VARCHAR(20) NOT NULL COMMENT '经验来源：listening/rating/review/comment',
+                amount FLOAT NOT NULL DEFAULT 0 COMMENT '本次实际获得经验（仅记录>0）',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '获得时间',
+                INDEX idx_user_created (user_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户经验明细表（v0.7.2起，每次获得经验写一条）';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ user_xp_log表 创建/检查成功！")
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ 创建user_xp_log表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
 def create_user_recommend():
     """创建用户推荐数据表，用于每日推荐 ✅修复外键名重复+打印文案错误"""
     db = None
@@ -617,6 +650,8 @@ def init_base_tables():
         create_user_recommend()
         # v0.7 P2：按天听取记录表（统计柱状图数据源）
         create_user_listening_log()
+        # v0.7.2：用户经验明细表（经验详情弹窗数据源）
+        create_user_xp_log()
 
         create_album_tags()
         create_album_singers()
