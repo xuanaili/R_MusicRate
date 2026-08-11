@@ -149,19 +149,19 @@ MusicRate/
 
 ## v0.8 — 歌词版：本地上传 LRC 接口（干净版）+ AI 歌词识别可行性验证（P0 已完成）
 
-> v0.8 主题为歌词，重点是 `album/detail` 下的歌词展示页面。规划已于 2026-08-11 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对落地；**P0（LRC 纯函数双端同构 + 后端重构删 QQ/权限修复/整轨上传接口 + 前端删 QQ 加整轨上传入口）已完成（2026-08-11）**。P1 用 faster-whisper 做 AI 歌词识别可行性验证（spike）待用户下发执行。歌词样式迭代与两个已知 bug（当前句抖动、长歌词省略号）明确留给后续小版本。
+> v0.8 主题为歌词，重点是 `album/detail` 下的歌词展示页面。规划已于 2026-08-11 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对落地；**P0（LRC 纯函数双端同构 + 后端重构删 QQ/权限修复/整轨上传接口 + 前端删 QQ 加整轨上传入口）已完成（2026-08-11）**；**P1 AI 歌词识别 spike（faster-whisper 可行性验证）已完成（2026-08-12），验证通过 → 正式管线拍板落地，见 v0.8.1 章节**。歌词样式迭代与两个已知 bug（当前句抖动、长歌词省略号）明确留给后续小版本。
 
 ### 功能概述
 
 1. **本地上传 LRC 接口（干净版）**：移除 QQ 音乐自动获取（后端 `fetch_auto`/`fetch_qq_lyric` + 前端 QQ 拉取按钮/网易云死代码），修复 `save_album_lyric` 硬编码 `is_admin=True` 的权限漏洞（改真实管理员校验），新增真正的整轨 LRC 文件上传接口（服务端解析/校验/规范化落库），新增 `backend/utils/lrc.py` 纯函数与前端 `parseLrcToStandardFormat` 双端同构。
-2. **AI 歌词识别可行性验证（spike）**：装 faster-whisper，对 1~2 张已有整轨 mp3 的专辑做语音识别（含时间戳），按 `tracks_time` 切分到各单曲，产出评估报告（文本准确度 / 时间戳对齐 / CPU 耗时 RTF），验证通过后再决定正式管线是否落地。
+2. **AI 歌词识别可行性验证（spike）**：装 faster-whisper，对 1~2 张已有整轨 mp3 的专辑做语音识别（含时间戳），按 `tracks_time` 切分到各单曲，产出评估报告（文本准确度 / 时间戳对齐 / CPU 耗时 RTF），验证通过后再决定正式管线是否落地。✅ 已通过（2026-08-12），评估结论见「P1 spike 评估结论」。
 3. **后续小版本待办（本大版本不做）**：歌词显示到当前句时抖动；歌词过长只显示省略号导致其他歌词不显示；歌词样式迭代。
 
 ### 已定决策（2026-08-11 拍板）
 
 | 决策点 | 结论 |
 |--------|------|
-| AI 识别节奏 | **先 spike 验证**：faster-whisper（本地 ASR，CTranslate2，word_timestamps）→ 1~2 张专辑真实识别评估 → 通过再落正式管线（v0.8.1/v0.9） |
+| AI 识别节奏 | **spike 已通过（2026-08-12）**：faster-whisper small CPU int8 RTF 0.18-0.19、人声清晰句 ~90% 逐字命中、按 tracks_time 切分正确；结论「草稿级可行」→ **正式管线落地（v0.8.1）** |
 | DeepSeek 定位 | DeepSeek 是纯文本模型**不能直接吃音频**；音频→歌词靠 faster-whisper，DeepSeek 只在正式落地阶段做歌词校正（可选增强，需用户 API key，difflib 保时间戳对齐） |
 | QQ 音乐 | **彻底移除**：`fetch_auto` 接口 + `fetch_qq_lyric` + `clean_lyric` + 前端 QQ 拉取按钮 + 网易云死代码；保留 `krc2lrc`（本地文件转换） |
 | 歌词存储格式 | 保持 `mm:ss(.x)? 歌词`（无方括号，1 位小数）不变，后端新增校验/上传统一转成此格式；不引入标准 LRC 方括号格式 |
@@ -211,7 +211,7 @@ v0.8 **无新增表**，全部复用 `album_lyric`（歌词）与现有表。备
 - [x] **P0-B 后端重构**：`is_admin_user` 助手 → save 修权限+校验+抽 upsert → 新增 upload 接口 → 删 QQ → `test_lyric_api_realdata.py`（realdata）绿 → grep `fetch_auto` 后端零命中 ✅ 2026-08-11（f1ce6ee）
 - [x] **P0-C 前端改造**：删 QQ + 整轨上传入口 → `npm run lint` 过 + 手动回归（批量上传/粘贴/保存/滚动高亮/整轨同步）✅ 2026-08-11（f6b2530）
 - [x] **P0-D README 归档**：v0.8 章节 + 待做清单（本章节即本次规划产出）✅ 2026-08-11
-- [ ] **P1 AI spike**：装 faster-whisper → `lyric_recognizer.py` → `lyric_spike.py`（CLI）→ 跑 1~2 张专辑 → 报告（文本/对齐/RTF）→ 用户拍板正式管线是否落地
+- [x] **P1 AI spike**：装 faster-whisper → `lyric_recognizer.py` → `lyric_spike.py`（CLI）→ 跑 2 张专辑 → 报告（文本/对齐/RTF）→ 拍板落地 ✅ 2026-08-12（ce59579）
 
 ### P0 实现要点（复盘速查）
 
@@ -231,20 +231,111 @@ v0.8 **无新增表**，全部复用 `album_lyric`（歌词）与现有表。备
 - **权限收紧**：原任何登录用户可存歌词（硬编码 bug），改管理员校验后非管理员 403，前端 `isAdmin` 口径一致
 - **存储格式精度 bug**（前端 `parseTimeStr` 小数位 /1000 不自洽）→ 本版本不修，后端按前端现有格式生成保证 round-trip，归小版本
 
+### P1 spike 评估结论（2026-08-12）
+
+| 维度 | 结果 |
+|------|------|
+| CPU 耗时 | small int8 RTF 0.19（VAD 开）/ 0.18（VAD 关）；2105s 专辑 ≈ 6.7min、2662s 整轨 ≈ 8min → 后台一次性生成可接受，交互不可行（base 可再快一半） |
+| 文本准确度 | 人声清晰句 ~90% 逐字命中（春日光「某夜你離開/某天你走來」全对，仅同音字错）；人声密集/伴奏重 ~50-60%（冀西南「將甘苦注入湯」）；**输出繁体需转简体**；定位「草稿 + 时间戳」非成品 |
+| 时间戳对齐 | 句间隔 3-7s 符合人声节奏；VAD 滤掉器乐长空档（春日光 track1 尾 47s 空白被跳）；按 `tracks_time` 边界切分到单曲完全正确 |
+| VAD 双刃剑 | **音乐场景过度过滤**：开 → 冀西南 44min 仅 16 段（山雀/河北墨麒麟整首丢失，RTF 虚低到 0.01）；关 → 召回 72 段（泥河 3→55 条）但器乐段幻觉出「Zither Harp / 詞曲 李宗盛 / 字幕by索兰娅」 |
+| 结论 | **技术路径可行，质量上限「草稿 + 时间戳」** → 拍板落地正式管线（v0.8.1） |
+
+关键坑（正式管线复用）：hf-mirror 不支持新版 huggingface-hub 的 Xet 后端（cas-server 401）→ 必须 `HF_HUB_DISABLE_XET=1` 回退经典 HTTP；Windows 无符号链接 → 模型缓存降级但可用；spike 输出在 `backend/data/spike_output/`（gitignore）。
+
 ### 待做（勾选清单）
 
 - [x] P0-A `lrc.py` 纯函数 + 单测 ✅ 2026-08-11
 - [x] P0-B lyric.py 重构（删QQ + 权限修复 + 校验 + upload 接口）+ realdata 测试 ✅ 2026-08-11
 - [x] P0-C 前端删 QQ + 整轨 LRC 上传入口 ✅ 2026-08-11
-- [ ] P1 AI spike（faster-whisper 安装 + 识别器 + CLI 报告）
+- [x] P1 AI spike（faster-whisper 安装 + 识别器 + CLI 报告）✅ 2026-08-12
 
 ### 后续小版本待办（本大版本不做）
 
 - [ ] **歌词当前句抖动**：`getLyricItemStyle` 字号随距离变化 + `smoothScrollTo` 的 offsetTop 不稳定形成反馈循环
 - [ ] **长歌词省略号**：`.lyric-text` 的 `white-space: nowrap; text-overflow: ellipsis` 撑破居中布局导致其他歌词不显示
 - [ ] **歌词样式迭代**：整体美化（含前端 `parseTimeStr` 小数精度 bug）
-- [ ] **DeepSeek 歌词校正正式落地**（需 API key，difflib 保时间戳对齐）
+- [ ] ~~DeepSeek 歌词校正正式落地~~ → 已并入 v0.8.1 正式管线
 - [ ] **`album_pool.tracks_time` DDL 漂移**统一
+
+---
+
+## v0.8.1 — AI 歌词识别正式管线（规划，待实现）
+
+> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P2 落地。
+
+### 功能概述
+
+1. **识别触发**：管理员在歌词弹窗对已有整轨 mp3 的专辑点「AI 识别歌词」→ 后台异步识别（RTF 0.18，44min 专辑 ≈ 8min，串行任务队列）→ 完成落库
+2. **草稿产出**：faster-whisper small（CPU int8，VAD 关）→ 幻觉过滤（no_speech_prob 阈值 + 噪音模式 + 器乐标签滤除）→ OpenCC 繁→简 → 按 `tracks_time` 切分验证
+3. **DeepSeek 校正**：以 whisper 逐行 `mm:ss.x 文本` 为锚，强制保行数/行序/时间戳只改文字，difflib.SequenceMatcher 处理行数变化再对齐回时间戳
+4. **定位与覆盖**：产物是「草稿」，管理员可再用官方歌词上传/手动编辑覆盖（复用 v0.8 P0 的 save/upload 落库路径）
+
+### 已定决策（2026-08-12 拍板）
+
+| 决策点 | 结论 |
+|--------|------|
+| 正式管线 | **落地**（用户拍板，spike 验证通过）；含简体转换 + 幻觉过滤 + DeepSeek 校正 |
+| 模型 | small（CPU int8，RTF 0.19 可接受）；如需更快降 base（RTF ~0.09，质量略低） |
+| VAD | **关闭**（spike 证明音乐场景过度过滤导致曲目整首丢失）；幻觉靠 no_speech_prob + 噪音模式过滤 |
+| 简体 | faster-whisper 输出繁体 → **OpenCC t2s** 转简体落库（全站存储/显示统一简体） |
+| DeepSeek 校正 | 正式阶段做，需用户 API key（config.py 新增）；whisper 时间戳为锚，只改文字不改时间，difflib 对齐兜底 |
+| 异步 | 单机后台线程 + 内存任务表（spike 规模够用，不引 Redis）；识别串行化，避免 CPU 100% 抢占 |
+| 触发入口 | 歌词弹窗「AI 识别歌词」按钮（仅管理员，复用 is_admin 口径），完成后刷新歌词 |
+| 产物存储 | 复用 `album_lyric`（整轨绝对时间存储格式，前端按 tracks_time 切分），无新表 |
+
+### 数据来源
+
+| 数据 | 存哪 | 现成 or 需新建 | 查询接口 / 字段 |
+|------|------|--------------|----------------|
+| 整轨 mp3 | `album_pool.mp3_url` → `backend/data/album_track/` | 现成 | `GET /tracks/<file>` |
+| 单曲边界 | `albums_{user_id}.tracks_time` | 现成 | `/api/album/detail`（P1 spike 已验证读取路径） |
+| 识别产物 | `album_lyric.lyric_text`（整轨绝对时间） | 现成表 | save / upload 复用 |
+| faster-whisper 模型 | `portable/models/faster-whisper`（small 已下载） | 现成 | 懒加载单例 |
+| OpenCC 繁转简 | pip `opencc-python-reimplemented` | 需新建依赖 | 纯函数 |
+| DeepSeek API key | `config.py` 新增 | 需新建 | 校正环节 |
+
+### 架构设计
+
+- **识别器升级**：`lyric_recognizer.py` transcribe 默认 `vad_filter=False` + 返回 segment `no_speech_prob` → 幻觉过滤（no_speech_prob 阈值丢弃 + `[Music]`/`詞曲 李宗盛`/`字幕by` 等噪音模式滤除 + 器乐标签黑名单）；新增繁→简转换（OpenCC t2s）
+- **异步任务**：`lyric_ai.py`（新 api 模块）`POST /api/album/lyric/recognize/<album_pool_id>` 触发后台线程任务，内存任务表存状态（running/done/failed + 进度），`GET .../status/<task_id>` 轮询；完成后自动落 `album_lyric`
+- **DeepSeek 校正**：`deepseek_correct.py`（正式阶段）：whisper 行 `mm:ss.x 文本` 作锚 → prompt 强制「逐行只改文字，不改时间戳、不增删行」→ 若行数变化用 difflib.SequenceMatcher 对齐回锚定时间戳
+- **前端**：`AlbumLyricViewer.vue` 新增「AI 识别歌词」按钮（管理员）→ 触发 + 轮询状态 + 完成提示 + 刷新（复用 `$emit('update:lyrics')`）
+
+### 数据库
+
+无新增表，复用 `album_lyric`（P0 已建）；`config.py` 新增 `DEEPSEEK_API_KEY`（正式阶段）。
+
+### 后端接口
+
+- `POST /api/album/lyric/recognize/<album_pool_id>`（新增，管理员）——触发异步识别，返回 `task_id`；校验 album 有整轨 mp3 + 管理员权限
+- `GET /api/album/lyric/recognize/status/<task_id>`（新增）——轮询任务状态（running/done/failed + message）
+- 复用：`POST /api/album/lyric/save/<album_pool_id>`（识别完成后也可再手动覆盖）
+
+### 前端组件
+
+- `AlbumLyricViewer.vue`（改）——弹窗头部新增「AI 识别歌词」按钮（仅管理员，`isAdmin` 口径），点击触发 + 轮询状态 + 完成 toast + 刷新歌词；识别中禁用按钮 + 提示耗时
+
+### 分阶段路线
+
+- **P0 识别器升级**：VAD 关 + no_speech_prob 幻觉过滤 + 噪音模式滤除 + OpenCC 繁转简 + 单测（纯函数）
+- **P1 异步任务 + 接口**：`lyric_ai.py`（recognize + status）+ 后台线程任务表 + realdata 测试
+- **P2 DeepSeek 校正 + 前端**：`deepseek_correct.py`（difflib 保时间戳）+ config API key + 前端按钮 + realdata 验证 + README 归档
+
+### 难点与对策
+
+- **幻觉过滤**：no_speech_prob > 0.6 丢弃 + 噪音模式（`[Music]`/`詞曲 李宗盛`/`字幕by`/器乐标签）+ 连续短句聚合 → 单测锁定
+- **繁体转简体**：OpenCC `t2s`（纯 Python 实现，无外部服务）；注意歌词专名（如人名）转换后仍准确
+- **DeepSeek 校正**：以 whisper 时间戳为锚，prompt 强约束「只改文字」，difflib 对齐行数变化；校正失败回退 whisper 原稿
+- **CPU 占用**：识别数分钟 100% → 串行任务 + 前端明确提示「后台生成中」；并发请求排队
+- **异步任务进程重启丢失**：内存任务表不持久化 → 后端重启任务状态丢失，识别接口幂等（重复触发视为新任务）
+
+### 待做（勾选清单）
+
+- [x] P1 AI spike（faster-whisper 安装 + 识别器 + CLI 报告）✅ 2026-08-12（v0.8 P1）
+- [ ] P0 识别器升级（VAD 关 + 幻觉过滤 + OpenCC 简体 + 单测）
+- [ ] P1 异步任务 + recognize/status 接口 + realdata 测试
+- [ ] P2 DeepSeek 校正（difflib 保时间戳）+ config API key + 前端入口 + README 归档
 
 ---
 
