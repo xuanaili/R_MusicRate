@@ -151,9 +151,9 @@ MusicRate/
 
 ### 功能概述
 
-1. **等级经验制度**：经验与听取总时长强相关——听 1 秒 = 1 XP，辅以听后感 / 评论 / 评分小额加分；等级由经验按平方根曲线推导（Lv.N 约需 N² 小时），在个人资料页展示等级徽章 + 经验进度条 + 距下一级进度 + 等级称号
-2. **统计展示优化**：听取总时长卡片与近 N 天柱状图由「秒」统一改为「小时」，小数点后保留 1 位
-3. **蒙版透明度滑轨偏移修复**：外观栏滑块轨道填充渐变与滑块按钮（thumb）位置不一致 + thumb 垂直方向相对轨道偏移的 CSS bug
+1. **等级经验制度**：经验与听取总时长强相关——听 1 秒 = 1 XP，辅以听后感 / 评论 / 评分小额加分；等级由经验按平方根曲线推导（Lv.N 约需 N² 小时），在个人资料页展示等级徽章 + 经验进度条 + 距下一级进度 + 等级称号；**配套经验反馈**：升级瞬间弹横幅、保存听后感 / 评论 / 评分成功 toast「+N 经验」
+2. **统计展示优化**：听取总时长卡片与近 N 天柱状图由「秒」统一改为「小时」，小数点后保留 1 位；**总时长口径统一**（改读持久化 `users.listening_total`，删专辑不掉）；**新增活跃度**：连续收听天数 + 近 30 天活跃天数
+3. **蒙版透明度滑轨偏移修复**：外观栏滑块轨道填充渐变与滑块按钮（thumb）位置不一致 + thumb 垂直方向相对轨道偏移的 CSS bug；顺手加拖动数值气泡与刻度线
 
 ### 已定决策（2026-08-11 拍板）
 
@@ -165,6 +165,10 @@ MusicRate/
 | 小时显示 | 听取时长统一 `h + 1 位小数`（不足 1 小时也显示如 `0.4小时`），总时长卡片与近 N 天图表一致 |
 | 等级入口 | P0 先做个人资料页（徽章 + 进度条 + 称号）；头像旁 / 评论区扩展待定 |
 | 加分防刷 | 仅计「新增 / 保存成功」一次，不做追溯；个人应用接受小额刷取风险 |
+| 经验反馈 | 暂停 / 加分接口返回 xp、level、level_up；前端对比 localStorage 上次等级检测升级并弹横幅，加分接口返回本次 +N 供 toast |
+| 总时长口径 | 新增 `users.listening_total` 持久化列（迁移回填 = `SUM(listening_duration)`，之后随 play_seconds 累加），总时长改读此列，删专辑不掉；`user_listening_log` 仅供图表 |
+| 活跃度 | 连续收听天数（今天往回连续非 0）+ 近 30 天活跃天数，由 user_listening_log 纯函数计算 |
+| 滑轨体验 | P2 修复时顺带：拖动时 thumb 上方数值气泡 + 0/25/60 刻度线 |
 
 ### 数据来源
 
@@ -178,48 +182,52 @@ MusicRate/
 
 ### 架构设计
 
-- **XP 单一货币**：所有加分（收听 / 听后感 / 评论 / 评分）折算进 `users.xp`，等级由 xp 实时推导、不单独存等级，保证等级永远与经验一致，删专辑不掉经验
+- **XP / 听取时长双列**：经验（xp，含加分）与持久化听取总时长（listening_total，纯收听）同源同累加——等级由 xp 实时推导、总时长展示读 listening_total，删专辑均不掉，保证「经验 vs 统计」不打架
 - **纯函数共享**：`backend/utils/level.py` + `frontend/src/utils/level.js` 用同一套 `computeLevel(xp)` / `levelProgress(xp)` / `xpToNextLevel(xp)` / `levelTitle(level)`，复用 scoreCalc「前后端一致」既有模式，双端可单测
-- **回填幂等**：`users.xp` 列迁移仅在「新加列的那一次启动」回填（循环各用户表 `SUM(listening_duration)`），重启不重复计数；之后收听在 pause 时累加 play_seconds
+- **回填幂等**：`users.xp` / `users.listening_total` 两列迁移仅在「新加列的那一次启动」回填（循环各用户表 `SUM(listening_duration)`），重启不重复计数；之后收听在 pause 时都 `+= play_seconds`
 
-### 数据库（1 处变更）
+### 数据库（2 处变更，同一次幂等迁移）
 
-1. `users` 表新增 `xp` 列——幂等迁移：查 `information_schema.columns` 缺列则 `ALTER TABLE users ADD COLUMN xp FLOAT DEFAULT 0` 并回填初始经验，封装函数挂进 `init_base_tables()`（复用 avatar 迁移已验证模式）
+1. `users` 表新增 `xp` 列——经验货币（收听 1 秒 = 1 XP + 评分 / 听后感 / 评论加分）
+2. `users` 表新增 `listening_total` 列——持久化听取总秒数（删专辑不掉）
+- 幂等迁移：查 `information_schema.columns` 缺列则 `ALTER TABLE ADD COLUMN` 并一次性回填 `xp = listening_total = SUM(listening_duration)`，重启不重复计数，封装挂进 `init_base_tables()`（复用 avatar 迁移已验证模式）
 
 ### 后端接口
 
-- `POST /api/album/listening/pause/<album_id>`（改）——成功后 `users.xp += play_seconds`（与 listening_duration 同请求）
-- `POST /api/album/review/add/<album_id>`（改）——成功后 `xp += 20`
-- `POST /api/album/comment/add/<album_id>`（改）——成功后 `xp += 10`
-- `PUT /api/album/score/save/<album_id>`（改）——成功后 `xp += 5`
+- `POST /api/album/listening/pause/<album_id>`（改）——成功后 `users.xp += play_seconds`、`users.listening_total += play_seconds`（与 listening_duration 同请求）；返回 `xp`、`level`、`level_up`
+- `POST /api/album/review/add/<album_id>`（改）——成功后 `xp += 20`，返回 `xp_gained`
+- `POST /api/album/comment/add/<album_id>`（改）——成功后 `xp += 10`，返回 `xp_gained`
+- `PUT /api/album/score/save/<album_id>`（改）——成功后 `xp += 5`，返回 `xp_gained`
 - `GET /api/user/info`（改）——返回 `xp`、`level`、`next_level_xp`、`xp_progress`、`level_title`
-- 加分收敛：`backend/utils/user.py` 新增 `add_xp(user_id, amount)` 公共函数，各接口成功后一行调用
+- `GET /api/user/stats`（改）——`total_duration` 改读 `users.listening_total`（不再 SUM albums.listening_duration）；新增 `current_streak`、`active_days_30`
+- 加分收敛：`backend/utils/user.py` 新增 `add_xp(user_id, amount)` 公共函数（返回本次 +N），各接口成功后一行调用
 
 ### 前端组件
 
-- `StatsPanel.vue`（改）——`formatDuration` 改 `h + 1 位小数`；近 N 天柱状图 y 轴 / 轴标签 / tooltip 秒 → 小时
+- `StatsPanel.vue`（改）——`formatDuration` 改 `h + 1 位小数`；近 N 天柱状图 y 轴 / 轴标签 / tooltip 秒 → 小时；新增连续收听天数 / 近 30 天活跃天数卡片
 - `ProfilePanel.vue`（改）——Lv 徽章旁新增经验进度条 +「距下一级还差 X 经验」+ 等级称号；展示 `/api/user/info` 新增字段
-- `AppearancePanel.vue`（改）——滑轨填充渐变按 thumb 宽度补偿 + thumb 垂直居中修正（先实测 rect 再改）
+- `AppearancePanel.vue`（改）——滑轨填充渐变按 thumb 宽度补偿 + thumb 垂直居中修正 + 拖动数值气泡 + 0/25/60 刻度线（先实测 rect 再改）
 - 新建 `frontend/src/utils/level.js`——与后端一致的等级纯函数
+- 升级横幅 / +N 经验 toast——复用全局 `$message`；localStorage 记上次等级，跨会话检测升级
 
 ### 分阶段路线
 
-- **P0 等级经验**：users.xp 迁移 + 回填 → level.py / level.js 纯函数（先单测）→ pause / 评分 / 听后感 / 评论挂加分 → `/api/user/info` 加字段 → ProfilePanel 进度条 → realdata 验证
-- **P1 统计单位**：StatsPanel 总时长 + 近 N 天图表全部 `h + 1 位小数`（纯前端，后端仍返回秒）
-- **P2 滑轨偏移修复**：按布局对齐工作流先 DevTools 实测 thumb / track rect → 修 CSS → 重测收敛 → 窄屏检查
+- **P0 等级经验 + 反馈**：users.xp / listening_total 迁移 + 回填 → level.py / level.js 纯函数（先单测）→ pause / 评分 / 听后感 / 评论挂加分 → 升级横幅 + +N 经验 toast → `/api/user/info` 加字段 → ProfilePanel 进度条 → realdata 验证
+- **P1 统计优化**：StatsPanel 总时长 + 近 N 天图表全部 `h + 1 位小数`（纯前端）→ 总时长改读 listening_total（口径统一）→ 连续收听天数 / 近 30 天活跃天数（user_stats.py 纯函数 + 单测）
+- **P2 滑轨修复 + 体验**：按布局对齐工作流先 DevTools 实测 thumb / track rect → 修 CSS（填充渐变补偿 + thumb 垂直居中）→ 拖动数值气泡 + 刻度线 → 重测收敛 → 窄屏检查
 
 ### 难点与对策
 
-- **xp 双口径**：历史回填 = `SUM(listening_duration)`，新收听 = 累加 play_seconds，两者相加即可；回填只跑一次（幂等）
+- **xp / listening_total 双列同源**：两者同一时刻回填 `SUM(listening_duration)`、pause 时都 `+= play_seconds`，唯一区别是加分只进 xp——回填只跑一次（幂等），删专辑均不掉
 - **加分防刷**：评分防抖保存会频繁触发 → 单次加分值低（+5）可接受；听后感 / 评论只计「新增」不计「编辑」
 - **滑轨偏移**：不凭肉眼猜，按布局对齐工作流实测 rect 后改；注意 `-webkit-appearance:none` 下 thumb 的 margin-top 补偿与渐变起止点按 thumb 宽度偏移
-- **等级与统计一致性**：等级由 xp 纯函数实时推导，前后端同源，避免统计 / 等级两套口径
+- **等级与统计一致性**：等级由 xp 纯函数实时推导，总时长读 listening_total，两列同源保证「经验 vs 统计」不打架
 
 ### 待做（勾选清单）
 
-- [ ] P0 等级经验系统
-- [ ] P1 统计单位 h + 1 位小数
-- [ ] P2 蒙版滑轨偏移修复
+- [ ] P0 等级经验系统 + 经验反馈（升级横幅 + +N 经验 toast）
+- [ ] P1 统计优化（h + 1 位小数 + 总时长口径统一 + 连续收听天数 / 活跃度）
+- [ ] P2 蒙版滑轨偏移修复 + 拖动数值气泡 / 刻度线
 - [ ] （补充）听取时长显示格式统一：AlbumItem / AlbumBaseInfo / AlbumReviewEditor / AlbumCommentSection 多处格式各异，抽公共 `utils/duration.js`
 - [ ] （补充）等级徽章入口扩展：UserAvatar（WebHome 右上角）+ 评论区展示等级（待定）
 - [ ] （补充）等级称号文案确认（如 Lv1-3 初听者 → Lv4-7 爱乐人 → Lv8-12 资深乐迷 → …）
