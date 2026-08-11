@@ -603,6 +603,11 @@ async created() {
       this.initMeteorAnimation(); // 初始化流星动画
     this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();
     window.addEventListener("resize", this.initBallAnimation);
+    // 异常退出兜底上报：关页签/刷新/浏览器后退到站外等页面级卸载
+    // 绑定 this，否则监听回调里 this 会指向 window
+    this._pageExitHandler = this.handlePageExit.bind(this);
+    window.addEventListener('pagehide', this._pageExitHandler);
+    window.addEventListener('beforeunload', this._pageExitHandler);
   },
   activated() {
     // ✅✅✅ 整合新增：组件激活时重新初始化小球动画
@@ -628,9 +633,10 @@ async created() {
     if (this.fadeTimer) clearInterval(this.fadeTimer);
     if (this.volumeTimer) clearInterval(this.volumeTimer);
     this.volumeTimer = null;
-    this.fadeOutVolume(() => {
-      this.pauseListeningTimer();
-    });
+    // 退出兜底上报：原 fadeOutVolume+async pause 在销毁后 $refs 被置空会漏报，改用 keepalive 上报
+    window.removeEventListener('pagehide', this._pageExitHandler);
+    window.removeEventListener('beforeunload', this._pageExitHandler);
+    this.flushListeningReport();
     this.$refs.albumTrackListRef?.triggerSaveScore();
   },
   beforeUnmount() {
@@ -640,9 +646,7 @@ async created() {
     if (this.fadeTimer) clearInterval(this.fadeTimer);
     if (this.volumeTimer) clearInterval(this.volumeTimer);
     this.volumeTimer = null;
-    this.fadeOutVolume(() => {
-      this.pauseListeningTimer();
-    });
+    this.flushListeningReport();
   },
   methods: {
         // 新增：接收 rhyConfig 并更新本地数据
@@ -1201,6 +1205,38 @@ togglePlayPause() {
         console.log(`⚠️ [上传失败] 专辑ID=${this.album.id}：`, err.response?.data?.msg || err.message);
       }
     },
+
+    // 退出兜底上报：播放中直接返回/关页签/刷新等异常退出时，用 keepalive fetch 确保时长+进度发出
+    // （dev skill 6.3：组件销毁时 async axios 会丢；页面卸载时普通请求会被取消，keepalive 可保活送达。
+    //   不依赖 $refs——销毁后 Vue 会把 ref 置空，导致 pauseListeningTimer 的守卫提前 return 而漏报）
+    flushListeningReport() {
+      if (this._exitReported) return; // 单次生命周期只兜底上报一次（防 pagehide+beforeunload 双发）
+      this._exitReported = true;
+      const token = localStorage.getItem('token') || '';
+      if (!token || !this.album.id || !this.audioSrc) return;
+      // 优先取音频实时位置，$refs 已失效则回退到缓存的 currentTime
+      const audio = this.$refs.audioRef;
+      const liveTime = audio && audio.currentTime ? audio.currentTime : this.currentTime;
+      const progressSeconds = Math.max(0, Number(liveTime) || 0);
+      try {
+        fetch('http://localhost:5000/api/album/listening/pause/' + this.album.id, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json;charset=utf-8',
+            'Authorization': token
+          },
+          body: JSON.stringify({progress_seconds: progressSeconds}),
+          keepalive: true // 页面卸载时仍能送达
+        }).catch(() => { /* 兜底上报失败静默忽略，不影响正常操作 */ });
+        console.log(`✅ [退出兜底上报] 专辑ID=${this.album.id}，进度=${progressSeconds}s`);
+      } catch (err) {
+        console.log(`⚠️ [退出兜底上报失败] 专辑ID=${this.album.id}：`, err.message);
+      }
+    },
+    // 页面级卸载（关标签页/刷新/浏览器后退到站外）：兜底上报时长+进度
+    handlePageExit() {
+      this.flushListeningReport();
+    },
     handleTimeUpdate() {
       const audio = this.$refs.audioRef;
       if (!audio) return;
@@ -1732,7 +1768,8 @@ async addSingleReview(content, finalScore) {
     },
     // ======== 【修改点4/4】核心修改：返回按钮的跳转逻辑 ========
     goBack() {
-      console.log(111)
+      // 播放中直接返回专辑列表：先兜底上报时长+进度，再跳转（确保组件销毁前发出）
+      this.flushListeningReport();
       // 核心：定义一个Vue全局变量，存要切换的tab值
       window.targetTab = 'mymusic'
       // 正常跳转/webhome即可，不用加任何meta
