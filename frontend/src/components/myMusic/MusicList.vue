@@ -69,6 +69,7 @@
           v-model="searchKeyword"
           placeholder="搜索专辑名/歌手"
           class="search-input"
+          autocomplete="off"
           @keyup.enter="handleSearch"
         >
         <button @click="handleSearch" class="search-btn">搜索</button>
@@ -82,6 +83,7 @@
           v-model="tagKeyword"
           placeholder="搜索专辑类型/标签"
           class="search-input"
+          autocomplete="off"
           @keyup.enter="handleTagSearch"
         >
         <button @click="handleTagSearch" class="search-btn">搜索</button>
