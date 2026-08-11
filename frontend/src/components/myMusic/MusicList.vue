@@ -69,21 +69,24 @@
           v-model="searchKeyword"
           placeholder="搜索专辑名/歌手"
           class="search-input"
-          autocomplete="off"
+          autocomplete="new-password"
           @keyup.enter="handleSearch"
         >
         <button @click="handleSearch" class="search-btn">搜索</button>
         <button v-if="searchKeyword" @click="clearSearch" class="clear-btn">清空</button>
       </div>
 
-      <!-- 独立搜索：类型/标签 -->
+      <!-- 独立搜索：类型/标签
+        ⚠️ autocomplete="new-password" 是故意为之：Chrome 会无视 autocomplete="off"，把已保存的用户名自动填入
+        这类无 name/id 信号的纯文本输入框（启发式误判为用户名框）。new-password 是公认的阻断手段，勿删。
+      -->
       <div class="search-container tag-search-container">
         <input
           type="text"
           v-model="tagKeyword"
           placeholder="搜索专辑类型/标签"
           class="search-input"
-          autocomplete="off"
+          autocomplete="new-password"
           @keyup.enter="handleTagSearch"
         >
         <button @click="handleTagSearch" class="search-btn">搜索</button>

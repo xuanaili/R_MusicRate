@@ -156,6 +156,7 @@
               v-model="albumSearchText"
               class="form-control"
               placeholder="搜索专辑名称/歌手..."
+              autocomplete="new-password"
             />
           </div>
           <div class="album-select-title">选择专辑</div>
@@ -211,6 +212,7 @@
               v-model="albumSearchText"
               class="form-control"
               placeholder="搜索专辑名称/歌手..."
+              autocomplete="new-password"
             />
           </div>
           <div class="album-select-title">选择专辑</div>
