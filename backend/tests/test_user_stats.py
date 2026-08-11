@@ -12,14 +12,14 @@ from backend.utils.user_stats import (
     build_tag_distribution,
     compute_active_days,
     compute_current_streak,
-    has_review,
+    count_review_items,
     is_scored,
     parse_days_param,
 )
 
 
 class TestScoredReview:
-    """已评分 / 听后感判断：my_score / review 非空且非 "[]" """
+    """已评分判断：my_score 含非 0 即算；听后感条数：count_review_items（v0.7.2 口径 = feelings 长度之和）"""
 
     def test_is_scored_none(self):
         assert is_scored(None) is False
@@ -45,14 +45,33 @@ class TestScoredReview:
     def test_is_scored_invalid_json(self):
         assert is_scored("not-json") is False
 
-    def test_has_review_none(self):
-        assert has_review(None) is False
+    def test_count_review_none(self):
+        assert count_review_items(None) == 0
 
-    def test_has_review_empty_array(self):
-        assert has_review("[]") is False
+    def test_count_review_empty_string(self):
+        assert count_review_items("") == 0
 
-    def test_has_review_valid(self):
-        assert has_review('[{"content": "好听"}]') is True
+    def test_count_review_empty_array(self):
+        assert count_review_items("[]") == 0
+
+    def test_count_review_empty_dict(self):
+        # dict 空 feelings = 无听后感
+        assert count_review_items('{"feelings": []}') == 0
+
+    def test_count_review_dict_format(self):
+        # 真实存储格式：{"feelings": [...]} → 返回 feelings 条数
+        assert count_review_items('{"feelings": [{"content": "a"}, {"content": "b"}]}') == 2
+
+    def test_count_review_legacy_array_format(self):
+        # 旧版数组格式向后兼容
+        assert count_review_items('[{"content": "好听"}]') == 1
+
+    def test_count_review_dict_without_feelings(self):
+        # dict 无 feelings 字段（如旧版 {"personal_feeling": ...}）→ 0
+        assert count_review_items('{"personal_feeling": "x"}') == 0
+
+    def test_count_review_invalid_json(self):
+        assert count_review_items("not-json") == 0
 
 
 class TestAccumulateDailyLogs:
@@ -340,6 +359,21 @@ class TestAggregateStats:
         assert stats['tag_distribution'] == []
         assert stats['current_streak'] == 0
         assert stats['active_days_30'] == 0
+
+    def test_review_count_total_feelings(self):
+        # v0.7.2 口径：听后感总条数 = 所有专辑 feelings 长度之和，兼容 dict（真实格式）与旧数组
+        album_rows = [
+            {'my_score': '[]', 'review': '{"feelings": [{"content": "a"}, {"content": "b"}]}',
+             'listening_duration': 0, 'score': 0, 'tags': '[]'},
+            {'my_score': '[]', 'review': '{"feelings": [{"content": "c"}]}',
+             'listening_duration': 0, 'score': 0, 'tags': '[]'},
+            {'my_score': '[]', 'review': '[]',
+             'listening_duration': 0, 'score': 0, 'tags': '[]'},
+            {'my_score': '[]', 'review': None,
+             'listening_duration': 0, 'score': 0, 'tags': '[]'},
+        ]
+        stats = aggregate_stats(album_rows, [], 7)
+        assert stats['review_count'] == 3  # 2 + 1 + 0 + 0
 
 
 def json_str(tags):

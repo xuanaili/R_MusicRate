@@ -42,7 +42,8 @@ def _insert_album(client, user_id, **fields):
         'singer': '测试歌手',
         'release_year': 2026,
         'my_score': '[8.0, 9.0]',
-        'review': '[{"content":"好听"}]',
+        # v0.7.2：真实存储格式为 dict {"feelings":[...]}（旧测试数组格式与实际写入不符，是统计为0的盲区）
+        'review': '{"feelings": [{"content": "好听"}]}',
         'listening_duration': 300.0,
         'score': 85.0,
         'tags': '["Pop【流行】","Rock【摇滚】"]',
@@ -128,6 +129,20 @@ def test_stats_matches_db_aggregation(client, test_user):
     # 评分分布：由 my_score [8.0, 9.0] 计算总分 8.0*0.6+9.0*0.4=8.4 → 0-9 桶
     assert sum(b['count'] for b in data['score_distribution']) == 1
     assert data['score_distribution'][0] == {'bucket': '0-9', 'count': 1}
+
+
+@pytest.mark.realdata
+def test_stats_review_count_total_feelings(client, test_user):
+    """v0.7.2 口径：听后感统计 = 所有专辑 feelings 总条数（真实 dict 格式，多张专辑求和）"""
+    user_id = test_user['user_id']
+    _insert_album(client, user_id, album_name='听后感专辑A',
+                  review='{"feelings": [{"content": "a"}, {"content": "b"}]}')
+    _insert_album(client, user_id, album_name='听后感专辑B',
+                  review='{"feelings": [{"content": "c"}]}')
+
+    r = client.get('/api/user/stats', query_string={'days': 7}, headers=test_user['headers']).get_json()
+    assert r['code'] == 200, r
+    assert r['data']['review_count'] == 3  # 2 + 1
 
 
 @pytest.mark.realdata

@@ -3,7 +3,7 @@
 # - 听取总时长：v0.7.1 P1 起改读 users.listening_total（持久化列，删专辑不掉）；不再 SUM albums.listening_duration
 # - 近N天听取时长：仅用 user_listening_log 按 listen_date 分组累加（柱状图专用）
 # - 活跃度：连续收听天数 / 近 30 天活跃天数，由 user_listening_log 计算（compute_current_streak / compute_active_days）
-# - 已评分 / 听后感：my_score / review 非空且非 "[]"
+# - 已评分：my_score 含非 0；听后感数：v0.7.2 起 = 所有专辑 feelings 总条数（count_review_items，兼容 dict/旧数组）
 # - 标签分布：albums.tags 逐行解析前 top_n 个高频标签（气泡图）
 # - 评分分布：按总分分桶（0 分未评分不计入）
 import datetime
@@ -25,10 +25,23 @@ def is_scored(my_score):
     return any(isinstance(s, (int, float)) and s > 0 for s in parsed)
 
 
-def has_review(review):
-    """听后感判断：review 非空且非空数组（"[]"）。None/""/"[]" → False"""
+def count_review_items(review):
+    """听后感条数：返回 review 字段中的听后感条数（v0.7.2 口径 = feelings 数组长度之和）
+
+    ⚠️ v0.7.2 修复：旧 has_review 只认 JSON 数组，但真实存储是 dict {"feelings":[...]}
+    （写入路径 review.py / album.py / album_pool.py），导致统计恒为 0；日历接口按 dict 解析所以正常。
+    修复后兼容两种格式，统计与日历口径一致。
+    - None/""/非法 JSON/空 dict/空数组 → 0
+    - dict {"feelings":[...]}（真实格式）→ len(feelings)
+    - list [...]（旧版数组格式，向后兼容）→ len(list)
+    """
     parsed = safe_json_loads(review)
-    return isinstance(parsed, list) and len(parsed) > 0
+    if isinstance(parsed, list):
+        return len(parsed)
+    if isinstance(parsed, dict):
+        feelings = parsed.get('feelings')
+        return len(feelings) if isinstance(feelings, list) else 0
+    return 0
 
 
 def parse_days_param(days, default=7):
@@ -198,7 +211,8 @@ def aggregate_stats(album_rows, daily_rows, days, total_duration=None):
     return {
         'album_count': len(album_rows),
         'scored_count': sum(1 for a in album_rows if is_scored(a.get('my_score'))),
-        'review_count': sum(1 for a in album_rows if has_review(a.get('review'))),
+        # v0.7.2：听后感总条数（所有专辑 feelings 长度之和），兼容 dict + 旧数组
+        'review_count': sum(count_review_items(a.get('review')) for a in album_rows),
         'total_duration': round(float(total_duration or 0), 1),
         'current_streak': compute_current_streak(daily_rows),
         'active_days_30': compute_active_days(daily_rows, 30),
