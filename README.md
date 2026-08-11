@@ -16,7 +16,7 @@
 - **风格标签**：`English【中文】` 标签体系、层级树、气泡图展示关联风格
 - **歌词**：LRC 歌词随播放进度滚动，支持上传歌词
 - **专题周**：每周精选 7-10 张专辑的分享专题，配标签气泡图
-- **个人中心**：头像上传、修改密码、蒙版透明度调节、听取时长统计图表（近 N 天柱状图）
+- **个人中心**：头像上传、修改密码、等级经验（经验与听取时长强相关）、蒙版透明度调节、听取时长统计图表（近 N 天柱状图）
 - **音乐足迹**：按天记录听取时长与听后感
 
 ## 技术栈
@@ -144,6 +144,88 @@ MusicRate/
 ---
 
 # 版本历史
+
+## v0.7.1 — 等级经验系统与统计展示优化（规划中）
+
+> 承接 v0.7 个人中心，落地「等级-经验」体系（经验与听取总时长强相关）+ 听取时长统一以「小时」展示 + 修复外观栏蒙版透明度滑轨偏移 bug。**本版本为规划稿**：实现待确认后，按 `feature_development_workflow`（20260810）拆 P0 逐步落地。
+
+### 功能概述
+
+1. **等级经验制度**：经验与听取总时长强相关——听 1 秒 = 1 XP，辅以听后感 / 评论 / 评分小额加分；等级由经验按平方根曲线推导（Lv.N 约需 N² 小时），在个人资料页展示等级徽章 + 经验进度条 + 距下一级进度 + 等级称号
+2. **统计展示优化**：听取总时长卡片与近 N 天柱状图由「秒」统一改为「小时」，小数点后保留 1 位
+3. **蒙版透明度滑轨偏移修复**：外观栏滑块轨道填充渐变与滑块按钮（thumb）位置不一致 + thumb 垂直方向相对轨道偏移的 CSS bug
+
+### 已定决策（2026-08-11 拍板）
+
+| 决策点 | 结论 |
+|--------|------|
+| 经验来源 | 听取时长为主（1 秒 = 1 XP）；听后感新增 +20、评论新增 +10、评分保存成功 +5 小额加分，不追溯历史 |
+| 升级曲线 | 平方根：`level = floor(sqrt(xp / 3600))`，Lv.N 约需 N² 小时（1h→Lv1、4h→Lv2、9h→Lv3、100h→Lv10、400h→Lv20） |
+| XP 存储 | 新增 `users.xp` 列；暂停时随 listening_duration 一起累加；迁移时用已有 `SUM(listening_duration)` 一次性回填初始经验 |
+| 小时显示 | 听取时长统一 `h + 1 位小数`（不足 1 小时也显示如 `0.4小时`），总时长卡片与近 N 天图表一致 |
+| 等级入口 | P0 先做个人资料页（徽章 + 进度条 + 称号）；头像旁 / 评论区扩展待定 |
+| 加分防刷 | 仅计「新增 / 保存成功」一次，不做追溯；个人应用接受小额刷取风险 |
+
+### 数据来源
+
+| 数据 | 存哪 | 现成 or 需新建 | 查询接口 / 字段 |
+|------|------|--------------|----------------|
+| 听取总时长（秒） | `albums_{user_id}.listening_duration` | 现成 | SUM，`/api/user/stats` `total_duration` |
+| 近N天听取（秒） | `user_listening_log.duration_seconds` | 现成 | `/api/user/stats` `daily_listening` |
+| 经验 XP | `users.xp` | 需新建列 | 各接口累加 + 迁移回填 |
+| 等级 / 进度 / 称号 | 由 xp 推导 | 需新建纯函数 | `computeLevel(xp)` 等 |
+| 听后感 / 评论 / 评分加分 | `users.xp` | 需新建 | 各接口成功后 `add_xp()` |
+
+### 架构设计
+
+- **XP 单一货币**：所有加分（收听 / 听后感 / 评论 / 评分）折算进 `users.xp`，等级由 xp 实时推导、不单独存等级，保证等级永远与经验一致，删专辑不掉经验
+- **纯函数共享**：`backend/utils/level.py` + `frontend/src/utils/level.js` 用同一套 `computeLevel(xp)` / `levelProgress(xp)` / `xpToNextLevel(xp)` / `levelTitle(level)`，复用 scoreCalc「前后端一致」既有模式，双端可单测
+- **回填幂等**：`users.xp` 列迁移仅在「新加列的那一次启动」回填（循环各用户表 `SUM(listening_duration)`），重启不重复计数；之后收听在 pause 时累加 play_seconds
+
+### 数据库（1 处变更）
+
+1. `users` 表新增 `xp` 列——幂等迁移：查 `information_schema.columns` 缺列则 `ALTER TABLE users ADD COLUMN xp FLOAT DEFAULT 0` 并回填初始经验，封装函数挂进 `init_base_tables()`（复用 avatar 迁移已验证模式）
+
+### 后端接口
+
+- `POST /api/album/listening/pause/<album_id>`（改）——成功后 `users.xp += play_seconds`（与 listening_duration 同请求）
+- `POST /api/album/review/add/<album_id>`（改）——成功后 `xp += 20`
+- `POST /api/album/comment/add/<album_id>`（改）——成功后 `xp += 10`
+- `PUT /api/album/score/save/<album_id>`（改）——成功后 `xp += 5`
+- `GET /api/user/info`（改）——返回 `xp`、`level`、`next_level_xp`、`xp_progress`、`level_title`
+- 加分收敛：`backend/utils/user.py` 新增 `add_xp(user_id, amount)` 公共函数，各接口成功后一行调用
+
+### 前端组件
+
+- `StatsPanel.vue`（改）——`formatDuration` 改 `h + 1 位小数`；近 N 天柱状图 y 轴 / 轴标签 / tooltip 秒 → 小时
+- `ProfilePanel.vue`（改）——Lv 徽章旁新增经验进度条 +「距下一级还差 X 经验」+ 等级称号；展示 `/api/user/info` 新增字段
+- `AppearancePanel.vue`（改）——滑轨填充渐变按 thumb 宽度补偿 + thumb 垂直居中修正（先实测 rect 再改）
+- 新建 `frontend/src/utils/level.js`——与后端一致的等级纯函数
+
+### 分阶段路线
+
+- **P0 等级经验**：users.xp 迁移 + 回填 → level.py / level.js 纯函数（先单测）→ pause / 评分 / 听后感 / 评论挂加分 → `/api/user/info` 加字段 → ProfilePanel 进度条 → realdata 验证
+- **P1 统计单位**：StatsPanel 总时长 + 近 N 天图表全部 `h + 1 位小数`（纯前端，后端仍返回秒）
+- **P2 滑轨偏移修复**：按布局对齐工作流先 DevTools 实测 thumb / track rect → 修 CSS → 重测收敛 → 窄屏检查
+
+### 难点与对策
+
+- **xp 双口径**：历史回填 = `SUM(listening_duration)`，新收听 = 累加 play_seconds，两者相加即可；回填只跑一次（幂等）
+- **加分防刷**：评分防抖保存会频繁触发 → 单次加分值低（+5）可接受；听后感 / 评论只计「新增」不计「编辑」
+- **滑轨偏移**：不凭肉眼猜，按布局对齐工作流实测 rect 后改；注意 `-webkit-appearance:none` 下 thumb 的 margin-top 补偿与渐变起止点按 thumb 宽度偏移
+- **等级与统计一致性**：等级由 xp 纯函数实时推导，前后端同源，避免统计 / 等级两套口径
+
+### 待做（勾选清单）
+
+- [ ] P0 等级经验系统
+- [ ] P1 统计单位 h + 1 位小数
+- [ ] P2 蒙版滑轨偏移修复
+- [ ] （补充）听取时长显示格式统一：AlbumItem / AlbumBaseInfo / AlbumReviewEditor / AlbumCommentSection 多处格式各异，抽公共 `utils/duration.js`
+- [ ] （补充）等级徽章入口扩展：UserAvatar（WebHome 右上角）+ 评论区展示等级（待定）
+- [ ] （补充）等级称号文案确认（如 Lv1-3 初听者 → Lv4-7 爱乐人 → Lv8-12 资深乐迷 → …）
+- [ ] （补充，待用户继续补充）……
+
+---
 
 ## v0.7 — 个人用户界面（已完成）
 
