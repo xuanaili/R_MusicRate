@@ -147,9 +147,9 @@ MusicRate/
 
 ---
 
-## v0.8 — 歌词版：本地上传 LRC 接口（干净版）+ AI 歌词识别可行性验证（规划中）
+## v0.8 — 歌词版：本地上传 LRC 接口（干净版）+ AI 歌词识别可行性验证（P0 已完成）
 
-> v0.8 主题为歌词，重点是 `album/detail` 下的歌词展示页面。规划已于 2026-08-11 定稿（**仅规划，未实现**）：P0 清理冗余并提供干净的整轨 LRC 文件上传接口；P1 用 faster-whisper 做 AI 歌词识别可行性验证（spike）。歌词样式迭代与两个已知 bug（当前句抖动、长歌词省略号）明确留给后续小版本。实现待用户下发执行命令后，按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对落地。
+> v0.8 主题为歌词，重点是 `album/detail` 下的歌词展示页面。规划已于 2026-08-11 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对落地；**P0（LRC 纯函数双端同构 + 后端重构删 QQ/权限修复/整轨上传接口 + 前端删 QQ 加整轨上传入口）已完成（2026-08-11）**。P1 用 faster-whisper 做 AI 歌词识别可行性验证（spike）待用户下发执行。歌词样式迭代与两个已知 bug（当前句抖动、长歌词省略号）明确留给后续小版本。
 
 ### 功能概述
 
@@ -207,11 +207,19 @@ v0.8 **无新增表**，全部复用 `album_lyric`（歌词）与现有表。备
 
 ### 分阶段路线
 
-- **P0-A LRC 纯函数**：`lrc.py` + `test_lrc.py`（测试先行）→ 单测绿 + 与前端样例逐字符一致
-- **P0-B 后端重构**：`is_admin_user` 助手 → save 修权限+校验+抽 upsert → 新增 upload 接口 → 删 QQ → `test_lyric_api_realdata.py`（realdata）绿 → grep `fetch_auto` 后端零命中
-- **P0-C 前端改造**：删 QQ + 整轨上传入口 → `npm run lint` 过 + 手动回归（批量上传/粘贴/保存/滚动高亮/整轨同步）
-- **P0-D README 归档**：v0.8 章节 + 待做清单（本章节即本次规划产出）
-- **P1 AI spike**：装 faster-whisper → `lyric_recognizer.py` → `lyric_spike.py`（CLI）→ 跑 1~2 张专辑 → 报告（文本/对齐/RTF）→ 用户拍板正式管线是否落地
+- [x] **P0-A LRC 纯函数**：`lrc.py` + `test_lrc.py`（测试先行）→ 单测绿 + 与前端样例逐字符一致 ✅ 2026-08-11（cd5d9a3）
+- [x] **P0-B 后端重构**：`is_admin_user` 助手 → save 修权限+校验+抽 upsert → 新增 upload 接口 → 删 QQ → `test_lyric_api_realdata.py`（realdata）绿 → grep `fetch_auto` 后端零命中 ✅ 2026-08-11（f1ce6ee）
+- [x] **P0-C 前端改造**：删 QQ + 整轨上传入口 → `npm run lint` 过 + 手动回归（批量上传/粘贴/保存/滚动高亮/整轨同步）✅ 2026-08-11（f6b2530）
+- [x] **P0-D README 归档**：v0.8 章节 + 待做清单（本章节即本次规划产出）✅ 2026-08-11
+- [ ] **P1 AI spike**：装 faster-whisper → `lyric_recognizer.py` → `lyric_spike.py`（CLI）→ 跑 1~2 张专辑 → 报告（文本/对齐/RTF）→ 用户拍板正式管线是否落地
+
+### P0 实现要点（复盘速查）
+
+- **双端同构验证方式**：用 node 直接跑前端真实 `parseLrcToStandardFormat` 生成 golden 基线，硬编码进 `test_lrc.py`（47 例）逐字符对比，锁定了 `.5`→0.05s→`00:10.1` 等前端怪癖与去重取首规则
+- **权限漏洞修复**：原 save 硬编码 `is_admin=True`（任何登录用户可存歌词）→ `is_admin_user()` 真实查 `users.is_admin`；注意 `MYSQL_CONFIG` 全局 `cursorclass=DictCursor` 使行是 dict，取列须 `row.get('is_admin')` 而非 `row[0]`
+- **DDL 漂移**：线上 `album_pool.tracks_time` 存在但无默认值，realdata 测试插入模板须显式传 `tracks_time='[]'`
+- **JS round 怪癖**：JS `Math.round` 是半进位、Python `round` 是银行家舍入 → `_round_half_up = math.floor(x + 0.5)` 复刻
+- **前端上传沿用全站惯例**：`FormData` + 显式 `Content-Type: multipart/form-data`（与 krc2lrc / ProfilePanel / UnlockParse 一致），成功后 `$emit('update:lyrics')` 复用父组件双保存（幂等）机制
 
 ### 难点与对策
 
@@ -223,11 +231,11 @@ v0.8 **无新增表**，全部复用 `album_lyric`（歌词）与现有表。备
 - **权限收紧**：原任何登录用户可存歌词（硬编码 bug），改管理员校验后非管理员 403，前端 `isAdmin` 口径一致
 - **存储格式精度 bug**（前端 `parseTimeStr` 小数位 /1000 不自洽）→ 本版本不修，后端按前端现有格式生成保证 round-trip，归小版本
 
-### 待做（勾选清单，实现待用户下发）
+### 待做（勾选清单）
 
-- [ ] P0-A `lrc.py` 纯函数 + 单测
-- [ ] P0-B lyric.py 重构（删QQ + 权限修复 + 校验 + upload 接口）+ realdata 测试
-- [ ] P0-C 前端删 QQ + 整轨 LRC 上传入口
+- [x] P0-A `lrc.py` 纯函数 + 单测 ✅ 2026-08-11
+- [x] P0-B lyric.py 重构（删QQ + 权限修复 + 校验 + upload 接口）+ realdata 测试 ✅ 2026-08-11
+- [x] P0-C 前端删 QQ + 整轨 LRC 上传入口 ✅ 2026-08-11
 - [ ] P1 AI spike（faster-whisper 安装 + 识别器 + CLI 报告）
 
 ### 后续小版本待办（本大版本不做）
