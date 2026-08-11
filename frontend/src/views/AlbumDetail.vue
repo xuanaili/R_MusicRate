@@ -473,10 +473,14 @@ export default {
     $route: {
       deep: true,
       immediate: true,
-      handler(to) {
+      async handler(to) {
         if (to.path.includes('/album/detail') && (to.params.id || to.query.id)) {
           const albumId = Number(to.params.id || to.query.id);
           if (albumId && albumId !== this.album.id) {
+            // 退出当前专辑（组件复用切到另一张专辑）：先保存听取时长+进度，防止续播位置丢失
+            if (this.audioSrc && this.isPlaying) {
+              await this.pauseListeningTimer();
+            }
             this.resetAlbumPageData();
             this.getAlbumDetail(albumId).then(() => {
               this.getAlbumPoolRealId();
@@ -755,6 +759,7 @@ handleUploadSuccess(data) {
   this.oldMp3Url = data.mp3_url;
   this.currentTime = 0;
   this.currentProgress = 0;
+  this.album.listening_progress = 0; // 上传新音频后清空续播进度，避免接着旧进度播
 
   // 自动播放
   this.autoPlayCurrentAlbumAudio();
@@ -874,18 +879,26 @@ resetVolume() {
       this.saveUserPlaylistData();
     },
 
-    // 自动播放当前专辑音频 - 兼容浏览器策略+静默失败+优化用户体验
+    // 自动播放当前专辑音频 - 兼容浏览器策略+静默失败+优化用户体验（支持上次进度续播）
     autoPlayCurrentAlbumAudio() {
       const audio = this.$refs.audioRef;
       if (this.audioSrc && audio) {
         this.resetVolume();
-        this.currentTime = 0;
-        this.currentProgress = 0;
-        audio.currentTime = 0;
+        // 续播：读取上次保存的听取进度(秒)，在合理区间内则从该位置继续播放，否则从头
+        const savedProgress = Number(this.album.listening_progress) || 0;
+        const resumeFrom = (this.duration > 0 && savedProgress > 1 && savedProgress < this.duration - 2)
+            ? savedProgress : 0;
+        this.currentTime = resumeFrom;
+        this.currentProgress = this.duration ? (resumeFrom / this.duration) * 100 : 0;
+        if (resumeFrom > 0) {
+          try {
+            audio.currentTime = resumeFrom; // 媒体未就绪时按规范会记住该位置，play 后自动生效
+          } catch (e) { /* 忽略：极端情况下回退从头播放 */ }
+        }
         audio.play().then(() => {
           this.isPlaying = true;
           this.startListeningTimer();
-          console.log('✅ 专辑音频自动播放成功');
+          console.log(`✅ 专辑音频自动播放成功${resumeFrom ? `（续播进度 ${resumeFrom}s）` : ''}`);
         }).catch((err) => {
           console.log('ℹ️ 浏览器策略限制自动播放，需要用户手动交互解锁：', err.message);
           this.isPlaying = false;
@@ -1169,19 +1182,21 @@ togglePlayPause() {
       }
     },
 
-    // 终极修复版 - 暂停计时上传时长：只暂停音频+传时长，【绝对不重置】任何进度数据！！！
+    // 暂停计时上传时长+进度：上报本次听取时长 & 当前进度(秒)，【绝对不重置】任何进度数据
     async pauseListeningTimer() {
       const token = localStorage.getItem('token') || '';
       const audio = this.$refs.audioRef;
       if (!token || !this.album.id || !this.audioSrc || !audio) return;
 
+      // 续播：上报当前听取进度(秒)，下次进入该专辑页面时从该位置继续播放
+      const progressSeconds = Math.max(0, Number(this.currentTime) || 0);
       try {
         await this.$axios.post(
             `/api/album/listening/pause/${this.album.id}`,
-            {},
+            {progress_seconds: progressSeconds},
             {headers: {Authorization: token}}
         );
-        console.log(`✅ [成功] 上传时长到数据库：专辑ID=${this.album.id}`);
+        console.log(`✅ [成功] 上传时长+进度到数据库：专辑ID=${this.album.id}，进度=${progressSeconds}s`);
       } catch (err) {
         console.log(`⚠️ [上传失败] 专辑ID=${this.album.id}：`, err.response?.data?.msg || err.message);
       }
@@ -1694,6 +1709,7 @@ async addSingleReview(content, finalScore) {
         tags: [],
         main_type: [],
         lyrics: [],
+        listening_progress: 0,
       };
       this.audioSrc = '';
       this.fileName = '';

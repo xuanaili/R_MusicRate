@@ -392,6 +392,7 @@ def register_album_routes(app):
                 "tracks_time": safe_json_loads(album.get("tracks_time")),
                 "favourite_tracks_time": safe_json_loads(album.get("favourite_tracks_time")),
                 "listening_duration": album.get("listening_duration", 0) or 0,
+                "listening_progress": album.get("listening_progress", 0) or 0,
                 "mp3_url": album.get("mp3_url", ""),  # 从关联查询中获取 mp3_url
                 "mp3_duration": album.get("mp3_duration", 0.0)  # 新增
             }

@@ -127,6 +127,7 @@ def create_user_album_table(user_id):
                 favourite_tracks TEXT NULL COMMENT '收藏曲目列表【数组JSON】：["收藏曲目1","收藏曲目2"]',
                 favourite_tracks_time TEXT NULL COMMENT '收藏曲目对应秒数【数组JSON】：[120,240,360]，与favourite_tracks数组索引一一匹配',
                 listening_duration FLOAT DEFAULT 0.0 COMMENT '专辑累计播放时长(秒) 精准统计',
+                listening_progress FLOAT DEFAULT 0.0 COMMENT '专辑上次听取进度(秒) 续播用',
                 last_listened DATETIME NULL COMMENT '最近收听时间（打开专辑详情页时更新，用于最近收听排序）'
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ''')

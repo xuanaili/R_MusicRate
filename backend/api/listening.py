@@ -1,5 +1,5 @@
 import pymysql
-from flask import jsonify
+from flask import jsonify, request
 import traceback
 import time
 from datetime import datetime
@@ -8,6 +8,25 @@ from backend.utils.decorators import login_required
 
 # 全局内存存储 播放计时状态 - key: f"{user_id}_{album_id}", value: 开始时间戳
 PLAYING_TIMER_CACHE = {}
+
+
+def normalize_progress(progress, duration=None):
+    """规范化前端上报的听取进度(秒)，用于下次续播：
+    - 非法值/None/空串/负数 → 0（从头播放）
+    - 超过整轨时长 → clamp 到时长（防续播越界）
+    - 保留 1 位小数（与 listening_duration 的 round(...,1) 口径一致）
+    """
+    try:
+        val = float(progress if progress not in (None, '') else 0)
+    except (TypeError, ValueError):
+        return 0.0
+    val = max(0.0, val)
+    if duration:
+        try:
+            val = min(val, float(duration))
+        except (TypeError, ValueError):
+            pass
+    return round(val, 1)
 
 
 def register_listening_routes(app):
@@ -97,6 +116,22 @@ def register_listening_routes(app):
             db = get_db()
             cursor = db.cursor(pymysql.cursors.DictCursor)
 
+            # ✅ 续播：接收前端上报的听取进度(秒)，clamp 到整轨时长（无 mp3 则跳过 clamp，越界由前端收敛为从头）
+            try:
+                req_data = request.get_json(silent=True) or {}
+                progress_seconds = req_data.get('progress_seconds')
+            except Exception:
+                progress_seconds = None
+            cursor.execute(f'''
+                SELECT p.mp3_duration
+                FROM `{table_name}` u
+                LEFT JOIN album_pool p ON u.source_pool_id = p.id
+                WHERE u.id = %s
+            ''', (album_id,))
+            album_row = cursor.fetchone()
+            mp3_duration = album_row.get('mp3_duration') if album_row else None
+            progress_seconds = normalize_progress(progress_seconds, duration=mp3_duration)
+
             # 【重要】先检测字段是否存在，不存在则自动新增 listening_duration 字段，兼容历史表
             cursor.execute(f'''
                 SELECT COUNT(*) as count FROM information_schema.COLUMNS 
@@ -113,10 +148,24 @@ def register_listening_routes(app):
                 ''')
                 print(f"✅ 为用户{current_user_id}的专辑表{table_name}补充 listening_duration 字段")
 
-            # 5. 更新时长到数据库
+            # 5. 续播字段：先检测 listening_progress 列是否存在，不存在则自动新增，兼容历史表
             cursor.execute(f'''
-                UPDATE `{table_name}` SET listening_duration = %s WHERE id = %s
-            ''', (total_duration, album_id))
+                SELECT COUNT(*) as count FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'listening_progress'
+            ''', (table_name,))
+            field_count = cursor.fetchone()
+            field_exists = field_count.get('count') > 0 if field_count else False
+            if not field_exists:
+                cursor.execute(f'''
+                    ALTER TABLE `{table_name}`
+                    ADD COLUMN listening_progress FLOAT DEFAULT 0.0 COMMENT '专辑上次听取进度(秒) 续播用'
+                ''')
+                print(f"✅ 为用户{current_user_id}的专辑表{table_name}补充 listening_progress 字段")
+
+            # 6. 更新时长 + 进度到数据库
+            cursor.execute(f'''
+                UPDATE `{table_name}` SET listening_duration = %s, listening_progress = %s WHERE id = %s
+            ''', (total_duration, progress_seconds, album_id))
 
             # v0.7 P2：同请求 upsert 按天记录（近N天柱状图数据源）
             # 【防重复计数】只累加本次播放秒数 play_seconds，绝不用 total_duration：
@@ -128,7 +177,7 @@ def register_listening_routes(app):
             ''', (current_user_id, album_id, datetime.now().strftime('%Y-%m-%d'), play_seconds))
             db.commit()
 
-            # 6. 清除内存中的播放状态，释放缓存 + 关闭游标
+            # 7. 清除内存中的播放状态，释放缓存 + 关闭游标
             del PLAYING_TIMER_CACHE[play_unique_key]
             cursor.close()
 
@@ -140,7 +189,8 @@ def register_listening_routes(app):
                     "album_id": album_id,
                     "user_id": current_user_id,
                     "this_play_seconds": play_seconds,
-                    "total_listening_duration": total_duration
+                    "total_listening_duration": total_duration,
+                    "listening_progress": progress_seconds
                 }
             })
         except Exception as e:
