@@ -248,7 +248,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 
 ### 分阶段路线
 
-- **P0 识别器升级**（保持）：VAD 关 + no_speech_prob 幻觉过滤 + 噪音模式滤除 + OpenCC 繁转简 + 单测（纯函数）
+- **P0 识别器升级**（保持）：VAD 关 + no_speech_prob 幻觉过滤 + 噪音模式滤除 + OpenCC 繁转简 + 单测（纯函数）✅ 2026-08-12
 - **P1 异步任务 + 接口**（保持）：`lyric_ai.py`（recognize + status）+ 后台线程任务表 + realdata 测试
 - **P2 DeepSeek 校正 + 前端**（保持）：`deepseek_correct.py`（difflib 保时间戳）+ config API key + 前端按钮 + realdata 验证 + README 归档
 - **P3 AI key 配置**：`ai_key` 表 + `ai.py` key/status 接口 + 单测 → `AISettingsTab.vue` + UserCenter tab + realdata 验证
@@ -274,7 +274,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 ### 待做（勾选清单）
 
 - [x] P1 AI spike（faster-whisper 安装 + 识别器 + CLI 报告）✅ 2026-08-12（v0.8 P1）
-- [ ] P0 识别器升级（VAD 关 + 幻觉过滤 + OpenCC 简体 + 单测）
+- [x] P0 识别器升级（VAD 关 + no_speech_prob 幻觉过滤 + 噪音模式滤除 + OpenCC 繁转简 + 单测）✅ 2026-08-12
 - [ ] P1 异步任务 + recognize/status 接口 + realdata 测试
 - [ ] P2 DeepSeek 校正（difflib 保时间戳）+ config API key + 前端入口 + README 归档
 - [ ] P3 AI key 配置（ai_key 表 + key/status 接口 + AISettingsTab + UserCenter tab）

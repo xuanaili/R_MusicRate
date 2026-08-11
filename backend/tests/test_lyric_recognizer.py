@@ -1,13 +1,18 @@
-# MusicRate\backend\tests\test_lyric_recognizer.py 歌词识别器纯函数单测（v0.8 P1 spike，零 DB / 零模型依赖）
+# MusicRate\backend\tests\test_lyric_recognizer.py 歌词识别器纯函数单测（v0.8 P1 spike + v0.8.1 P0，零 DB / 零模型依赖）
 # 测试对象：backend/utils/lyric_recognizer.py 的纯逻辑部分
 #   （模型加载/转写属 realdata：依赖 faster-whisper + 音频文件，由 lyric_spike.py CLI 实测，不进单测）
-# 覆盖：文本清洗 / segment→items（1位小数去重升序）/ 按 tracks_time 边界切分 / 单曲相对时间存储文本
+# 覆盖（P1）：文本清洗 / segment→items（1位小数去重升序）/ 按 tracks_time 边界切分 / 单曲相对时间存储文本
+# 覆盖（P0 识别器升级）：is_hallucination 噪音模式 / filter_segments no_speech_prob 阈值 /
+#   to_simplified OpenCC 繁转简（含 opencc 缺失回退）/ segments_to_items 接入过滤+转简
 import pytest
 
 from backend.utils.lyric_recognizer import (
     clean_segment_text,
+    filter_segments,
+    is_hallucination,
     segments_to_items,
     split_by_tracks_time,
+    to_simplified,
     track_items_to_storage,
 )
 
@@ -72,6 +77,34 @@ class TestSegmentsToItems:
         # 与 lrc._round_tenths 一致：.x5 半进位（Python round 是银行家舍入，不能用）
         segs = [{'start': 1.25, 'end': 2.0, 'text': 'a'}]
         assert segments_to_items(segs)[0]['time'] == 1.3
+
+    # ---------- v0.8.1 P0 识别器升级接入 ----------
+
+    def test_traditional_converted_to_simplified(self):
+        # whisper 中文输出繁体 → 落库统一简体（OpenCC t2s）
+        segs = [{'start': 10.0, 'end': 12.0, 'text': '某夜你離開'}]
+        assert segments_to_items(segs) == [{'time': 10.0, 'text': '某夜你离开'}]
+
+    def test_high_no_speech_prob_segment_dropped(self):
+        # no_speech_prob > 0.6 → 器乐/静音段幻觉，丢弃
+        segs = [
+            {'start': 0.0, 'end': 3.0, 'text': '正常歌词', 'no_speech_prob': 0.05},
+            {'start': 5.0, 'end': 8.0, 'text': '幻觉输出', 'no_speech_prob': 0.91},
+        ]
+        assert [it['text'] for it in segments_to_items(segs)] == ['正常歌词']
+
+    def test_missing_no_speech_prob_kept(self):
+        # 无 no_speech_prob 字段（旧数据/旧测试）→ 视为 0，不过滤
+        segs = [{'start': 1.0, 'end': 2.0, 'text': '旧数据'}]
+        assert [it['text'] for it in segments_to_items(segs)] == ['旧数据']
+
+    def test_hallucination_credit_line_dropped(self):
+        # 制作信息幻觉（spike 确认「詞曲 李宗盛」）→ 丢弃
+        segs = [
+            {'start': 0.0, 'end': 2.0, 'text': '詞曲 李宗盛', 'no_speech_prob': 0.1},
+            {'start': 3.0, 'end': 5.0, 'text': '真實歌詞', 'no_speech_prob': 0.1},
+        ]
+        assert [it['text'] for it in segments_to_items(segs)] == ['真实歌词']
 
 
 class TestSplitByTracksTime:
@@ -141,3 +174,104 @@ class TestTrackItemsToStorage:
 
     def test_empty_items(self):
         assert track_items_to_storage([], 100) == ''
+
+
+class TestIsHallucination:
+    """v0.8.1 P0：幻觉噪音文本判定（制作信息 / 字幕 / 器乐名）"""
+
+    def test_credit_line_detected(self):
+        # spike 确认的「詞曲 李宗盛」制作信息幻觉
+        assert is_hallucination('詞曲 李宗盛') is True
+        assert is_hallucination('作詞 方文山') is True
+        assert is_hallucination('作曲 林俊傑') is True
+        assert is_hallucination('编曲 陈伟') is True
+
+    def test_subtitle_detected(self):
+        # spike 确认的「字幕by索兰娅」字幕幻觉
+        assert is_hallucination('字幕by索兰娅') is True
+
+    def test_instrument_label_detected(self):
+        # spike 确认的「Zither Harp」器乐名幻觉 + 常见器乐英文名
+        assert is_hallucination('Zither Harp') is True
+        assert is_hallucination('instrumental') is True
+        assert is_hallucination('Guitar') is True
+
+    def test_normal_lyric_not_detected(self):
+        assert is_hallucination('某夜你离开') is False
+        assert is_hallucination('在无风的午后') is False
+        assert is_hallucination('将甘苦注入汤') is False
+
+    def test_empty_text_is_hallucination(self):
+        assert is_hallucination('') is True
+        assert is_hallucination('   ') is True
+        assert is_hallucination(None) is True
+
+
+class TestFilterSegments:
+    """v0.8.1 P0：segment 级幻觉过滤（no_speech_prob 阈值 + 噪音模式）"""
+
+    def test_drops_high_no_speech_prob(self):
+        segs = [
+            {'start': 0.0, 'end': 2.0, 'text': '正常', 'no_speech_prob': 0.1},
+            {'start': 3.0, 'end': 5.0, 'text': '幻觉', 'no_speech_prob': 0.85},
+        ]
+        out = filter_segments(segs)
+        assert len(out) == 1 and out[0]['text'] == '正常'
+
+    def test_threshold_is_strict_greater(self):
+        # no_speech_prob 恰等于阈值 0.6 → 保留（> 严格大于才丢弃）
+        segs = [{'start': 0.0, 'end': 2.0, 'text': '边界', 'no_speech_prob': 0.6}]
+        assert len(filter_segments(segs)) == 1
+
+    def test_missing_no_speech_prob_kept(self):
+        segs = [{'start': 0.0, 'end': 2.0, 'text': '旧数据'}]
+        assert len(filter_segments(segs)) == 1
+        # None 也安全（视为 0）
+        segs = [{'start': 0.0, 'end': 2.0, 'text': '旧数据', 'no_speech_prob': None}]
+        assert len(filter_segments(segs)) == 1
+
+    def test_credit_and_instrument_dropped(self):
+        segs = [
+            {'start': 0.0, 'end': 2.0, 'text': '詞曲 李宗盛', 'no_speech_prob': 0.1},
+            {'start': 2.5, 'end': 4.0, 'text': 'Zither Harp', 'no_speech_prob': 0.1},
+            {'start': 5.0, 'end': 7.0, 'text': '真实歌词', 'no_speech_prob': 0.1},
+        ]
+        out = filter_segments(segs)
+        assert [s['text'] for s in out] == ['真实歌词']
+
+    def test_bracket_noise_cleaned_to_empty_dropped(self):
+        # [BLANK_AUDIO]/[Music] 纯噪音：clean 后为空 → 丢弃
+        segs = [
+            {'start': 0.0, 'end': 2.0, 'text': '[BLANK_AUDIO]'},
+            {'start': 3.0, 'end': 5.0, 'text': '旋律 还在'},
+        ]
+        out = filter_segments(segs)
+        assert [s['text'] for s in out] == ['旋律 还在']
+
+    def test_keeps_segment_structure(self):
+        # 保留原 segment 结构（含 no_speech_prob 等字段），供下游 segments_to_items 使用
+        segs = [{'start': 1.0, 'end': 2.0, 'text': '保留', 'no_speech_prob': 0.05, 'extra': 1}]
+        out = filter_segments(segs)
+        assert out[0] == segs[0]
+
+
+class TestToSimplified:
+    """v0.8.1 P0：OpenCC t2s 繁转简（全站统一简体）"""
+
+    def test_traditional_to_simplified(self):
+        assert to_simplified('某夜你離開') == '某夜你离开'
+        assert to_simplified('將甘苦注入湯') == '将甘苦注入汤'
+        assert to_simplified('後來 我總算學會了如何去愛') == '后来 我总算学会了如何去爱'
+
+    def test_simplified_unchanged(self):
+        assert to_simplified('在无风的午后') == '在无风的午后'
+
+    def test_empty_and_none(self):
+        assert to_simplified('') == ''
+        assert to_simplified(None) is None
+
+    def test_fallback_when_opencc_fails(self, monkeypatch):
+        # opencc 不可用 / 初始化失败 → 回退原文本，不阻断识别管线
+        import backend.utils.lyric_recognizer as mod
+        monkeypatch.setattr(mod, '_simplifier', False)
+        assert to_simplified('繁體測試') == '繁體測試'

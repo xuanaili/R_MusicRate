@@ -146,7 +146,7 @@ def build_report(pool, audio_path, user_album, seg_count, items, groups, metrics
     add(f'| album_pool_id | {pool["id"]} |')
     add(f'| 音频 | `{audio_path}` |')
     add(f'| 模型 | {info_meta["model"]} (CPU int8) |')
-    add(f'| VAD 过滤 | {"开" if info_meta["vad_filter"] else "关（对比实验）"} |')
+    add(f'| VAD 过滤 | {"开（对比实验）" if info_meta["vad_filter"] else "关（正式管线默认）"} |')
     add(f'| 语言 | {info_meta["language"] or "自动检测"} |')
     add(f'| 音频时长 | {info_meta["duration"]:.1f}s |')
     add(f'| 实际转写 | {info_meta["audio_seconds"]:.1f}s{"（limit-secs 截断）" if info_meta.get("truncated") else ""} |')
@@ -266,13 +266,13 @@ def main():
     parser.add_argument('--model', default='small', help='whisper 模型：tiny/base/small/medium/large-v3（默认 small）')
     parser.add_argument('--limit-secs', type=float, default=None, help='只转写前 N 秒（先拿 RTF 再整轨）')
     parser.add_argument('--language', default=None, help='强制语言，如 zh / en（默认自动检测）')
-    parser.add_argument('--no-vad', action='store_true', help='关闭 VAD 过滤（音乐场景对比实验用，默认 VAD 开）')
+    parser.add_argument('--vad', action='store_true', help='开启 VAD 过滤（v0.8.1 正式管线默认关闭——音乐场景 VAD 会整首丢失曲目；仅对比实验用）')
     parser.add_argument('--out', default=None, help='整轨存储文本输出文件路径')
     parser.add_argument('--per-track-dir', default=None, help='输出目录：各单曲相对时间 LRC')
     parser.add_argument('--report-out', default=None, help='评估报告 markdown 输出路径')
     args = parser.parse_args()
     sys.exit(run_spike(args.pool_id, args.user_id, args.model, args.limit_secs,
-                       args.language, not args.no_vad, args.out, args.per_track_dir, args.report_out))
+                       args.language, args.vad, args.out, args.per_track_dir, args.report_out))
 
 
 if __name__ == '__main__':
