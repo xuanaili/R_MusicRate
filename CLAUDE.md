@@ -155,5 +155,5 @@ portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 
    - `knowledge/` — 学习了技术、记录了配置方法、整理了参考信息
    - `skill/` — 总结了工作流程、制定了编码规范、提炼了操作步骤
 2. 读取对应子目录的 `00_template.md` 模板
-3. 按模板格式生成总结文档，命名规则 `YYYYMMDD_简短英文描述.md`，并把第一步的优化复盘并入（独立小节）
+3. 按模板格式生成总结文档，命名规则 `YYYYMMDD_简短英文描述.md`，并把第一步的优化复盘并入
 4. 告知用户文件已保存的路径和简要内容
