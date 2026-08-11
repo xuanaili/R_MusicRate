@@ -632,6 +632,39 @@ def ensure_users_xp_columns():
         raise e
 
 
+# ========== ✅ v0.8.1 P3：用户 AI 密钥配置表 ai_key ==========
+def create_ai_key():
+    """创建用户 AI 密钥配置表（个人中心「AI 配置」tab，镜像 BookRate）
+    注意：MusicRate users.user_id 是 INT（BookRate 是 VARCHAR），此处对齐 INT
+    - provider 枚举：deepseek（默认，国内直连）/ openai
+    - api_key 明文存后端 DB，仅后端可见，绝不返回前端（安全铁律见 README v0.8.1）
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+CREATE TABLE IF NOT EXISTS ai_key (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    user_id INT NOT NULL COMMENT '用户ID（关联users表，MusicRate users 主键为 INT）',
+    provider VARCHAR(20) NOT NULL DEFAULT 'deepseek' COMMENT 'AI服务商：deepseek/openai',
+    api_key VARCHAR(200) NOT NULL COMMENT 'API密钥（仅后端可见，绝不返回前端）',
+    is_enabled TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用：1启用/0禁用',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_user_id (user_id) COMMENT '用户ID唯一索引（一个用户一条配置）'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户AI密钥配置表';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ ai_key 用户AI密钥配置表 创建/检查成功！")
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ 创建ai_key表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
 # ========== ✅✅✅ 核心：初始化所有基础表 ==========
 def init_base_tables():
     """初始化基础表"""
@@ -659,6 +692,8 @@ def init_base_tables():
         create_album_lyric()
         create_album_share()
 
+        # v0.8.1 P3：用户 AI 密钥配置表（个人中心「AI 配置」tab）
+        create_ai_key()
 
         print("✅ MySQL基础表初始化成功！")
         init_default_admin()
