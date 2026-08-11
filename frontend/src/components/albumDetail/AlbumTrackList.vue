@@ -268,7 +268,10 @@ export default {
       isMeteorPlay: false, // 新增：流星播放状态
       // 评分防抖保存（v0.6 收尾）：打分隔评分也能落盘，不必等离开页面/切歌
       saveScoreTimer: null,
-      pendingScoreSave: null // { albumId, scoreList } 防抖期间快照，避免切歌写错专辑
+      pendingScoreSave: null, // { albumId, scoreList } 防抖期间快照，避免切歌写错专辑
+      // 本地打分版本号：每次用户打分 +1；getAllScore 依据版本号判断
+      // 请求期间是否已被用户继续打分，避免过期 GET 用旧值覆盖新分数
+      scoreEditVersion: 0
     };
   },
   watch: {
@@ -278,13 +281,19 @@ export default {
     favourite_tracks_time: {handler() {this.initFavouriteTrackList()}, deep: true},
     album: {
       handler(newVal, oldVal) {
-        if (oldVal && oldVal.id && newVal && newVal.id && oldVal.id !== newVal.id) {
-          // 切专辑前落盘旧专辑的待保存评分（快照指向旧专辑，避免写错）
-          this.flushScoreSave();
+        const oldId = oldVal && oldVal.id;
+        const newId = newVal && newVal.id;
+        // 仅当专辑切换（含经 id=0 的重置过渡）时才重置并重新拉取评分。
+        // 同一专辑的深层变化（如保存评分后父组件同步 my_score）不重拉，
+        // 否则 "保存→emit→my_score→重拉GET→旧值覆盖刚打的分数" 会把用户打分回退。
+        // 同专辑内 tracks/favourite_tracks 的更新由对应 prop watcher 处理。
+        if (oldId !== newId) {
+          // 离开旧专辑（旧 id 有效）时先落盘待保存快照，避免写错专辑
+          if (oldId) this.flushScoreSave();
+          this.initTrackList(false);
+          this.initFavouriteTrackList(false);
+          this.getAllScore();
         }
-        this.initTrackList(true);
-        this.initFavouriteTrackList();
-        this.getAllScore();
         // 更新小球配置（传递给子组件）
         //this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
       }, deep: true
@@ -413,7 +422,12 @@ export default {
       try {
         const albumId = this.album.id;
         if (!albumId) return;
+        const reqVersion = this.scoreEditVersion; // 发起请求时的本地打分版本号
         const res = await this.$axios.get(`/api/album/score/get/${albumId}`, {headers: {'Authorization': localStorage.getItem('token') || ''}});
+        // 请求期间已切换专辑：丢弃过期响应，避免污染新专辑显示
+        if (this.album.id !== albumId) return;
+        // 请求期间用户已继续打分：丢弃过期 GET，避免旧值覆盖新分数
+        if (this.scoreEditVersion !== reqVersion) return;
         if (res.data.code === 200 && res.data.data.score_list) {
           const scoreList = res.data.data.score_list;
           this.score = scoreList[0] || 0;
@@ -618,6 +632,7 @@ export default {
     },
     resetRating() {
       this.score = 0;
+      this.scoreEditVersion++; // 本地打分版本号递增
       this.scheduleScoreSave();
     },
     enterRatingArea() {
@@ -630,6 +645,7 @@ export default {
       if (!this.isHoverRatingArea) return;
       const delta = e.deltaY < 0 ? 0.5 : -0.5;
       this.score = Math.max(0, Math.min(100, this.score + delta));
+      this.scoreEditVersion++; // 本地打分版本号递增
       this.scheduleScoreSave();
     },
     handleRatingClick(e) {
@@ -644,6 +660,7 @@ export default {
       let percent = (distance / radius) * 100;
       percent = Math.max(0, Math.min(100, Math.round(percent * 2) / 2));
       this.score = percent;
+      this.scoreEditVersion++; // 本地打分版本号递增
       this.scheduleScoreSave();
     },
     startTrackScore(e, idx) {
@@ -668,6 +685,7 @@ export default {
       let percent = ((e.clientX - rect.left) / rect.width) * 100;
       percent = Math.max(0, Math.min(100, Math.round(percent)));
       this.trackList[this.currentTrackIdx].score = percent;
+      this.scoreEditVersion++; // 本地打分版本号递增（滑块拖拽/点击/滚轮共用）
       this.scheduleScoreSave();
     },
     setTrackScoreByClick(e, idx) {
@@ -685,6 +703,7 @@ export default {
       let newScore = Math.max(0, Math.min(100, currentScore + step));
       // 更新分数
       this.trackList[idx].score = newScore;
+      this.scoreEditVersion++; // 本地打分版本号递增
       this.scheduleScoreSave();
     },
     // 获取小球配置（仅用于初始化传递给子组件）
