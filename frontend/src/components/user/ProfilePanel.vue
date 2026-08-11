@@ -22,7 +22,13 @@
       <div class="profile-identity">
         <div class="profile-username" :style="{ color: mainColorDarkDouble }">{{ userInfo.username }}</div>
         <div class="profile-badges">
-          <span class="badge level-badge" :style="{ backgroundColor: mainColorDark }">Lv.{{ userInfo.level }}</span>
+          <!-- v0.7.2：等级徽章可点击，弹出经验详情弹窗 -->
+          <span
+            class="badge level-badge"
+            :style="{ backgroundColor: mainColorDark }"
+            title="点击查看经验详情"
+            @click.stop="showXpDetail = true"
+          >Lv.{{ userInfo.level }}</span>
           <span v-if="userInfo.is_vip" class="badge vip-badge">VIP</span>
         </div>
         <!-- v0.7.1 P0：经验进度条 + 等级称号 + 距下一级还差 -->
@@ -90,14 +96,25 @@
 
     <!-- 退出登录 -->
     <button class="logout-btn" :style="{ backgroundColor: mainColorDark }" @click="logout">退出登录</button>
+
+    <!-- v0.7.2：等级经验详情弹窗（点击 Lv 徽章触发） -->
+    <XpDetailModal
+      :visible="showXpDetail"
+      :mainColor="mainColor"
+      :mainColorDark="mainColorDark"
+      :mainColorDarkDouble="mainColorDarkDouble"
+      @close="showXpDetail = false"
+    />
   </div>
 </template>
 
 <script>
 import { detectLevelUp } from '@/utils/levelFeedback'
+import XpDetailModal from '@/components/user/XpDetailModal.vue'
 
 export default {
   name: 'ProfilePanel',
+  components: { XpDetailModal },
   props: {
     mainColor: { type: String, default: 'transparent' },
     mainColorDark: { type: String, default: 'transparent' },
@@ -120,7 +137,8 @@ export default {
       },
       pwd: { oldPassword: '', newPassword: '', confirmPassword: '' },
       changing: false,
-      uploadingAvatar: false
+      uploadingAvatar: false,
+      showXpDetail: false
     }
   },
   computed: {
@@ -379,6 +397,17 @@ export default {
   border-radius: 10px;
   font-size: 12px;
   color: #fff;
+}
+
+/* v0.7.2：等级徽章可点击查看经验详情 */
+.level-badge {
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.level-badge:hover {
+  opacity: 0.85;
+  transform: scale(1.06);
 }
 
 .vip-badge {
