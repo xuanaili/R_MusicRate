@@ -145,6 +145,173 @@ MusicRate/
 
 # 版本历史
 
+---
+
+## v0.8 — 歌词版：本地上传 LRC 接口（干净版）+ AI 歌词识别可行性验证（规划中）
+
+> v0.8 主题为歌词，重点是 `album/detail` 下的歌词展示页面。规划已于 2026-08-11 定稿（**仅规划，未实现**）：P0 清理冗余并提供干净的整轨 LRC 文件上传接口；P1 用 faster-whisper 做 AI 歌词识别可行性验证（spike）。歌词样式迭代与两个已知 bug（当前句抖动、长歌词省略号）明确留给后续小版本。实现待用户下发执行命令后，按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对落地。
+
+### 功能概述
+
+1. **本地上传 LRC 接口（干净版）**：移除 QQ 音乐自动获取（后端 `fetch_auto`/`fetch_qq_lyric` + 前端 QQ 拉取按钮/网易云死代码），修复 `save_album_lyric` 硬编码 `is_admin=True` 的权限漏洞（改真实管理员校验），新增真正的整轨 LRC 文件上传接口（服务端解析/校验/规范化落库），新增 `backend/utils/lrc.py` 纯函数与前端 `parseLrcToStandardFormat` 双端同构。
+2. **AI 歌词识别可行性验证（spike）**：装 faster-whisper，对 1~2 张已有整轨 mp3 的专辑做语音识别（含时间戳），按 `tracks_time` 切分到各单曲，产出评估报告（文本准确度 / 时间戳对齐 / CPU 耗时 RTF），验证通过后再决定正式管线是否落地。
+3. **后续小版本待办（本大版本不做）**：歌词显示到当前句时抖动；歌词过长只显示省略号导致其他歌词不显示；歌词样式迭代。
+
+### 已定决策（2026-08-11 拍板）
+
+| 决策点 | 结论 |
+|--------|------|
+| AI 识别节奏 | **先 spike 验证**：faster-whisper（本地 ASR，CTranslate2，word_timestamps）→ 1~2 张专辑真实识别评估 → 通过再落正式管线（v0.8.1/v0.9） |
+| DeepSeek 定位 | DeepSeek 是纯文本模型**不能直接吃音频**；音频→歌词靠 faster-whisper，DeepSeek 只在正式落地阶段做歌词校正（可选增强，需用户 API key，difflib 保时间戳对齐） |
+| QQ 音乐 | **彻底移除**：`fetch_auto` 接口 + `fetch_qq_lyric` + `clean_lyric` + 前端 QQ 拉取按钮 + 网易云死代码；保留 `krc2lrc`（本地文件转换） |
+| 歌词存储格式 | 保持 `mm:ss(.x)? 歌词`（无方括号，1 位小数）不变，后端新增校验/上传统一转成此格式；不引入标准 LRC 方括号格式 |
+| 歌词存储位置 | 保持 `album_lyric` 表按 `album_pool_id`（公共池级，全用户共享），不迁移、不加用户维度 |
+| 上传权限 | save 与 upload 均改**真实管理员校验**（复用 `users.is_admin`）；原「任何登录用户可存」为硬编码 bug，本次修复属权限收紧 |
+| 上传接口形态 | 新增整轨 LRC 文件上传（绝对时间覆盖全专辑），与现有逐单曲批量上传（相对时间按文件名匹配）语义不同、两个入口并存 |
+
+### 数据来源
+
+| 数据 | 存哪 | 现成 or 需新建 | 查询接口 / 字段 |
+|------|------|--------------|----------------|
+| 整轨 LRC 歌词 | `album_lyric.lyric_text`（按 `album_pool_id`） | 现成 | `GET /api/album/lyric/get` |
+| 歌词翻译 | `album_lyric.lyric_translate`（JSON `{"CN":"..."}`） | 现成 | 同上 |
+| 单曲列表 + 时间戳 | `albums_{user_id}.tracks` / `tracks_time` | 现成 | `/api/album/detail` |
+| 整轨 mp3 | `album_pool.mp3_url` → `backend/data/album_track/` | 现成 | `GET /tracks/<file>` |
+| 上传/识别产物 | 复用 `album_lyric` 表 | 现成表 | save / upload 接口 |
+| faster-whisper 模型 | portable python pip 安装 + `portable/models/faster-whisper` | 需新建 | — |
+| DeepSeek API key | `config.py` 新增（正式落地阶段） | 需新建 | — |
+
+### 架构设计
+
+- **LRC 纯函数双端同构**：`backend/utils/lrc.py`（`str_to_seconds`/`seconds_to_str`/`parse_any_to_items`/`items_to_storage`/`normalize_to_storage`/`validate_lyric_text`）与前端 `parseLrcToStandardFormat` 输出同一存储格式，复用 scoreCalc「前后端一致」既有模式，双端可单测
+- **权限收敛**：`backend/utils/decorators.py` 新增 `is_admin_user(user_id)` 共享助手（参考 audio_resource.py 的真实校验），save/upload 复用
+- **上传与保存共用落库**：`upsert_album_lyric()` 抽出公共，save（编辑器 JSON 逐单曲）与 upload（整轨 LRC 文件）结果等价、幂等互斥覆盖
+- **AI 识别管线**（spike 阶段 CLI 不接路由）：`lyric_recognizer.py` 懒加载模型单例 → `transcribe(word_timestamps=True, vad_filter=True)` → segment 级时间戳按 `round(start*10)/10` 去重升序 → 按 `tracks_time` 边界切分到单曲 → `items_to_storage` 产出整轨绝对时间存储文本（可直接落 `album_lyric`）
+- **DeepSeek 校正（正式阶段）**：以 whisper 逐行 `mm:ss.x 文本` 为锚，DeepSeek 强制保行数/行序/时间戳只改文字，difflib.SequenceMatcher 处理行数变化再对齐回时间戳
+
+### 数据库
+
+v0.8 **无新增表**，全部复用 `album_lyric`（歌词）与现有表。备注：`album_pool.tracks_time` 列存在于线上库但不在 `db.py` 建表 DDL（DDL 漂移），本次不迁移，P1 spike 从用户专辑表读 `tracks_time`。
+
+### 后端接口
+
+- `POST /api/album/lyric/upload/<album_pool_id>`（新增）——整轨 LRC 文件上传（multipart `lrc_file`，≤1MB，utf-8 失败回退 gbk），服务端规范化落库，仅管理员；可选 `translate_file` 存 `{"CN":...}`；返回 `{album_pool_id, lyric_text, lyric_text_length, has_translate}`（lyric_text 直接回前端免二次 GET）
+- `POST /api/album/lyric/save/<album_pool_id>`（改）——`is_admin` 硬编码改真实管理员校验；`lyric_text`/翻译 CN 值走 `validate_lyric_text` + `normalize_to_storage` 规范化落库；补专辑存在性校验
+- `GET /api/album/lyric/get/<album_pool_id>`（不动）
+- `POST /api/lyric/krc2lrc`（保留）——酷狗 KRC 本地文件转换
+- `POST /api/lyric/fetch_auto`（删除）——QQ 音乐自动获取彻底移除
+
+### 前端组件
+
+- `AlbumLyricViewer.vue`（改）——删除「一键获取所有歌词」/「从QQ音乐获取」按钮、自动获取弹窗、`startBatchFetchLyrics`/`fetchLyrics` 等方法、`lyricSources`/`fetchNeteaseUrl` data 及 watcher；保留逐单曲批量上传/粘贴拆分/保存合并；弹窗头部新增「上传整轨LRC（绝对时间）」按钮，`FormData` 直传 upload 接口，成功后 `$emit('update:lyrics')` 触发 `initTrackLyricsMap` 按 `tracks_time` 自动切分
+
+### 分阶段路线
+
+- **P0-A LRC 纯函数**：`lrc.py` + `test_lrc.py`（测试先行）→ 单测绿 + 与前端样例逐字符一致
+- **P0-B 后端重构**：`is_admin_user` 助手 → save 修权限+校验+抽 upsert → 新增 upload 接口 → 删 QQ → `test_lyric_api_realdata.py`（realdata）绿 → grep `fetch_auto` 后端零命中
+- **P0-C 前端改造**：删 QQ + 整轨上传入口 → `npm run lint` 过 + 手动回归（批量上传/粘贴/保存/滚动高亮/整轨同步）
+- **P0-D README 归档**：v0.8 章节 + 待做清单（本章节即本次规划产出）
+- **P1 AI spike**：装 faster-whisper → `lyric_recognizer.py` → `lyric_spike.py`（CLI）→ 跑 1~2 张专辑 → 报告（文本/对齐/RTF）→ 用户拍板正式管线是否落地
+
+### 难点与对策
+
+- **DeepSeek 不吃音频**：音频→歌词必须 ASR（faster-whisper），DeepSeek 仅做歌词校正（正式阶段），定位清晰不混淆
+- **中文歌词识别草稿级**：伴奏干扰 + 诗意歌词 + 同音字 → spike 产出定位「草稿+时间戳」非成品；正式管线必须接 DeepSeek 校正或人工修正环节
+- **CPU 慢**（RTF 0.1-0.3，分钟级）→ spike 首跑 small + `--limit-secs 300` 拿 RTF 再决定整轨
+- **模型下载失败**（国内 HuggingFace 不可达）→ `HF_ENDPOINT=https://hf-mirror.com` + `download_root` 固定 `portable/models`
+- **删 QQ 回归**：grep 确认 `fetch_auto`/`lyricSources`/`fetchNeteaseUrl`/`startBatchFetchLyrics` 全部收敛在 `AlbumLyricViewer.vue`，删后全仓再 grep 一遍
+- **权限收紧**：原任何登录用户可存歌词（硬编码 bug），改管理员校验后非管理员 403，前端 `isAdmin` 口径一致
+- **存储格式精度 bug**（前端 `parseTimeStr` 小数位 /1000 不自洽）→ 本版本不修，后端按前端现有格式生成保证 round-trip，归小版本
+
+### 待做（勾选清单，实现待用户下发）
+
+- [ ] P0-A `lrc.py` 纯函数 + 单测
+- [ ] P0-B lyric.py 重构（删QQ + 权限修复 + 校验 + upload 接口）+ realdata 测试
+- [ ] P0-C 前端删 QQ + 整轨 LRC 上传入口
+- [ ] P1 AI spike（faster-whisper 安装 + 识别器 + CLI 报告）
+
+### 后续小版本待办（本大版本不做）
+
+- [ ] **歌词当前句抖动**：`getLyricItemStyle` 字号随距离变化 + `smoothScrollTo` 的 offsetTop 不稳定形成反馈循环
+- [ ] **长歌词省略号**：`.lyric-text` 的 `white-space: nowrap; text-overflow: ellipsis` 撑破居中布局导致其他歌词不显示
+- [ ] **歌词样式迭代**：整体美化（含前端 `parseTimeStr` 小数精度 bug）
+- [ ] **DeepSeek 歌词校正正式落地**（需 API key，difflib 保时间戳对齐）
+- [ ] **`album_pool.tracks_time` DDL 漂移**统一
+
+---
+
+## v0.7.2 — 听后感统计修复 + 等级经验详情（已完成）
+
+> 承接 v0.7.1 等级经验系统，修复个人中心「听后感统计恒为 0」的 bug，并落地「等级经验详情弹窗」：点击个人资料页等级徽章，查看总经验 / 今日经验 / 最近经验 / 按来源拆分的经验明细。规划已于 2026-08-11 定稿，实现按 `feature_development_workflow`（20260810）拆 P0 → P1 逐步落地；**P0 听后感统计修复、P1 经验详情（明细落表 + 详情接口 + 弹窗）已完成（2026-08-11）**。
+
+### 功能概述
+
+1. **听后感统计修复**：个人中心「听后感」卡片恒为 0——统计口径 `has_review()` 误以为 `review` 列是 JSON 数组，实际存储是 dict `{"feelings":[...]}`（日历接口按 dict 解析所以正常，二者口径不一致）。改为按 `feelings` 数组长度统计**听后感总条数**（兼容旧版数组格式），与专辑详情页日历看到的条数一致。
+2. **等级经验详情弹窗**：点击个人资料页等级徽章弹出 Modal，展示总经验 / 等级 / 进度、今日经验（听歌 + 加分）、近 7 天每日经验（ECharts 堆叠柱：听歌 + 加分）、按来源累计（听歌 / 评分 / 听后感 / 评论）、最近经验明细流（时间 + 来源 + 数额）。
+
+### 已定决策（2026-08-11 拍板）
+
+| 决策点 | 结论 |
+|--------|------|
+| 听后感统计口径 | 修复后按**听后感总条数**（所有专辑 `feelings` 数组长度之和），非有听感后的专辑数；`count_review_items()` 兼容 dict 与旧数组两种格式 |
+| 经验明细 | 新建 `user_xp_log` 明细表，自 v0.7.2 起每次获取经验写一条（来源 + 数额 + 时间）；历史经验无法按来源拆分（此前未记录），总收听经验用 `users.listening_total` 展示完整历史 |
+| 最近经验 | 近 7 天每日经验汇总（ECharts 堆叠柱：听歌 + 加分）+ 最近明细流（时间 + 来源 + 数额，取最近 30 条） |
+| 弹窗入口 | 点击个人资料 tab 等级徽章 → Modal；挂 ProfilePanel 内，UserCenter 不改 |
+
+### 数据来源
+
+| 数据 | 存哪 | 现成 or 需新建 | 查询接口 / 字段 |
+|------|------|--------------|----------------|
+| 听后感总条数 | `albums_{user_id}.review`（dict 的 feelings 长度） | 现成（解析格式改对） | `/api/user/stats` `review_count` |
+| 总经验 / 等级 / 进度 / 称号 | `users.xp` + level 纯函数推导 | 现成 | `/api/user/xp-detail` |
+| 总收听经验（完整历史） | `users.listening_total` | 现成 | `/api/user/xp-detail` `total_listening_xp` |
+| 今日收听经验 | `user_listening_log` 今日 SUM(duration_seconds)（1 秒 = 1 XP） | 现成 | `/api/user/xp-detail` `today_listening` |
+| 今日加分经验 | `users.bonus_xp_today` | 现成 | `/api/user/xp-detail` `today_bonus` |
+| 近 7 天每日经验 | `user_listening_log` + `user_xp_log` 按日聚合 | 需新建表 | `/api/user/xp-detail` `daily_xp` |
+| 按来源累计 / 最近明细流 | `user_xp_log`（自 v0.7.2 起） | 需新建表 | `/api/user/xp-detail` `source_totals` / `recent_logs` |
+
+### 架构设计
+
+- **经验明细落表**：`user_xp_log` 与 `users` 累计列**同事务写入、仅 `amount > 0` 时写**——`SUM(user_xp_log 加分)` 与 `bonus_xp_today` 严格一致，明细流无 `+0` 噪音
+- **来源枚举收敛**：`backend/utils/xp.py` 常量 `XP_LISTENING / XP_RATING / XP_REVIEW / XP_COMMENT` + `BONUS_SOURCES`（加分来源）+ `SOURCE_LABELS`（前端镜像）；`add_bonus_xp` 增加必填 `source` 参数并校验枚举，防漏传静默丢 log
+- **聚合纯函数共享**：`backend/utils/xp_detail.py` 的 `accumulate_bonus_daily` / `build_daily_xp` 零 DB 依赖可单测，复用 `user_stats.py` 的日期补零思路；前端 ECharts 参考 `StatsPanel.vue` 既有用法
+
+### 数据库（1 张新表）
+
+1. 新增 `user_xp_log` 表：`id`、`user_id`、`xp_type VARCHAR(20)`（listening/rating/review/comment）、`amount FLOAT`、`created_at DATETIME DEFAULT CURRENT_TIMESTAMP`、`INDEX idx_user_created (user_id, created_at)`
+- 复用 `create_user_listening_log()` 的 `CREATE TABLE IF NOT EXISTS` 幂等模式，新增 `create_user_xp_log()` 挂进 `init_base_tables()`；不回填历史（无法按来源拆分）
+
+### 后端接口
+
+- `GET /api/user/xp-detail`（新增）——`total_xp / level / next_level_xp / xp_progress / level_title / total_listening_xp / today_xp / today_listening / today_bonus / daily_xp[7] / source_totals / recent_logs[≤30]`
+- `POST /api/album/review/add/<album_id>`（改）——听后感新增成功后 `add_bonus_xp(uid, 20, 'review')`，写 log
+- `POST /api/album/comment/add/<album_id>`（改）——`add_bonus_xp(uid, 10, 'comment')`，写 log
+- `POST /api/album/pool/comment/add`（改）——`add_bonus_xp(uid, 10, 'comment')`，写 log
+- `PUT /api/album/score/save/<album_id>`（改）——评分实际变化时 `add_bonus_xp(uid, 5, 'rating')`，写 log
+- `POST /api/album/listening/pause/<album_id>`（改）——`play_seconds > 0` 时同事务 INSERT `user_xp_log(xp_type='listening', amount=play_seconds)`
+
+### 前端组件
+
+- 新建 `components/user/XpDetailModal.vue`——弹窗（复用 AlbumLyricViewer mask+content 模式）：Lv 徽章 + 称号 + 总经验 + 距下一级、来源累计 4 格卡片 + 总收听经验、ECharts 近 7 天堆叠柱（听歌 + 加分）、最近明细流 HTML 列表；loading / loadError / 空态兜底；三件套主题色 props
+- `ProfilePanel.vue`（改）——L25 等级徽章加 `@click.stop` 弹 XpDetailModal（`cursor:pointer` + `title` 提示）
+
+### 分阶段路线
+
+- **P0 听后感统计修复**：`count_review_items` + `aggregate_stats` 改总条数 + 测试同步（test_user_stats.py / test_user_stats_realdata.py 改真实 dict 格式）→ 单测 + realdata 绿 → 手工验证统计卡片
+- **P1 经验详情**：`user_xp_log` 建表（挂 init_base_tables）→ `xp.py` 常量 → `add_bonus_xp` 加 source + 写 log、listening pause 写 log → `xp_detail.py` 纯函数 + 单测 → `/api/user/xp-detail` 接口 → `XpDetailModal.vue` + ProfilePanel 徽章点击 → realdata 验证 → README 归档
+
+### 难点与对策
+
+- **统计口径与真实格式不一致**：`has_review` 按数组判断，真实是 dict——改为按 `feelings` 长度统计，`count_review_items` 兼容 dict + 旧数组两种格式，存量数据不塌
+- **经验明细落表**：新增表不回填历史（无法按来源拆分）；「总收听经验」用 `users.listening_total` 展示完整历史，弹窗文案区分「完整历史」与「自 v0.7.2 起」
+- **加分与 log 一致性**：同事务、`gained > 0` 才写 log；评分防抖保存 `xp_gained=0` 不写 log（与前端 toast 守卫一致）
+- **add_bonus_xp 签名变更**：source 必填 + 校验枚举，同步更新 4 处调用 + realdata 测试调用，防编译期漏改
+- **时间口径**：`user_listening_log.listen_date`（本地日）与 `user_xp_log.created_at`（DB CURRENT_TIMESTAMP）均为本地时区，SQL 按 `DATE(created_at)` 与 `listen_date` 对齐
+
+### 待做（勾选清单）
+
+- [x] P0 听后感统计修复（count_review_items + 总条数口径 + 测试同步）✅ 2026-08-11
+- [x] P1 经验详情（xp_log 表 + 加分点写明细 + xp-detail 接口 + XpDetailModal 弹窗）✅ 2026-08-11
 ## v0.7.1 — 等级经验系统与统计展示优化（已完成）
 
 > 承接 v0.7 个人中心，落地「等级-经验」体系（经验与听取总时长强相关）+ 听取时长统一以「小时」展示 + 修复外观栏蒙版透明度滑轨偏移 bug。规划已于 2026-08-11 定稿，实现按 `feature_development_workflow`（20260810）拆 P0 → P1 → P2 逐步落地；**P0 等级经验 + 反馈、P1 统计优化、P2 滑轨修复 + 体验已完成（2026-08-11）**。
@@ -235,80 +402,6 @@ MusicRate/
 - [ ] （补充）等级徽章入口扩展：UserAvatar（WebHome 右上角）+ 评论区展示等级（待定）
 - [ ] （补充）等级称号文案确认（如 Lv1-3 初听者 → Lv4-7 爱乐人 → Lv8-12 资深乐迷 → …）
 
----
-
-## v0.7.2 — 听后感统计修复 + 等级经验详情（已完成）
-
-> 承接 v0.7.1 等级经验系统，修复个人中心「听后感统计恒为 0」的 bug，并落地「等级经验详情弹窗」：点击个人资料页等级徽章，查看总经验 / 今日经验 / 最近经验 / 按来源拆分的经验明细。规划已于 2026-08-11 定稿，实现按 `feature_development_workflow`（20260810）拆 P0 → P1 逐步落地；**P0 听后感统计修复、P1 经验详情（明细落表 + 详情接口 + 弹窗）已完成（2026-08-11）**。
-
-### 功能概述
-
-1. **听后感统计修复**：个人中心「听后感」卡片恒为 0——统计口径 `has_review()` 误以为 `review` 列是 JSON 数组，实际存储是 dict `{"feelings":[...]}`（日历接口按 dict 解析所以正常，二者口径不一致）。改为按 `feelings` 数组长度统计**听后感总条数**（兼容旧版数组格式），与专辑详情页日历看到的条数一致。
-2. **等级经验详情弹窗**：点击个人资料页等级徽章弹出 Modal，展示总经验 / 等级 / 进度、今日经验（听歌 + 加分）、近 7 天每日经验（ECharts 堆叠柱：听歌 + 加分）、按来源累计（听歌 / 评分 / 听后感 / 评论）、最近经验明细流（时间 + 来源 + 数额）。
-
-### 已定决策（2026-08-11 拍板）
-
-| 决策点 | 结论 |
-|--------|------|
-| 听后感统计口径 | 修复后按**听后感总条数**（所有专辑 `feelings` 数组长度之和），非有听感后的专辑数；`count_review_items()` 兼容 dict 与旧数组两种格式 |
-| 经验明细 | 新建 `user_xp_log` 明细表，自 v0.7.2 起每次获取经验写一条（来源 + 数额 + 时间）；历史经验无法按来源拆分（此前未记录），总收听经验用 `users.listening_total` 展示完整历史 |
-| 最近经验 | 近 7 天每日经验汇总（ECharts 堆叠柱：听歌 + 加分）+ 最近明细流（时间 + 来源 + 数额，取最近 30 条） |
-| 弹窗入口 | 点击个人资料 tab 等级徽章 → Modal；挂 ProfilePanel 内，UserCenter 不改 |
-
-### 数据来源
-
-| 数据 | 存哪 | 现成 or 需新建 | 查询接口 / 字段 |
-|------|------|--------------|----------------|
-| 听后感总条数 | `albums_{user_id}.review`（dict 的 feelings 长度） | 现成（解析格式改对） | `/api/user/stats` `review_count` |
-| 总经验 / 等级 / 进度 / 称号 | `users.xp` + level 纯函数推导 | 现成 | `/api/user/xp-detail` |
-| 总收听经验（完整历史） | `users.listening_total` | 现成 | `/api/user/xp-detail` `total_listening_xp` |
-| 今日收听经验 | `user_listening_log` 今日 SUM(duration_seconds)（1 秒 = 1 XP） | 现成 | `/api/user/xp-detail` `today_listening` |
-| 今日加分经验 | `users.bonus_xp_today` | 现成 | `/api/user/xp-detail` `today_bonus` |
-| 近 7 天每日经验 | `user_listening_log` + `user_xp_log` 按日聚合 | 需新建表 | `/api/user/xp-detail` `daily_xp` |
-| 按来源累计 / 最近明细流 | `user_xp_log`（自 v0.7.2 起） | 需新建表 | `/api/user/xp-detail` `source_totals` / `recent_logs` |
-
-### 架构设计
-
-- **经验明细落表**：`user_xp_log` 与 `users` 累计列**同事务写入、仅 `amount > 0` 时写**——`SUM(user_xp_log 加分)` 与 `bonus_xp_today` 严格一致，明细流无 `+0` 噪音
-- **来源枚举收敛**：`backend/utils/xp.py` 常量 `XP_LISTENING / XP_RATING / XP_REVIEW / XP_COMMENT` + `BONUS_SOURCES`（加分来源）+ `SOURCE_LABELS`（前端镜像）；`add_bonus_xp` 增加必填 `source` 参数并校验枚举，防漏传静默丢 log
-- **聚合纯函数共享**：`backend/utils/xp_detail.py` 的 `accumulate_bonus_daily` / `build_daily_xp` 零 DB 依赖可单测，复用 `user_stats.py` 的日期补零思路；前端 ECharts 参考 `StatsPanel.vue` 既有用法
-
-### 数据库（1 张新表）
-
-1. 新增 `user_xp_log` 表：`id`、`user_id`、`xp_type VARCHAR(20)`（listening/rating/review/comment）、`amount FLOAT`、`created_at DATETIME DEFAULT CURRENT_TIMESTAMP`、`INDEX idx_user_created (user_id, created_at)`
-- 复用 `create_user_listening_log()` 的 `CREATE TABLE IF NOT EXISTS` 幂等模式，新增 `create_user_xp_log()` 挂进 `init_base_tables()`；不回填历史（无法按来源拆分）
-
-### 后端接口
-
-- `GET /api/user/xp-detail`（新增）——`total_xp / level / next_level_xp / xp_progress / level_title / total_listening_xp / today_xp / today_listening / today_bonus / daily_xp[7] / source_totals / recent_logs[≤30]`
-- `POST /api/album/review/add/<album_id>`（改）——听后感新增成功后 `add_bonus_xp(uid, 20, 'review')`，写 log
-- `POST /api/album/comment/add/<album_id>`（改）——`add_bonus_xp(uid, 10, 'comment')`，写 log
-- `POST /api/album/pool/comment/add`（改）——`add_bonus_xp(uid, 10, 'comment')`，写 log
-- `PUT /api/album/score/save/<album_id>`（改）——评分实际变化时 `add_bonus_xp(uid, 5, 'rating')`，写 log
-- `POST /api/album/listening/pause/<album_id>`（改）——`play_seconds > 0` 时同事务 INSERT `user_xp_log(xp_type='listening', amount=play_seconds)`
-
-### 前端组件
-
-- 新建 `components/user/XpDetailModal.vue`——弹窗（复用 AlbumLyricViewer mask+content 模式）：Lv 徽章 + 称号 + 总经验 + 距下一级、来源累计 4 格卡片 + 总收听经验、ECharts 近 7 天堆叠柱（听歌 + 加分）、最近明细流 HTML 列表；loading / loadError / 空态兜底；三件套主题色 props
-- `ProfilePanel.vue`（改）——L25 等级徽章加 `@click.stop` 弹 XpDetailModal（`cursor:pointer` + `title` 提示）
-
-### 分阶段路线
-
-- **P0 听后感统计修复**：`count_review_items` + `aggregate_stats` 改总条数 + 测试同步（test_user_stats.py / test_user_stats_realdata.py 改真实 dict 格式）→ 单测 + realdata 绿 → 手工验证统计卡片
-- **P1 经验详情**：`user_xp_log` 建表（挂 init_base_tables）→ `xp.py` 常量 → `add_bonus_xp` 加 source + 写 log、listening pause 写 log → `xp_detail.py` 纯函数 + 单测 → `/api/user/xp-detail` 接口 → `XpDetailModal.vue` + ProfilePanel 徽章点击 → realdata 验证 → README 归档
-
-### 难点与对策
-
-- **统计口径与真实格式不一致**：`has_review` 按数组判断，真实是 dict——改为按 `feelings` 长度统计，`count_review_items` 兼容 dict + 旧数组两种格式，存量数据不塌
-- **经验明细落表**：新增表不回填历史（无法按来源拆分）；「总收听经验」用 `users.listening_total` 展示完整历史，弹窗文案区分「完整历史」与「自 v0.7.2 起」
-- **加分与 log 一致性**：同事务、`gained > 0` 才写 log；评分防抖保存 `xp_gained=0` 不写 log（与前端 toast 守卫一致）
-- **add_bonus_xp 签名变更**：source 必填 + 校验枚举，同步更新 4 处调用 + realdata 测试调用，防编译期漏改
-- **时间口径**：`user_listening_log.listen_date`（本地日）与 `user_xp_log.created_at`（DB CURRENT_TIMESTAMP）均为本地时区，SQL 按 `DATE(created_at)` 与 `listen_date` 对齐
-
-### 待做（勾选清单）
-
-- [x] P0 听后感统计修复（count_review_items + 总条数口径 + 测试同步）✅ 2026-08-11
-- [x] P1 经验详情（xp_log 表 + 加分点写明细 + xp-detail 接口 + XpDetailModal 弹窗）✅ 2026-08-11
 
 ---
 
