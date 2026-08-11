@@ -149,9 +149,9 @@ MusicRate/
 
 ---
 
-## v0.8.1 — AI 系列：歌词识别正式管线 + AI 助手（规划，待实现）
+## v0.8.1 — AI 系列：歌词识别正式管线 + AI 助手（P0-P2 已完成，P3-P6 待实现）
 
-> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地。
+> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地；**P0 识别器升级、P1 异步任务 + 接口、P2 DeepSeek 校正 + 前端按钮已完成（2026-08-12）**。
 
 ### 功能概述
 
@@ -250,7 +250,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 
 - **P0 识别器升级**（保持）：VAD 关 + no_speech_prob 幻觉过滤 + 噪音模式滤除 + OpenCC 繁转简 + 单测（纯函数）✅ 2026-08-12
 - **P1 异步任务 + 接口**（保持）：`lyric_ai.py`（recognize + status）+ 后台线程任务表 + realdata 测试 ✅ 2026-08-12
-- **P2 DeepSeek 校正 + 前端**（保持）：`deepseek_correct.py`（difflib 保时间戳）+ config API key + 前端按钮 + realdata 验证 + README 归档
+- **P2 DeepSeek 校正 + 前端**（保持）：`deepseek_correct.py`（difflib 保时间戳）+ config API key + 前端按钮 + realdata 验证 + README 归档 ✅ 2026-08-12
 - **P3 AI key 配置**：`ai_key` 表 + `ai.py` key/status 接口 + 单测 → `AISettingsTab.vue` + UserCenter tab + realdata 验证
 - **P4 BPM 节奏分析**：librosa 安装 spike（portable Python 兼容性验证，同 faster-whisper spike 流程；装不上降级 aubio）→ `tempo_analyzer.py` 纯函数（整轨 mp3 → 每曲 BPM，单测）→ `album_tempo` 表 + 异步任务（复用 P1 内存任务表）→ realdata 验证
 - **P5 AI 助手后端**：`ai_conversation` / `ai_quota` 表 + 上下文组装（含 BPM/歌词/听后感/评论/全网听后感）+ OpenAI 兼容 chat + SSE 流式 + 配额 → 单测 + realdata
@@ -276,7 +276,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - [x] P1 AI spike（faster-whisper 安装 + 识别器 + CLI 报告）✅ 2026-08-12（v0.8 P1）
 - [x] P0 识别器升级（VAD 关 + no_speech_prob 幻觉过滤 + 噪音模式滤除 + OpenCC 繁转简 + 单测）✅ 2026-08-12
 - [x] P1 异步任务 + recognize/status 接口 + realdata 测试 ✅ 2026-08-12
-- [ ] P2 DeepSeek 校正（difflib 保时间戳）+ config API key + 前端入口 + README 归档
+- [x] P2 DeepSeek 校正（difflib 保时间戳）+ config API key + 前端入口 + README 归档 ✅ 2026-08-12
 - [ ] P3 AI key 配置（ai_key 表 + key/status 接口 + AISettingsTab + UserCenter tab）
 - [ ] P4 BPM 节奏分析（librosa spike + tempo_analyzer + album_tempo + 异步任务）
 - [ ] P5 AI 助手后端（conversation/quota 表 + 上下文组装 + SSE chat）

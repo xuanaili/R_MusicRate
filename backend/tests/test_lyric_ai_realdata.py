@@ -160,7 +160,9 @@ def test_recognize_mp3_file_missing_rejected(client, admin_user):
 # ==================== 任务链路（fake transcribe） ====================
 
 @pytest.mark.realdata
-def test_recognize_done_persists_lyric(client, admin_user, fake_transcribe):
+def test_recognize_done_persists_lyric(client, admin_user, fake_transcribe, monkeypatch):
+    # 锁死服务器端无 DeepSeek key → 走 whisper 草稿路径（正确性不依赖本机 config）
+    monkeypatch.setattr('backend.config.DEEPSEEK_API_KEY', '')
     filename, audio_path = _make_mp3_file(client)
     try:
         pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
@@ -176,10 +178,48 @@ def test_recognize_done_persists_lyric(client, admin_user, fake_transcribe):
         assert status['lyric_lines'] == 1
         assert status['segment_count'] == 3
         assert status['rtf'] is not None
+        assert status['corrected'] is False  # 无 key → 草稿落库
 
         # P0 生效：繁体转简体 + 幻觉噪音滤除，落库只含「某夜你离开」
         row = _get_lyric(client, pool_id)
         assert row['lyric_text'] == '00:00 某夜你离开'
+    finally:
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+
+
+@pytest.mark.realdata
+def test_recognize_with_deepseek_correction(client, admin_user, fake_transcribe, monkeypatch):
+    """P2 接入验证：配置 key + 校正返回 → done + corrected=True + 落库校正文本"""
+    monkeypatch.setattr('backend.config.DEEPSEEK_API_KEY', 'test-key')
+
+    # 替换 lyric_ai 命名空间中的 correct_lyric（固定校正结果：difflib 保时间戳回 00:00）
+    import backend.api.lyric_ai as mod
+
+    def _fake_correct(lyric_text, api_key=None, timeout=60):
+        return '00:00 某夜你离开（已校正）', {
+            'corrected': True,
+            'anchor_lines': 1,
+            'corrected_lines': 1,
+            'lyric_lines': 1,
+        }
+
+    monkeypatch.setattr(mod, 'correct_lyric', _fake_correct)
+    filename, audio_path = _make_mp3_file(client)
+    try:
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
+        r = client.post(f'/api/album/lyric/recognize/{pool_id}', headers=admin_user['headers']).get_json()
+        assert r['code'] == 200, r
+
+        status = _wait_status(client, r['data']['task_id'], admin_user['headers'])
+        assert status['status'] == 'done', status
+        assert status['corrected'] is True
+        assert status['anchor_lines'] == 1
+        assert status['corrected_lines'] == 1
+
+        # 落库的是校正后文本
+        row = _get_lyric(client, pool_id)
+        assert row['lyric_text'] == '00:00 某夜你离开（已校正）'
     finally:
         if os.path.exists(audio_path):
             os.remove(audio_path)

@@ -15,9 +15,11 @@ from datetime import datetime
 import pymysql
 from flask import jsonify, request
 
+from backend import config
 from backend.config import AUDIO_UPLOAD_FOLDER
 from backend.utils.db import get_current_user_id, get_db
 from backend.utils.decorators import is_admin_user, login_required
+from backend.utils.deepseek_correct import correct_lyric
 from backend.utils.lyric_recognizer import build_full_storage_text, segments_to_items, transcribe
 from backend.api.lyric import upsert_album_lyric
 
@@ -102,13 +104,33 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
             return result
 
         _update_task(task_id, progress=90, message='写入歌词…')
-        # 整轨绝对时间存储文本落库（复用 save/upload 的 upsert 幂等路径，识别产物为草稿可再手动覆盖）
+        # whisper 草稿（整轨绝对时间存储文本）
         lyric_text = build_full_storage_text(items)
+        corrected = False
+        correct_reason = None
+        # v0.8.1 P2：若配置服务器端 DEEPSEEK_API_KEY → DeepSeek 校正（difflib 保时间戳只改文字）
+        # 校正失败/未配置 → 回退 whisper 草稿（deepseek_correct.correct_lyric 内置回退），不阻断落库
+        if config.DEEPSEEK_API_KEY:
+            _update_task(task_id, progress=93, message='DeepSeek 校正歌词中…')
+            corrected_text, meta = correct_lyric(lyric_text, api_key=config.DEEPSEEK_API_KEY)
+            corrected = meta.get('corrected') is True
+            correct_reason = meta.get('reason') if not corrected else None
+            if corrected:
+                lyric_text = corrected_text
+                result['anchor_lines'] = meta.get('anchor_lines')
+                result['corrected_lines'] = meta.get('corrected_lines')
+
+        # 整轨绝对时间存储文本落库（复用 save/upload 的 upsert 幂等路径，识别产物为草稿可再手动覆盖）
         upsert_album_lyric(db, album_pool_id, lyric_text, '{}', str(user_id))
+        result['corrected'] = corrected
+        if correct_reason:
+            result['correct_reason'] = correct_reason
         result['progress'] = 100
         result['saved'] = True
         result['lyric_lines'] = len(lyric_text.splitlines()) if lyric_text else 0
-        result['message'] = f'识别完成，草稿歌词已落库（{result["lyric_lines"]} 行）'
+        result['message'] = (
+            f'识别完成，{"已 DeepSeek 校正" if corrected else "草稿歌词"}已落库（{result["lyric_lines"]} 行）'
+        )
         return result
 
 
@@ -231,6 +253,10 @@ def register_lyric_ai_routes(app):
                     "item_count": task.get('item_count'),
                     "lyric_lines": task.get('lyric_lines'),
                     "saved": task.get('saved'),
+                    "corrected": task.get('corrected'),
+                    "correct_reason": task.get('correct_reason'),
+                    "anchor_lines": task.get('anchor_lines'),
+                    "corrected_lines": task.get('corrected_lines'),
                     "elapsed": task.get('elapsed'),
                     "rtf": task.get('rtf'),
                     "created_at": _format_dt(task.get('created_at')),
