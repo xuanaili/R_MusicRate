@@ -171,3 +171,44 @@ def test_user_info_returns_level_fields(client, test_user):
     assert data['xp_progress'] > 0
     assert isinstance(data['level_title'], str)
     assert data['level'] == row['level']
+
+
+@pytest.mark.realdata
+def test_score_save_unchanged_no_xp(client, test_user):
+    """评分保存接口：同分重存（离开板块/切子页面/退出专辑的自动保存）不再加经验"""
+    user_id = test_user['user_id']
+    album_id = _insert_user_album(client, user_id)
+    headers = test_user['headers']
+
+    # 首次保存 [80,90]（实际评分）→ +5
+    r1 = client.put(f'/api/album/score/save/{album_id}', json={'score_list': [80, 90]}, headers=headers).get_json()
+    assert r1['code'] == 200, r1
+    assert r1['data']['xp_gained'] == 5.0
+    xp_after_first = _get_user_row(client, user_id)['xp']
+
+    # 再存完全相同 [80,90]（自动保存触发）→ 不加经验
+    r2 = client.put(f'/api/album/score/save/{album_id}', json={'score_list': [80, 90]}, headers=headers).get_json()
+    assert r2['code'] == 200, r2
+    assert r2['data']['xp_gained'] == 0.0
+    assert _get_user_row(client, user_id)['xp'] == xp_after_first
+
+    # 末尾未评分曲目数量不同、实际评分一致 → 也不算变化
+    r3 = client.put(f'/api/album/score/save/{album_id}', json={'score_list': [80, 90, 0, 0]}, headers=headers).get_json()
+    assert r3['data']['xp_gained'] == 0.0
+    assert _get_user_row(client, user_id)['xp'] == xp_after_first
+
+
+@pytest.mark.realdata
+def test_score_save_changed_gives_xp(client, test_user):
+    """评分保存接口：实际评分变化 → +5（真改分才给经验）"""
+    user_id = test_user['user_id']
+    album_id = _insert_user_album(client, user_id)
+    headers = test_user['headers']
+
+    client.put(f'/api/album/score/save/{album_id}', json={'score_list': [80, 90]}, headers=headers).get_json()
+    xp_before = _get_user_row(client, user_id)['xp']
+
+    r = client.put(f'/api/album/score/save/{album_id}', json={'score_list': [85, 90]}, headers=headers).get_json()
+    assert r['code'] == 200, r
+    assert r['data']['xp_gained'] == 5.0
+    assert _get_user_row(client, user_id)['xp'] == xp_before + 5.0

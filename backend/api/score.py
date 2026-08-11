@@ -4,6 +4,7 @@ import traceback
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
 from backend.utils.user import add_bonus_xp
+from backend.utils.score import normalize_score_list
 import pymysql
 
 
@@ -36,6 +37,22 @@ def register_score_routes(app):
             db = get_db()
             cursor = db.cursor()
 
+            # 先读已存评分，用于判断「评分是否实际变化」。
+            # 历史遗留：前端在离开评分板块/切换子页面/退出专辑时都会自动保存一次，
+            # 老逻辑每次保存都 +5，导致未评分也发经验。这里比较归一化后的评分，
+            # 实际变化才加分，未变化返回 xp_gained=0（前端已有 xp_gained>0 才 toast 的守卫）。
+            old_list = []
+            cursor.execute(f'SELECT my_score FROM `{table_name}` WHERE id = %s LIMIT 1', (album_id,))
+            old_row = cursor.fetchone()
+            if old_row and old_row.get('my_score'):
+                try:
+                    parsed = json.loads(old_row['my_score'])
+                    if isinstance(parsed, list):
+                        old_list = parsed
+                except (json.JSONDecodeError, TypeError):
+                    old_list = []
+            score_changed = normalize_score_list(old_list) != normalize_score_list(score_list)
+
             # 更新专辑的my_score字段
             cursor.execute(f'''
                 UPDATE `{table_name}`
@@ -45,8 +62,10 @@ def register_score_routes(app):
             db.commit()
             cursor.close()
 
-            # v0.7.1 P0：评分保存成功 +5 经验（受每日上限约束），返回本次实际加分供 toast
-            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 5)
+            # v0.7.1 P0：评分保存成功 +5 经验（仅评分实际变化时发放，受每日上限约束），返回本次实际加分供 toast
+            xp_gained = 0.0
+            if score_changed:
+                xp_gained, _, _, _ = add_bonus_xp(current_user_id, 5)
 
             return jsonify({
                 "code": 200,

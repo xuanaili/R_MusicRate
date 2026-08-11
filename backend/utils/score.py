@@ -28,3 +28,22 @@ def calculate_album_total_score(score_list: list) -> float:
 
     # 6. 保留1位小数，评分展示更整洁
     return round(total_score, 1)
+
+
+def normalize_score_list(score_list) -> list:
+    """
+    评分变化判定归一化：去掉末尾连续 0（含 '0'/'' 等字符串形态）。
+
+    用于评分保存接口判断「评分是否实际变化」——前端在离开评分板块 / 切换子页面 /
+    退出专辑时都会自动保存一次，老逻辑每次保存都发经验。末位 0 代表「未评分的单曲」，
+    数组长度会随曲目数变化，故剥掉末尾 0 后比较，避免曲目增删 / 自动保存造成误判。
+    首位是专辑整体分，即使为 0 也保留结构。
+    :param score_list: 评分列表 [专辑整体评分, 单曲1评分, ...]
+    :return: 去掉末尾连续 0 的新列表；非列表输入返回 []
+    """
+    if not isinstance(score_list, list):
+        return []
+    result = list(score_list)
+    while result and result[-1] in (0, 0.0, '0', ''):
+        result.pop()
+    return result
