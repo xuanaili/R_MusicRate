@@ -972,7 +972,15 @@ resetVolume() {
                   query: {id: realAlbumId}
                 });
               }
+              // 播放新专辑后直接上报最近收听时间（自动播放完跳下一张必走这里）。
+              // 不依赖路由 watcher 的异步时序，只要真在播放这张专辑就该更新它的 last_listened
+              if (realAlbumId !== this.album.id) {
+                this.reportLastListened(realAlbumId);
+              }
             }
+          } else if (playAlbum.id && playAlbum.id !== this.album.id) {
+            // 手动从播放列表切到另一张专辑（不跳详情路由）：同样上报最近收听
+            this.reportLastListened(playAlbum.id);
           }
           this.resetVolume();
           audio.currentTime = 0;
@@ -1162,17 +1170,19 @@ togglePlayPause() {
   }
 },
 
-    // 新增：打开专辑详情页时上报最近收听时间（用于「最近收听」排序）
-    async reportLastListened() {
+    // 上报最近收听时间（用于「最近收听」排序）
+    // 参数 albumId 可显式指定目标专辑；不传时默认用当前 this.album.id（打开详情页场景）
+    async reportLastListened(albumId) {
+      const id = albumId || this.album.id;
       const token = localStorage.getItem('token') || '';
-      if (!token || !this.album.id) return;
+      if (!token || !id) return;
       try {
         await this.$axios.post(
-            `/api/album/listening/touch/${this.album.id}`,
+            `/api/album/listening/touch/${id}`,
             {},
             {headers: {Authorization: token}}
         );
-        console.log(`✅ 上报最近收听：专辑ID=${this.album.id}`);
+        console.log(`✅ 上报最近收听：专辑ID=${id}`);
       } catch (err) {
         console.log(`ℹ️ 上报最近收听失败(不影响使用)：`, err.message);
       }
