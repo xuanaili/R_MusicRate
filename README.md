@@ -151,7 +151,7 @@ MusicRate/
 
 ### 功能概述
 
-1. **等级经验制度**：经验与听取总时长强相关——听 1 秒 = 1 XP，辅以听后感 / 评论 / 评分小额加分；等级由经验按平方根曲线推导（Lv.N 约需 N² 小时），在个人资料页展示等级徽章 + 经验进度条 + 距下一级进度 + 等级称号；**配套经验反馈**：升级瞬间弹横幅、保存听后感 / 评论 / 评分成功 toast「+N 经验」
+1. **等级经验制度**：经验与听取总时长强相关——听 1 秒 = 1 XP（无上限），辅以听后感 / 评论 / 评分小额加分（**每日合计上限 100**）；等级由经验按平方根曲线推导（Lv.N 约需 N² 小时），在个人资料页展示等级徽章 + 经验进度条 + 距下一级进度 + 等级称号；**配套经验反馈**：升级瞬间弹横幅、保存听后感 / 评论 / 评分成功 toast「+N 经验」
 2. **统计展示优化**：听取总时长卡片与近 N 天柱状图由「秒」统一改为「小时」，小数点后保留 1 位；**总时长口径统一**（改读持久化 `users.listening_total`，删专辑不掉）；**新增活跃度**：连续收听天数 + 近 30 天活跃天数
 3. **蒙版透明度滑轨偏移修复**：外观栏滑块轨道填充渐变与滑块按钮（thumb）位置不一致 + thumb 垂直方向相对轨道偏移的 CSS bug；顺手加拖动数值气泡与刻度线
 
@@ -159,12 +159,12 @@ MusicRate/
 
 | 决策点 | 结论 |
 |--------|------|
-| 经验来源 | 听取时长为主（1 秒 = 1 XP）；听后感新增 +20、评论新增 +10、评分保存成功 +5 小额加分，不追溯历史 |
-| 升级曲线 | 平方根：`level = floor(sqrt(xp / 3600))`，Lv.N 约需 N² 小时（1h→Lv1、4h→Lv2、9h→Lv3、100h→Lv10、400h→Lv20） |
+| 经验来源 | 听取时长为主（1 秒 = 1 XP，无上限）；听后感新增 +20、评论新增 +10、评分保存成功 +5 小额加分，**每日合计上限 100**（不含收听），不追溯历史 |
+| 升级曲线 | 平方根：`level = floor(sqrt(xp / 3600))`，Lv.N 约需 N² 小时。示例：Lv.1=3600（1h）、Lv.2=14400（4h）、Lv.3=32400（9h）、Lv.5=90000（25h）、Lv.10=360000（100h） |
 | XP 存储 | 新增 `users.xp` 列；暂停时随 listening_duration 一起累加；迁移时用已有 `SUM(listening_duration)` 一次性回填初始经验 |
 | 小时显示 | 听取时长统一 `h + 1 位小数`（不足 1 小时也显示如 `0.4小时`），总时长卡片与近 N 天图表一致 |
 | 等级入口 | P0 先做个人资料页（徽章 + 进度条 + 称号）；头像旁 / 评论区扩展待定 |
-| 加分防刷 | 仅计「新增 / 保存成功」一次，不做追溯；个人应用接受小额刷取风险 |
+| 加分防刷 | 加分仅计「新增 / 保存成功」一次，不做追溯；**每日加分（评分 / 听后感 / 评论合计）上限 100 XP**，超限当次不再累加（实际加分可部分/为 0） |
 | 经验反馈 | 暂停 / 加分接口返回 xp、level、level_up；前端对比 localStorage 上次等级检测升级并弹横幅，加分接口返回本次 +N 供 toast |
 | 总时长口径 | 新增 `users.listening_total` 持久化列（迁移回填 = `SUM(listening_duration)`，之后随 play_seconds 累加），总时长改读此列，删专辑不掉；`user_listening_log` 仅供图表 |
 | 活跃度 | 连续收听天数（今天往回连续非 0）+ 近 30 天活跃天数，由 user_listening_log 纯函数计算 |
@@ -185,22 +185,24 @@ MusicRate/
 - **XP / 听取时长双列**：经验（xp，含加分）与持久化听取总时长（listening_total，纯收听）同源同累加——等级由 xp 实时推导、总时长展示读 listening_total，删专辑均不掉，保证「经验 vs 统计」不打架
 - **纯函数共享**：`backend/utils/level.py` + `frontend/src/utils/level.js` 用同一套 `computeLevel(xp)` / `levelProgress(xp)` / `xpToNextLevel(xp)` / `levelTitle(level)`，复用 scoreCalc「前后端一致」既有模式，双端可单测
 - **回填幂等**：`users.xp` / `users.listening_total` 两列迁移仅在「新加列的那一次启动」回填（循环各用户表 `SUM(listening_duration)`），重启不重复计数；之后收听在 pause 时都 `+= play_seconds`
+- **每日加分上限**：评分 / 听后感 / 评论加分合计每日 ≤ 100 XP，用 `users.bonus_date` + `users.bonus_xp_today` 记录，跨天自动重置；收听经验不受限
 
-### 数据库（2 处变更，同一次幂等迁移）
+### 数据库（3 处变更，同一次幂等迁移）
 
 1. `users` 表新增 `xp` 列——经验货币（收听 1 秒 = 1 XP + 评分 / 听后感 / 评论加分）
 2. `users` 表新增 `listening_total` 列——持久化听取总秒数（删专辑不掉）
+3. `users` 表新增 `bonus_date DATE` + `bonus_xp_today FLOAT DEFAULT 0` 列——当日加分累计，用于每日上限 100（跨天自动重置，含多天未登录）
 - 幂等迁移：查 `information_schema.columns` 缺列则 `ALTER TABLE ADD COLUMN` 并一次性回填 `xp = listening_total = SUM(listening_duration)`，重启不重复计数，封装挂进 `init_base_tables()`（复用 avatar 迁移已验证模式）
 
 ### 后端接口
 
 - `POST /api/album/listening/pause/<album_id>`（改）——成功后 `users.xp += play_seconds`、`users.listening_total += play_seconds`（与 listening_duration 同请求）；返回 `xp`、`level`、`level_up`
-- `POST /api/album/review/add/<album_id>`（改）——成功后 `xp += 20`，返回 `xp_gained`
-- `POST /api/album/comment/add/<album_id>`（改）——成功后 `xp += 10`，返回 `xp_gained`
-- `PUT /api/album/score/save/<album_id>`（改）——成功后 `xp += 5`，返回 `xp_gained`
+- `POST /api/album/review/add/<album_id>`（改）——成功后走 `add_bonus_xp`（+20），返回 `xp_gained`（受每日上限约束）
+- `POST /api/album/comment/add/<album_id>`（改）——成功后走 `add_bonus_xp`（+10），返回 `xp_gained`
+- `PUT /api/album/score/save/<album_id>`（改）——成功后走 `add_bonus_xp`（+5），返回 `xp_gained`
 - `GET /api/user/info`（改）——返回 `xp`、`level`、`next_level_xp`、`xp_progress`、`level_title`
 - `GET /api/user/stats`（改）——`total_duration` 改读 `users.listening_total`（不再 SUM albums.listening_duration）；新增 `current_streak`、`active_days_30`
-- 加分收敛：`backend/utils/user.py` 新增 `add_xp(user_id, amount)` 公共函数（返回本次 +N），各接口成功后一行调用
+- 加分收敛：`backend/utils/user.py` 新增 `add_bonus_xp(user_id, amount)` 公共函数——先查 `bonus_date`，跨天则重置当日计数；`remaining = 100 - bonus_xp_today`，实际加分 = `min(amount, remaining)`（可为部分 / 0），返回本次实际 +N 供 toast，各接口成功后一行调用
 
 ### 前端组件
 
@@ -212,20 +214,21 @@ MusicRate/
 
 ### 分阶段路线
 
-- **P0 等级经验 + 反馈**：users.xp / listening_total 迁移 + 回填 → level.py / level.js 纯函数（先单测）→ pause / 评分 / 听后感 / 评论挂加分 → 升级横幅 + +N 经验 toast → `/api/user/info` 加字段 → ProfilePanel 进度条 → realdata 验证
+- **P0 等级经验 + 反馈**：users.xp / listening_total / bonus_date / bonus_xp_today 迁移 + 回填 → level.py / level.js 纯函数（先单测）→ pause 挂收听经验、评分 / 听后感 / 评论挂加分（每日上限 100）→ 升级横幅 + +N 经验 toast → `/api/user/info` 加字段 → ProfilePanel 进度条 → realdata 验证
 - **P1 统计优化**：StatsPanel 总时长 + 近 N 天图表全部 `h + 1 位小数`（纯前端）→ 总时长改读 listening_total（口径统一）→ 连续收听天数 / 近 30 天活跃天数（user_stats.py 纯函数 + 单测）
 - **P2 滑轨修复 + 体验**：按布局对齐工作流先 DevTools 实测 thumb / track rect → 修 CSS（填充渐变补偿 + thumb 垂直居中）→ 拖动数值气泡 + 刻度线 → 重测收敛 → 窄屏检查
 
 ### 难点与对策
 
 - **xp / listening_total 双列同源**：两者同一时刻回填 `SUM(listening_duration)`、pause 时都 `+= play_seconds`，唯一区别是加分只进 xp——回填只跑一次（幂等），删专辑均不掉
-- **加分防刷**：评分防抖保存会频繁触发 → 单次加分值低（+5）可接受；听后感 / 评论只计「新增」不计「编辑」
+- **加分防刷**：评分防抖保存会频繁触发 → 单次加分值低（+5）且每日上限 100，双重约束可接受；听后感 / 评论只计「新增」不计「编辑」
+- **加分上限重置**：`bonus_date` 与今天比对，跨天（含多天未登录）自动清零，无需定时任务
 - **滑轨偏移**：不凭肉眼猜，按布局对齐工作流实测 rect 后改；注意 `-webkit-appearance:none` 下 thumb 的 margin-top 补偿与渐变起止点按 thumb 宽度偏移
 - **等级与统计一致性**：等级由 xp 纯函数实时推导，总时长读 listening_total，两列同源保证「经验 vs 统计」不打架
 
 ### 待做（勾选清单）
 
-- [ ] P0 等级经验系统 + 经验反馈（升级横幅 + +N 经验 toast）
+- [ ] P0 等级经验系统 + 经验反馈（升级横幅 + +N 经验 toast + 每日加分上限 100）
 - [ ] P1 统计优化（h + 1 位小数 + 总时长口径统一 + 连续收听天数 / 活跃度）
 - [ ] P2 蒙版滑轨偏移修复 + 拖动数值气泡 / 刻度线
 - [ ] （补充）听取时长显示格式统一：AlbumItem / AlbumBaseInfo / AlbumReviewEditor / AlbumCommentSection 多处格式各异，抽公共 `utils/duration.js`
