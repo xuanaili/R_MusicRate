@@ -224,6 +224,7 @@ import globalConfig from '@/config/index.js';
 import TrackParse from '@/components/sidebar/TrackParse.vue';
 // 引入节奏小球子组件
 import RhythmBall from '@/components/RhythmBall.vue';
+import {handleLevelFeedback} from '@/utils/levelFeedback';
 
 export default {
   name: 'AlbumTrackList',
@@ -386,10 +387,14 @@ export default {
           console.log('📤 AlbumTrackList 发射的scoreList：', scoreList);
           this.$emit('score-list-change', scoreList); // 发射给父组件
         }
-        await this.$axios.put(`/api/album/score/save/${albumId}`, {score_list: scoreList}, {
+        const res = await this.$axios.put(`/api/album/score/save/${albumId}`, {score_list: scoreList}, {
           headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
         });
         console.log('✅ 评分保存成功：', albumId, scoreList);
+        // v0.7.1 P0：评分保存加分反馈（+N 经验 toast + 升级检测）
+        if (res.data && res.data.code === 200) {
+          handleLevelFeedback(res.data.data, {toast: '评分保存'});
+        }
       } catch (err) {
         console.error('保存评分失败：', err);
       }

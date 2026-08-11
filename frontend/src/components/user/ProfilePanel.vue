@@ -25,6 +25,16 @@
           <span class="badge level-badge" :style="{ backgroundColor: mainColorDark }">Lv.{{ userInfo.level }}</span>
           <span v-if="userInfo.is_vip" class="badge vip-badge">VIP</span>
         </div>
+        <!-- v0.7.1 P0：经验进度条 + 等级称号 + 距下一级还差 -->
+        <div v-if="userInfo.xp != null" class="xp-section">
+          <div class="xp-bar">
+            <div class="xp-bar-fill" :style="{ width: xpPercent, backgroundColor: mainColorDark }"></div>
+          </div>
+          <div class="xp-meta">
+            <span class="xp-title">{{ userInfo.level_title || '初听者' }}</span>
+            <span class="xp-next">距 Lv.{{ userInfo.level + 1 }} 还差 {{ userInfo.next_level_xp }} 经验</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -84,6 +94,8 @@
 </template>
 
 <script>
+import { detectLevelUp } from '@/utils/levelFeedback'
+
 export default {
   name: 'ProfilePanel',
   props: {
@@ -97,6 +109,10 @@ export default {
         username: localStorage.getItem('username') || '',
         avatar: '',
         level: 0,
+        xp: null,
+        next_level_xp: 0,
+        xp_progress: 0,
+        level_title: '',
         is_vip: 0,
         create_time: '',
         last_login: '',
@@ -111,6 +127,11 @@ export default {
     avatarLetter() {
       const name = this.userInfo.username
       return name ? name.trim().charAt(0).toUpperCase() : '?'
+    },
+    // 经验进度条宽度百分比（0~100，夹紧）
+    xpPercent() {
+      const p = Number(this.userInfo.xp_progress) || 0
+      return `${Math.max(0, Math.min(1, p)) * 100}%`
     }
   },
   created() {
@@ -127,6 +148,8 @@ export default {
           if (res.data.data.avatar) {
             localStorage.setItem('avatar', res.data.data.avatar)
           }
+          // v0.7.1 P0：跨会话升级检测（对比 localStorage 上次等级，递增才弹横幅，幂等）
+          detectLevelUp(res.data.data.level, res.data.data.level_title)
         }
       }).catch(err => {
         console.error('获取用户信息失败：', err)
@@ -310,6 +333,44 @@ export default {
 .profile-badges {
   display: flex;
   gap: 6px;
+}
+
+/* v0.7.1 P0：经验进度条 + 称号 + 距下一级 */
+.xp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.xp-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.xp-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.xp-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #888;
+}
+
+.xp-title {
+  font-weight: 600;
+  color: #555;
+}
+
+.xp-next {
+  white-space: nowrap;
 }
 
 .badge {

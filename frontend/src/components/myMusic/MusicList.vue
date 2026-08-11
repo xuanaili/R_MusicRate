@@ -185,6 +185,7 @@
 
 <script>
 import MusicItem from '@/components/item/AlbumItem.vue'
+import {handleLevelFeedback} from '@/utils/levelFeedback'
 
 export default {
   name: 'MusicList',
@@ -355,7 +356,9 @@ export default {
           .then(resp => {
             if (resp.data.code === 200) {
               this.getMusicList()
-              alert('评论提交成功！')
+              this.$message?.success ? this.$message.success('评论提交成功！') : alert('评论提交成功！')
+              // v0.7.1 P0：评论加分反馈（+N 经验 toast + 升级检测）
+              handleLevelFeedback(resp.data.data, {toast: '评论提交'})
             } else {
               alert('提交失败：' + resp.data.msg)
             }

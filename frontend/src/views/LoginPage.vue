@@ -65,6 +65,8 @@ export default {
             localStorage.setItem("is_admin", res.data.data.is_admin.toString());
             // 存一下用户id
             localStorage.setItem("user_id", res.data.data.user_id.toString());
+            // v0.7.1 P0：等级基线（升级横幅检测依据，后端登录已返回由 xp 推导的 level）
+            localStorage.setItem("level", String(res.data.data.level ?? 0));
             // 跳转到音乐评分页面
             this.$router.push("/webhome");
           } else {

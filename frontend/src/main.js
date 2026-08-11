@@ -9,6 +9,8 @@ import { applyMaskOpacity } from '@/utils/maskOpacity'
 import noAutofill from '@/directives/noAutofill'
 // v0.7 修复：启动时修复持久化主题色的 transparent 坏值（一次性写回默认色，避免文字/图表透明）
 import { getSavedTheme } from '@/utils/themeColor'
+// v0.7.1 P0：全局消息提示（toast + 升级横幅），挂载为 Vue.prototype.$message
+import message from '@/utils/message'
 // 导入页面组件（统一用@别名，避免路径错误）
 import LoginPage from '@/views/LoginPage.vue'
 import MusicList from '@/components/myMusic/MusicList.vue'
@@ -142,6 +144,8 @@ axios.interceptors.response.use(
 
 // 挂载axios
 Vue.prototype.$axios = axios
+// v0.7.1 P0：挂载全局消息提示（既有 this.$message?.xxx 可选链调用从此真正生效）
+Vue.prototype.$message = message
 
 // v0.7 P1：蒙版透明度启动时从 localStorage 恢复
 applyMaskOpacity()

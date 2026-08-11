@@ -249,6 +249,7 @@ import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
 
 import AlbumLyricViewer from '@/components/albumDetail/AlbumLyricViewer'
 import {calculateAlbumTotalScore} from '@/utils/scoreCalc.js'
+import {handleLevelFeedback} from '@/utils/levelFeedback'
 // ✅✅✅ 整合新增：引入全局配置文件 (小球动画配置)
 
 export default {
@@ -1213,12 +1214,16 @@ togglePlayPause() {
       // 续播：上报当前听取进度(秒)，下次进入该专辑页面时从该位置继续播放
       const progressSeconds = Math.max(0, Number(this.currentTime) || 0);
       try {
-        await this.$axios.post(
+        const res = await this.$axios.post(
             `/api/album/listening/pause/${this.album.id}`,
             {progress_seconds: progressSeconds},
             {headers: {Authorization: token}}
         );
         console.log(`✅ [成功] 上传时长+进度到数据库：专辑ID=${this.album.id}，进度=${progressSeconds}s`);
+        // v0.7.1 P0：收听经验升级检测（xp/level/level_up 返回），对比 localStorage 跨会话检测升级
+        if (res.data && res.data.code === 200) {
+          handleLevelFeedback(res.data.data);
+        }
       } catch (err) {
         console.log(`⚠️ [上传失败] 专辑ID=${this.album.id}：`, err.response?.data?.msg || err.message);
       }
@@ -1685,6 +1690,8 @@ async addSingleReview(content, finalScore) {
       // 重新加载专辑数据，确保UI同步
       await this.getAlbumDetail(this.album.id);
       this.$message?.success('听后感添加成功！');
+      // v0.7.1 P0：听后感加分反馈（+N 经验 toast + 升级检测）
+      handleLevelFeedback(res.data.data, {toast: '听后感'});
     } else {
       this.$message?.error(res.data.msg);
     }
@@ -1852,12 +1859,14 @@ async addSingleReview(content, finalScore) {
         });
 
         if (res.data.code === 200) {
-          alert('公共评论发布成功！');
+          this.$message?.success('公共评论发布成功！');
           this.newCommentContent = '';
           this.hasComment = true;
           this.getPublicComments();
+          // v0.7.1 P0：评论加分反馈（+N 经验 toast + 升级检测）
+          handleLevelFeedback(res.data.data, {toast: '评论发布'});
         } else {
-          alert('发布评论失败：' + res.data.msg);
+          this.$message?.error('发布评论失败：' + res.data.msg);
         }
       } catch (err) {
         console.error('发布失败：', err);
