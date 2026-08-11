@@ -34,6 +34,7 @@ backend/*.db
 backend/data/album_covers
 backend/data/album_covers_thumb
 backend/data/album_track
+backend/data/spike_output
 
 
 # 便携式应用（portable/，每台机器本地安装，不入仓库）
