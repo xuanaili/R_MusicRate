@@ -9,6 +9,7 @@ from flask import request, jsonify
 from backend.utils.auth import encrypt_password
 from backend.utils.db import get_db, get_current_user_id, get_album_table_name
 from backend.utils.decorators import login_required
+from backend.utils.level import compute_level, level_progress, level_title, xp_to_next_level
 from backend.utils.user import validate_password_change, validate_avatar_url
 from backend.utils.user_stats import aggregate_stats, parse_days_param
 
@@ -28,7 +29,7 @@ def register_user_routes(app):
             db = get_db()
             cursor = db.cursor(pymysql.cursors.DictCursor)
             cursor.execute('''
-                SELECT user_id, username, create_time, level, last_login, is_vip, avatar
+                SELECT user_id, username, create_time, last_login, is_vip, avatar, xp
                 FROM users WHERE user_id = %s
             ''', (current_user_id,))
             user = cursor.fetchone()
@@ -42,6 +43,10 @@ def register_user_routes(app):
             album_count = cursor.fetchone()['cnt']
             cursor.close()
 
+            # v0.7.1 P0：等级由 xp 纯函数实时推导（level = floor(sqrt(xp/3600))），不依赖遗留 level 列
+            xp = float(user.get('xp') or 0)
+            level = compute_level(xp)
+
             return jsonify({
                 "code": 200,
                 "msg": "ok",
@@ -49,7 +54,11 @@ def register_user_routes(app):
                     "user_id": user['user_id'],
                     "username": user['username'],
                     "create_time": str(user['create_time']) if user['create_time'] else '',
-                    "level": user['level'],
+                    "level": level,
+                    "xp": round(xp, 1),
+                    "next_level_xp": xp_to_next_level(xp),
+                    "xp_progress": level_progress(xp),
+                    "level_title": level_title(level),
                     "last_login": str(user['last_login']) if user['last_login'] else '',
                     "is_vip": user['is_vip'],
                     "avatar": user['avatar'] or '',

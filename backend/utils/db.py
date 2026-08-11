@@ -5,6 +5,7 @@ import bcrypt  # 新增：用于密码加密，需先安装 pip install bcrypt
 from datetime import datetime
 from backend.config import MYSQL_CONFIG, DEFAULT_ADMIN_USER, DEFAULT_ADMIN_PWD, DB_URL
 from backend.utils.auth import encrypt_password
+from backend.utils.level import compute_level
 
 
 def check_and_create_user_album_table(user_id):
@@ -278,7 +279,11 @@ def create_users():
                 donate_amount DECIMAL(10,2) DEFAULT 0.00 COMMENT '捐款数',
                 album_count INT DEFAULT 0 COMMENT '收藏专辑数',
                 avatar VARCHAR(255) DEFAULT '' COMMENT '用户头像URL（未上传为空串，前端回退首字母圆形头像）',
-                token VARCHAR(100) DEFAULT "" COMMENT '登录令牌'
+                token VARCHAR(100) DEFAULT "" COMMENT '登录令牌',
+                xp FLOAT DEFAULT 0 COMMENT '经验（收听1秒=1XP + 评分/听后感/评论加分）',
+                listening_total FLOAT DEFAULT 0 COMMENT '持久化听取总秒数（删专辑不掉，总时长口径）',
+                bonus_date DATE NULL COMMENT '当日加分日期（跨天重置每日上限用）',
+                bonus_xp_today FLOAT DEFAULT 0 COMMENT '当日已累计加分（每日上限100）'
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表（重构版）';
         ''')
         db.commit()
@@ -531,6 +536,69 @@ def ensure_users_avatar_column():
         raise e
 
 
+# ========== ✅ v0.7.1 P0：users 表等级经验四列幂等迁移 + 一次性回填 ==========
+XP_COLUMNS = ['xp', 'listening_total', 'bonus_date', 'bonus_xp_today']
+
+
+def needs_xp_columns(existing_columns):
+    """纯函数：判断 users 表是否需要新增等级经验四列（缺任一列→需迁移，已齐全→幂等跳过）
+    information_schema 列名大小写不敏感，统一转小写比较
+    """
+    lower = [c.lower() for c in existing_columns]
+    return any(col not in lower for col in XP_COLUMNS)
+
+
+def ensure_users_xp_columns():
+    """幂等迁移：users 表缺等级经验四列则 ALTER 新增 + 一次性回填，重启不重复计数
+    回填：xp = listening_total = SUM(albums_{user_id}.listening_duration)，level = compute_level(xp)
+    （两列同源同累加，保证「经验 vs 统计」不打架；之后收听在 pause 时都 += play_seconds）
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+            SELECT COLUMN_NAME FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'users'
+        ''', (MYSQL_CONFIG['db'],))
+        columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+        if not needs_xp_columns(columns):
+            cursor.close()
+            print("✅ users表 等级经验列已存在，跳过迁移")
+            return
+
+        # 新增四列（bonus_date 用 DATE NULL 表达「当日加分日期为空 = 未加分」）
+        cursor.execute("ALTER TABLE users ADD COLUMN xp FLOAT DEFAULT 0 COMMENT '经验（收听1秒=1XP + 加分）'")
+        cursor.execute("ALTER TABLE users ADD COLUMN listening_total FLOAT DEFAULT 0 COMMENT '持久化听取总秒数（删专辑不掉）'")
+        cursor.execute("ALTER TABLE users ADD COLUMN bonus_date DATE NULL COMMENT '当日加分日期（每日上限重置用）'")
+        cursor.execute("ALTER TABLE users ADD COLUMN bonus_xp_today FLOAT DEFAULT 0 COMMENT '当日已累计加分（每日上限100）'")
+
+        # 一次性回填：循环各用户专辑表 SUM(listening_duration)，两列同源；level 同步为推导值
+        cursor.execute('SELECT user_id FROM users')
+        user_ids = [row['user_id'] for row in cursor.fetchall()]
+        for uid in user_ids:
+            try:
+                table_name = get_album_table_name(uid)
+                cursor.execute(f'SELECT SUM(listening_duration) AS total FROM `{table_name}`')
+                row = cursor.fetchone()
+                total = float(row['total'] or 0) if row else 0.0
+            except Exception:
+                total = 0.0  # 用户专辑表不存在等异常容错，不中断迁移
+            cursor.execute(
+                'UPDATE users SET xp = %s, listening_total = %s, level = %s WHERE user_id = %s',
+                (round(total, 1), round(total, 1), compute_level(total), uid)
+            )
+
+        db.commit()
+        cursor.close()
+        print("✅ users表 等级经验列迁移 + 回填完成")
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ users表 等级经验列迁移失败：{str(e)}")
+        traceback.print_exc()
+        raise e
+
+
 # ========== ✅✅✅ 核心：初始化所有基础表 ==========
 def init_base_tables():
     """初始化基础表"""
@@ -542,6 +610,8 @@ def init_base_tables():
         create_users()
         # v0.7：users 表 avatar 列幂等迁移（旧库补列）
         ensure_users_avatar_column()
+        # v0.7.1 P0：users 表等级经验四列幂等迁移 + 一次性回填（xp/listening_total/bonus_date/bonus_xp_today）
+        ensure_users_xp_columns()
         create_user_album_intro_table()
         create_user_playlist_table()
         create_user_recommend()

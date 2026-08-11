@@ -5,6 +5,7 @@ import traceback
 from datetime import datetime
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
+from backend.utils.user import add_bonus_xp
 import pymysql
 
 def register_comment_routes(app):
@@ -144,10 +145,13 @@ def register_comment_routes(app):
             db.commit()
             cursor.close()
 
+            # v0.7.1 P0：评论【新增】成功 +10 经验（受每日上限约束），只计新增不计编辑
+            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 10)
+
             return jsonify({
                 "code": 200,
                 "msg": "私有评论提交成功！",
-                "data": {"comments": comments}
+                "data": {"comments": comments, "xp_gained": xp_gained}
             })
         except Exception as e:
             print(f"❌ 添加私有专辑评论出错：{str(e)}")
@@ -248,10 +252,13 @@ def register_comment_routes(app):
             comment_id = cursor.lastrowid
             cursor.close()
 
+            # v0.7.1 P0：公共评论【新增】成功 +10 经验（受每日上限约束；唯一性校验天然防刷）
+            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 10)
+
             return jsonify({
                 "code": 200,
                 "msg": "公共评论发布成功！",
-                "data": {"comment_id": comment_id}
+                "data": {"comment_id": comment_id, "xp_gained": xp_gained}
             })
         except Exception as e:
             print(f"❌ 发布公共评论失败：{str(e)}")

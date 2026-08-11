@@ -1,6 +1,12 @@
-# MusicRate\backend\utils\user.py 用户相关纯逻辑工具函数（零 DB 依赖，可单测）
+# MusicRate\backend\utils\user.py 用户相关工具函数（校验纯函数零 DB 依赖可单测；add_bonus_xp 依赖 DB 由接口层调用）
+import datetime
 import re
+
+import pymysql
+
 from backend.utils.auth import verify_password
+from backend.utils.db import get_db
+from backend.utils.level import compute_bonus_gain, compute_level
 
 
 # http(s) URL 正则（含域名，排除 ftp/file/相对路径等）
@@ -38,3 +44,50 @@ def validate_password_change(old_password: str, new_password: str, current_hashe
     if not verify_password(old_password, current_hashed):
         return '旧密码错误'
     return None
+
+
+def add_bonus_xp(user_id, amount):
+    """加分并返回本次实际加分（受每日上限 100 约束），供评分/听后感/评论接口成功后一行调用
+
+    逻辑（README v0.7.1 已定决策）：
+    - 先查 bonus_date / bonus_xp_today，跨天（含多天未登录）则重置当日计数，无需定时任务
+    - remaining = 100 - bonus_xp_today；实际加分 = min(amount, remaining)（可为部分或 0）
+    - 更新 users.xp += 实际加分、level = compute_level(xp)、bonus_date、bonus_xp_today
+
+    返回: (xp_gained, new_xp, new_level, level_up)
+    - xp_gained: 本次实际加分（0 ~ amount，受每日上限约束）
+    - new_xp: 加分后的总经验（保留 1 位小数）
+    - new_level: 加分后的等级（由 xp 推导）
+    - level_up: 是否本次升级
+    """
+    db = get_db()
+    cursor = db.cursor(pymysql.cursors.DictCursor)
+    try:
+        cursor.execute('SELECT xp, bonus_date, bonus_xp_today FROM users WHERE user_id = %s', (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return 0, 0, 0, False
+
+        xp = float(user.get('xp') or 0)
+        today = datetime.date.today()
+        bonus_date = user.get('bonus_date')
+        if bonus_date is None or str(bonus_date) != today.isoformat():
+            today_bonus = 0.0
+        else:
+            today_bonus = float(user.get('bonus_xp_today') or 0)
+
+        gained = compute_bonus_gain(today_bonus, amount)
+        new_xp = round(xp + gained, 1)
+        old_level = compute_level(xp)
+        new_level = compute_level(new_xp)
+        cursor.execute('''
+            UPDATE users SET xp = %s, level = %s, bonus_date = %s, bonus_xp_today = %s
+            WHERE user_id = %s
+        ''', (new_xp, new_level, today.isoformat(), round(today_bonus + gained, 1), user_id))
+        db.commit()
+        return gained, new_xp, new_level, new_level > old_level
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        cursor.close()

@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
+from backend.utils.level import compute_level
 
 # 全局内存存储 播放计时状态 - key: f"{user_id}_{album_id}", value: 开始时间戳
 PLAYING_TIMER_CACHE = {}
@@ -175,13 +176,28 @@ def register_listening_routes(app):
                 VALUES (%s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE duration_seconds = duration_seconds + VALUES(duration_seconds)
             ''', (current_user_id, album_id, datetime.now().strftime('%Y-%m-%d'), play_seconds))
+
+            # v0.7.1 P0：收听经验（1 秒 = 1 XP，无上限）+ 持久化总时长（删专辑不掉，总时长口径）
+            # 与 listening_duration 同请求累加；level 同步为推导值，保证登录/详情返回最新等级
+            cursor.execute('SELECT xp FROM users WHERE user_id = %s', (current_user_id,))
+            user_row = cursor.fetchone()
+            old_xp = float(user_row['xp'] or 0) if user_row else 0.0
+            new_xp = round(old_xp + play_seconds, 1)
+            old_level = compute_level(old_xp)
+            new_level = compute_level(new_xp)
+            level_up = new_level > old_level
+            cursor.execute('''
+                UPDATE users
+                SET xp = %s, listening_total = COALESCE(listening_total, 0) + %s, level = %s
+                WHERE user_id = %s
+            ''', (new_xp, play_seconds, new_level, current_user_id))
             db.commit()
 
             # 7. 清除内存中的播放状态，释放缓存 + 关闭游标
             del PLAYING_TIMER_CACHE[play_unique_key]
             cursor.close()
 
-            # 返回成功响应，给前端最新时长
+            # 返回成功响应，给前端最新时长 + 等级经验反馈（xp/level/level_up 供升级横幅检测）
             return jsonify({
                 "code": 200,
                 "msg": "专辑播放已暂停，时长已保存！",
@@ -190,7 +206,10 @@ def register_listening_routes(app):
                     "user_id": current_user_id,
                     "this_play_seconds": play_seconds,
                     "total_listening_duration": total_duration,
-                    "listening_progress": progress_seconds
+                    "listening_progress": progress_seconds,
+                    "xp": new_xp,
+                    "level": new_level,
+                    "level_up": level_up
                 }
             })
         except Exception as e:

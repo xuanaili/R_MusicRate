@@ -7,6 +7,7 @@ import uuid
 import traceback
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id  # 导入get_current_user_id
 from backend.utils.decorators import login_required
+from backend.utils.user import add_bonus_xp
 
 
 def register_review_routes(app):
@@ -64,10 +65,13 @@ def register_review_routes(app):
             db.commit()
             cursor.close()
 
+            # v0.7.1 P0：听后感【新增】成功 +20 经验（受每日上限约束），只计新增不计编辑
+            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 20)
+
             return jsonify({
                 "code": 200,
                 "msg": "听后感添加成功！",
-                "data": new_feeling
+                "data": {"feeling": new_feeling, "xp_gained": xp_gained}
             })
         except Exception as e:
             print(f"❌ 添加听后感出错：{str(e)}")

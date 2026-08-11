@@ -3,6 +3,7 @@ import json
 import traceback
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
+from backend.utils.user import add_bonus_xp
 import pymysql
 
 
@@ -37,17 +38,20 @@ def register_score_routes(app):
 
             # 更新专辑的my_score字段
             cursor.execute(f'''
-                UPDATE `{table_name}` 
-                SET my_score = %s 
+                UPDATE `{table_name}`
+                SET my_score = %s
                 WHERE id = %s
             ''', (score_json, album_id))
             db.commit()
             cursor.close()
 
+            # v0.7.1 P0：评分保存成功 +5 经验（受每日上限约束），返回本次实际加分供 toast
+            xp_gained, _, _, _ = add_bonus_xp(current_user_id, 5)
+
             return jsonify({
                 "code": 200,
                 "msg": "专辑评分保存成功！",
-                "data": {"score_list": score_list}
+                "data": {"score_list": score_list, "xp_gained": xp_gained}
             })
         except Exception as e:
             print(f"❌ 保存专辑评分出错：{str(e)}")
