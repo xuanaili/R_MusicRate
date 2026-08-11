@@ -157,6 +157,7 @@
               class="form-control"
               placeholder="搜索专辑名称/歌手..."
               autocomplete="new-password"
+              v-no-autofill
             />
           </div>
           <div class="album-select-title">选择专辑</div>
@@ -213,6 +214,7 @@
               class="form-control"
               placeholder="搜索专辑名称/歌手..."
               autocomplete="new-password"
+              v-no-autofill
             />
           </div>
           <div class="album-select-title">选择专辑</div>

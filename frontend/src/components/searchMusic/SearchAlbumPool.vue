@@ -73,6 +73,7 @@
           placeholder="搜索专辑名/歌手..."
           class="search-input"
           autocomplete="new-password"
+          v-no-autofill
           @keyup.enter="searchByNameSinger"
         >
         <button @click="searchByNameSinger" class="search-btn">搜索</button>
@@ -87,6 +88,7 @@
           placeholder="搜索标签（摇滚/华语/怀旧等）..."
           class="search-input"
           autocomplete="new-password"
+          v-no-autofill
           @keyup.enter="searchByTag"
         >
         <button @click="searchByTag" class="search-btn">搜索</button>

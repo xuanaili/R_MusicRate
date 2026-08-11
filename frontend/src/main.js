@@ -5,6 +5,8 @@ import axios from 'axios'
 import VueRouter from 'vue-router'
 // v0.7 P1：蒙版透明度启动时恢复（否则页面刷新后 --mask-opacity 丢失，毛玻璃样式与设置不一致）
 import { applyMaskOpacity } from '@/utils/maskOpacity'
+// 阻断浏览器把已保存用户名自动填充进搜索输入框（Chrome 无视 autocomplete=off/new-password）
+import noAutofill from '@/directives/noAutofill'
 // v0.7 修复：启动时修复持久化主题色的 transparent 坏值（一次性写回默认色，避免文字/图表透明）
 import { getSavedTheme } from '@/utils/themeColor'
 // 导入页面组件（统一用@别名，避免路径错误）
@@ -22,6 +24,9 @@ import TagDetail from "@/views/TagDetail.vue";
 // 安装插件
 Vue.use(VueRouter)
 Vue.config.productionTip = false
+
+// 全局注册：v-no-autofill 阻断浏览器用户名/密码自动填充
+Vue.directive('no-autofill', noAutofill)
 
 // ========== 核心修复1：拦截路由重复导航错误（解决登录/注册跳转崩溃） ==========
 const originalPush = VueRouter.prototype.push

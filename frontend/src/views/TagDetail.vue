@@ -257,6 +257,7 @@
                   placeholder="搜索专辑名/歌手..."
                   class="search-input"
                   autocomplete="new-password"
+                  v-no-autofill
                   @keyup.enter="getAlbumList"
                 >
                 <button @click="getAlbumList" class="search-btn">搜索</button>

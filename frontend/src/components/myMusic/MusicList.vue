@@ -70,6 +70,7 @@
           placeholder="搜索专辑名/歌手"
           class="search-input"
           autocomplete="new-password"
+          v-no-autofill
           @keyup.enter="handleSearch"
         >
         <button @click="handleSearch" class="search-btn">搜索</button>
@@ -77,8 +78,8 @@
       </div>
 
       <!-- 独立搜索：类型/标签
-        ⚠️ autocomplete="new-password" 是故意为之：Chrome 会无视 autocomplete="off"，把已保存的用户名自动填入
-        这类无 name/id 信号的纯文本输入框（启发式误判为用户名框）。new-password 是公认的阻断手段，勿删。
+        ⚠️ v-no-autofill 是故意为之：Chrome 会无视 autocomplete="off"/"new-password"，把已保存的用户名自动填入
+        这类无 name/id 信号的纯文本输入框（启发式误判为用户名框）。指令用 readonly 挂载阻断，聚焦时再解锁，勿删。
       -->
       <div class="search-container tag-search-container">
         <input
@@ -87,6 +88,7 @@
           placeholder="搜索专辑类型/标签"
           class="search-input"
           autocomplete="new-password"
+          v-no-autofill
           @keyup.enter="handleTagSearch"
         >
         <button @click="handleTagSearch" class="search-btn">搜索</button>
