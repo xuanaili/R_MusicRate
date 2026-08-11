@@ -24,6 +24,14 @@
         <div class="stat-value" :style="{ color: safeMainColorDarkDouble }">{{ stats.review_count }}</div>
         <div class="stat-label">听后感</div>
       </div>
+      <div class="stat-card common-card">
+        <div class="stat-value" :style="{ color: safeMainColorDarkDouble }">{{ stats.current_streak }}<span class="stat-unit">天</span></div>
+        <div class="stat-label">连续收听</div>
+      </div>
+      <div class="stat-card common-card">
+        <div class="stat-value" :style="{ color: safeMainColorDarkDouble }">{{ stats.active_days_30 }}<span class="stat-unit">天</span></div>
+        <div class="stat-label">近30天活跃</div>
+      </div>
     </div>
 
     <!-- 近N天听取时长柱状图 -->
@@ -71,6 +79,8 @@ const DEFAULT_STATS = {
   scored_count: 0,
   review_count: 0,
   total_duration: 0,
+  current_streak: 0,
+  active_days_30: 0,
   daily_listening: [],
   tag_distribution: [],
   score_distribution: []
@@ -156,7 +166,7 @@ export default {
           trigger: 'axis',
           formatter: params => {
             const p = params[0]
-            return `${p.axisValue}：${p.value} 秒`
+            return `${p.axisValue}：${(Number(p.value) || 0).toFixed(1)} 小时`
           }
         },
         grid: { left: '6%', right: '4%', top: '12%', bottom: '10%', containLabel: true },
@@ -173,10 +183,10 @@ export default {
           axisTick: { show: false },
           axisLine: { show: false },
           splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
-          axisLabel: { fontSize: 11, color: this.safeMainColorDark || '#666' }
+          axisLabel: { fontSize: 11, color: this.safeMainColorDark || '#666', formatter: v => `${Number(v).toFixed(1)}` }
         },
         series: [{
-          data: list.map(d => d.duration),
+          data: list.map(d => Number(d.duration || 0) / 3600),   // 秒 → 小时（保留浮点精度，轴刻度自动取整）
           type: 'bar',
           barMaxWidth: 22,
           itemStyle: {
@@ -293,15 +303,10 @@ export default {
     handleResize() {
       this.charts.forEach(chart => chart && chart.resize())
     },
-    // 秒数 → 可读时长（如 2小时30分钟 / 45分钟 / 30秒）
+    // 秒数 → 小时（h + 1 位小数）：听取总时长统一小时口径（v0.7.1 P1），如 0.4小时 / 4.0小时
     formatDuration(seconds) {
       const s = Number(seconds) || 0
-      if (s <= 0) return '0'
-      if (s < 60) return `${Math.round(s)}秒`
-      if (s < 3600) return `${Math.floor(s / 60)}分钟`
-      const h = Math.floor(s / 3600)
-      const m = Math.floor((s % 3600) / 60)
-      return m ? `${h}小时${m}分钟` : `${h}小时`
+      return `${(s / 3600).toFixed(1)}小时`
     }
   }
 }
@@ -320,10 +325,10 @@ export default {
   padding: 12px;
 }
 
-/* 统计卡片 */
+/* 统计卡片（6 张：专辑/评分/总时长/听后感/连续收听/近30天活跃 → 3 列两行） */
 .stats-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
@@ -337,6 +342,12 @@ export default {
   font-weight: 700;
   line-height: 1.2;
   word-break: break-all;
+}
+
+.stat-unit {
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 2px;
 }
 
 .stat-label {

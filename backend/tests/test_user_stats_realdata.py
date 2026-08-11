@@ -84,10 +84,19 @@ def test_stats_matches_db_aggregation(client, test_user):
 
     today = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
-    old_day = (date.today() - timedelta(days=10)).isoformat()  # 窗口外记录
+    old_day = (date.today() - timedelta(days=10)).isoformat()  # 7 天窗口外、30 天内记录（活跃度仍计数）
     _insert_daily_log(client, user_id, album_id, today, 100.0)
     _insert_daily_log(client, user_id, album_id, yesterday, 50.0)
     _insert_daily_log(client, user_id, album_id, old_day, 999.0)
+
+    # v0.7.1 P1：总时长口径统一，读 users.listening_total（删专辑不掉），与 albums SUM / 按天记录无关
+    app = client.application
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('UPDATE users SET listening_total = %s WHERE user_id = %s', (4200.0, user_id))
+        db.commit()
+        cursor.close()
 
     r = client.get('/api/user/stats', query_string={'days': 7}, headers=test_user['headers']).get_json()
     assert r['code'] == 200, r
@@ -97,11 +106,15 @@ def test_stats_matches_db_aggregation(client, test_user):
     assert data['album_count'] == 1
     assert data['scored_count'] == 1
     assert data['review_count'] == 1
-    assert data['total_duration'] == 300.0  # 取 albums.listening_duration，不与 daily 相加
+    assert data['total_duration'] == 4200.0  # 读 users.listening_total，不再 SUM albums.listening_duration
     assert data['tag_distribution'] == [
         {'name': 'Pop【流行】', 'value': 1},
         {'name': 'Rock【摇滚】', 'value': 1},
     ]
+
+    # 活跃度：今天/昨天/10 天前都听 → 连续 2 天（今天+昨天），近 30 天活跃 3 天
+    assert data['current_streak'] == 2
+    assert data['active_days_30'] == 3
 
     # 近N天序列：今天=100、昨天=50、其余补 0，窗口外不进序列
     daily = data['daily_listening']

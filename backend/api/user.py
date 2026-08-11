@@ -135,8 +135,9 @@ def register_user_routes(app):
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": "更新头像失败，请稍后重试！"}), 500
 
-    # 4. 音乐统计（v0.7 P2）：统计口径纯函数见 backend/utils/user_stats.py
-    #    防重复计数：总时长取 albums.listening_duration SUM；近N天柱状图仅用 user_listening_log，两者不相加
+    # 4. 音乐统计（v0.7 P2 + v0.7.1 P1）：统计口径纯函数见 backend/utils/user_stats.py
+    #    v0.7.1 P1 口径统一：总时长改读 users.listening_total（删专辑不掉，不再 SUM albums.listening_duration）；
+    #    活跃度（连续收听/近30天活跃）由近 30 天 user_listening_log 计算，柱状图窗口由 aggregate_stats 按 days 内部截取
     @app.route('/api/user/stats', methods=['GET', 'OPTIONS'])
     @login_required
     def user_stats():
@@ -151,24 +152,30 @@ def register_user_routes(app):
             cursor = db.cursor(pymysql.cursors.DictCursor)
             table_name = get_album_table_name(current_user_id)
 
-            # 1. 专辑全量行（专辑总数/已评分/总时长/听后感/标签分布/评分分布的数据源）
+            # 1. 专辑全量行（专辑总数/已评分/听后感/标签分布/评分分布的数据源）
             cursor.execute(f'''
                 SELECT my_score, review, listening_duration, score, tags
                 FROM `{table_name}`
             ''')
             album_rows = cursor.fetchall()
 
-            # 2. 近N天按天记录（仅取窗口内，柱状图数据源）
-            start_date = datetime.date.today() - datetime.timedelta(days=days - 1)
+            # 2. 近 30 天按天记录（活跃度 current_streak / active_days_30 需要完整 30 天窗口；
+            #    柱状图数据源由 aggregate_stats 内部按所选 days 窗口截取，窗口外行会被忽略）
+            start_date = datetime.date.today() - datetime.timedelta(days=29)
             cursor.execute('''
                 SELECT listen_date, duration_seconds
                 FROM user_listening_log
                 WHERE user_id = %s AND listen_date >= %s
             ''', (current_user_id, start_date.isoformat()))
             daily_rows = cursor.fetchall()
+
+            # 3. v0.7.1 P1：总时长口径统一，读 users.listening_total（删专辑不掉）
+            cursor.execute('SELECT listening_total FROM users WHERE user_id = %s', (current_user_id,))
+            user_row = cursor.fetchone()
+            total_duration = float(user_row['listening_total'] or 0) if user_row else 0.0
             cursor.close()
 
-            data = aggregate_stats(album_rows, daily_rows, days)
+            data = aggregate_stats(album_rows, daily_rows, days, total_duration)
             return jsonify({"code": 200, "msg": "ok", "data": data})
         except Exception as e:
             print(f"❌ 获取音乐统计失败：{str(e)}")

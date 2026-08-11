@@ -10,6 +10,8 @@ from backend.utils.user_stats import (
     aggregate_stats,
     build_score_distribution,
     build_tag_distribution,
+    compute_active_days,
+    compute_current_streak,
     has_review,
     is_scored,
     parse_days_param,
@@ -187,11 +189,110 @@ class TestParseDays:
         assert parse_days_param(100) == 7
 
 
-class TestAggregateStats:
-    """统计聚合纯函数：防重复计数口径（总时长只取 albums.listening_duration，不与按天记录相加）"""
+class TestCurrentStreak:
+    """连续收听天数：从最近有收听日期往回连续非 0；今天尚未收听不算断签（标准断签语义）"""
 
-    def test_total_duration_uses_albums_only(self):
-        # albums 累计 250s，按天记录累计也是 250s（同一秒数写入两者）→ 总时长必须取 albums 的 250，绝不相加成 500
+    def test_no_listening(self):
+        assert compute_current_streak([]) == 0
+
+    def test_today_and_yesterday(self):
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': today, 'duration_seconds': 60.0},
+            {'listen_date': today - datetime.timedelta(days=1), 'duration_seconds': 30.0},
+        ]
+        assert compute_current_streak(rows) == 2
+
+    def test_yesterday_only_not_today(self):
+        # 今天还没听不算断签（今天还没结束）→ 昨天听 = 连续 1 天
+        today = datetime.date.today()
+        rows = [{'listen_date': today - datetime.timedelta(days=1), 'duration_seconds': 60.0}]
+        assert compute_current_streak(rows) == 1
+
+    def test_streak_counts_from_last_listened_day(self):
+        # 昨天、前天连听，今天没听 → 锚点昨天往回连续 2 天
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': today - datetime.timedelta(days=1), 'duration_seconds': 60.0},
+            {'listen_date': today - datetime.timedelta(days=2), 'duration_seconds': 60.0},
+        ]
+        assert compute_current_streak(rows) == 2
+
+    def test_gap_breaks_streak(self):
+        # 今天 + 前天有听，但昨天没听 → 中间断签，只算今天 1 天
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': today, 'duration_seconds': 60.0},
+            {'listen_date': today - datetime.timedelta(days=2), 'duration_seconds': 30.0},
+        ]
+        assert compute_current_streak(rows) == 1
+
+    def test_streak_broken_after_full_silent_day(self):
+        # 前天有听，昨天（完整一天）+ 今天都没听 → 断签 0
+        today = datetime.date.today()
+        rows = [{'listen_date': today - datetime.timedelta(days=2), 'duration_seconds': 60.0}]
+        assert compute_current_streak(rows) == 0
+
+    def test_zero_duration_not_counted(self):
+        # duration_seconds=0 的记录不计入活跃
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': today, 'duration_seconds': 0.0},
+            {'listen_date': today - datetime.timedelta(days=1), 'duration_seconds': 60.0},
+        ]
+        assert compute_current_streak(rows) == 1
+
+    def test_string_and_invalid_dates(self):
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': today.isoformat(), 'duration_seconds': 60.0},
+            {'listen_date': 'not-a-date', 'duration_seconds': 99.0},
+            {'listen_date': None, 'duration_seconds': 99.0},
+        ]
+        assert compute_current_streak(rows) == 1
+
+
+class TestActiveDays:
+    """近 N 天活跃天数：最近 days 天内（含今天）有收听（时长>0）的不同日期数"""
+
+    def test_no_listening(self):
+        assert compute_active_days([]) == 0
+
+    def test_count_distinct_active_days(self):
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': today, 'duration_seconds': 60.0},
+            {'listen_date': today, 'duration_seconds': 30.0},   # 同一天多条只算 1 天
+            {'listen_date': today - datetime.timedelta(days=1), 'duration_seconds': 10.0},
+            {'listen_date': today - datetime.timedelta(days=29), 'duration_seconds': 5.0},
+        ]
+        assert compute_active_days(rows) == 3  # 今天 / 昨天 / 29 天前
+
+    def test_out_of_window_excluded(self):
+        today = datetime.date.today()
+        rows = [{'listen_date': today - datetime.timedelta(days=31), 'duration_seconds': 60.0}]
+        assert compute_active_days(rows) == 0
+
+    def test_zero_duration_not_active(self):
+        today = datetime.date.today()
+        rows = [
+            {'listen_date': today, 'duration_seconds': 0.0},
+            {'listen_date': today - datetime.timedelta(days=1), 'duration_seconds': 60.0},
+        ]
+        assert compute_active_days(rows) == 1
+
+    def test_custom_days_window(self):
+        today = datetime.date.today()
+        rows = [{'listen_date': today - datetime.timedelta(days=7), 'duration_seconds': 60.0}]
+        assert compute_active_days(rows, days=7) == 0   # 第 8 天前，不在 7 天窗内
+        assert compute_active_days(rows, days=30) == 1
+
+
+class TestAggregateStats:
+    """统计聚合纯函数：v0.7.1 P1 口径（总时长读 users.listening_total，活跃度由 user_listening_log 计算）"""
+
+    def test_total_duration_reads_listening_total(self):
+        # P1 口径：总时长来自 users.listening_total（删专辑不掉），与 albums.listening_duration / 按天记录无关
         today = datetime.date.today()
         album_rows = [
             {'my_score': '[8.0]', 'review': '[]', 'listening_duration': 150.0, 'score': 80, 'tags': '["Pop【流行】"]'},
@@ -200,18 +301,34 @@ class TestAggregateStats:
         daily_rows = [
             {'listen_date': today, 'duration_seconds': 150.0},
             {'listen_date': today, 'duration_seconds': 100.0},
+            {'listen_date': today - datetime.timedelta(days=1), 'duration_seconds': 50.0},
         ]
-        stats = aggregate_stats(album_rows, daily_rows, 7)
+        stats = aggregate_stats(album_rows, daily_rows, 7, total_duration=8888.5)
         assert stats['album_count'] == 2
         assert stats['scored_count'] == 1          # 第二张 my_score=[] 不算
         assert stats['review_count'] == 0
-        assert stats['total_duration'] == 250.0    # 不与 daily 相加
-        # 按天序列只反映 user_listening_log
+        assert stats['total_duration'] == 8888.5   # 读 listening_total，不再取 albums SUM
+        # 按天序列只反映 user_listening_log（窗口内）
         assert stats['daily_listening'][-1]['duration'] == 250.0
+        assert stats['daily_listening'][-2]['duration'] == 50.0
         # 标签分布 top8
         assert stats['tag_distribution'] == [{'name': 'Pop【流行】', 'value': 1}]
         # 评分分布：只有 80 分计入
         assert sum(b['count'] for b in stats['score_distribution']) == 1
+        # 活跃度：今天 + 昨天 → 连续 2 天；近 30 天活跃 2 天
+        assert stats['current_streak'] == 2
+        assert stats['active_days_30'] == 2
+
+    def test_total_duration_fallback_to_albums(self):
+        # total_duration 未传时回退 SUM(albums.listening_duration)（兼容旧调用 / 默认值）
+        album_rows = [
+            {'my_score': '[]', 'review': '[]', 'listening_duration': 150.0, 'score': 0, 'tags': '[]'},
+            {'my_score': '[]', 'review': '[]', 'listening_duration': 100.0, 'score': 0, 'tags': '[]'},
+        ]
+        stats = aggregate_stats(album_rows, [], 7)
+        assert stats['total_duration'] == 250.0
+        assert stats['current_streak'] == 0
+        assert stats['active_days_30'] == 0
 
     def test_empty_rows(self):
         stats = aggregate_stats([], [], 7)
@@ -221,6 +338,8 @@ class TestAggregateStats:
         assert stats['total_duration'] == 0.0
         assert len(stats['daily_listening']) == 7
         assert stats['tag_distribution'] == []
+        assert stats['current_streak'] == 0
+        assert stats['active_days_30'] == 0
 
 
 def json_str(tags):
