@@ -11,7 +11,9 @@ from backend.utils.db import get_db, get_current_user_id, get_album_table_name
 from backend.utils.decorators import login_required
 from backend.utils.level import compute_level, level_progress, level_title, xp_to_next_level
 from backend.utils.user import validate_password_change, validate_avatar_url
-from backend.utils.user_stats import aggregate_stats, parse_days_param
+from backend.utils.user_stats import accumulate_daily_logs, aggregate_stats, parse_days_param
+from backend.utils.xp import XP_COMMENT, XP_LISTENING, XP_RATING, XP_REVIEW
+from backend.utils.xp_detail import accumulate_bonus_daily, build_daily_xp
 
 
 def register_user_routes(app):
@@ -181,3 +183,89 @@ def register_user_routes(app):
             print(f"❌ 获取音乐统计失败：{str(e)}")
             print(traceback.format_exc())
             return jsonify({"code": 500, "msg": "获取音乐统计失败，请稍后重试！"}), 500
+
+    # 5. 等级经验详情（v0.7.2）：总经验 / 今日 / 近7天 / 按来源累计 / 最近明细流
+    #    口径：总经验 users.xp（完整历史）；总收听 users.listening_total（完整历史）；
+    #    今日收听 = user_listening_log 今日 SUM（1秒=1XP）；今日加分 = users.bonus_xp_today；
+    #    近7天 / 按来源 / 明细流来自 user_xp_log（自 v0.7.2 起，source_totals 仅代表有明细之后的累计）
+    @app.route('/api/user/xp-detail', methods=['GET', 'OPTIONS'])
+    @login_required
+    def user_xp_detail():
+        try:
+            if request.method == 'OPTIONS':
+                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+
+            current_user_id = get_current_user_id()
+            db = get_db()
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+            today = datetime.date.today()
+            start_date = today - datetime.timedelta(days=6)  # 近 7 天（含今天）
+
+            # 1. users 累计值（完整历史）
+            cursor.execute('SELECT xp, listening_total, bonus_xp_today FROM users WHERE user_id = %s', (current_user_id,))
+            user_row = cursor.fetchone()
+            total_xp = float(user_row['xp'] or 0) if user_row else 0.0
+            total_listening_xp = float(user_row['listening_total'] or 0) if user_row else 0.0
+            today_bonus = float(user_row['bonus_xp_today'] or 0) if user_row else 0.0
+
+            # 2. 近 7 天收听经验（user_listening_log，1 秒 = 1 XP）
+            cursor.execute('''
+                SELECT listen_date, duration_seconds
+                FROM user_listening_log
+                WHERE user_id = %s AND listen_date >= %s
+            ''', (current_user_id, start_date.isoformat()))
+            listening_daily = accumulate_daily_logs(cursor.fetchall(), 7)
+
+            # 3. 近 7 天加分经验（user_xp_log 加分来源）
+            cursor.execute('''
+                SELECT created_at, amount FROM user_xp_log
+                WHERE user_id = %s AND xp_type IN (%s, %s, %s) AND created_at >= %s
+            ''', (current_user_id, XP_RATING, XP_REVIEW, XP_COMMENT, start_date.isoformat() + ' 00:00:00'))
+            bonus_daily = accumulate_bonus_daily(cursor.fetchall(), 7)
+
+            # 4. 按来源累计（自 v0.7.2 起，user_xp_log 全量）
+            cursor.execute('''
+                SELECT xp_type, COALESCE(SUM(amount), 0) AS s FROM user_xp_log
+                WHERE user_id = %s GROUP BY xp_type
+            ''', (current_user_id,))
+            source_totals = {XP_LISTENING: 0.0, XP_RATING: 0.0, XP_REVIEW: 0.0, XP_COMMENT: 0.0}
+            for row in cursor.fetchall():
+                if row['xp_type'] in source_totals:
+                    source_totals[row['xp_type']] = round(float(row['s'] or 0), 1)
+
+            # 5. 最近明细流（倒序取最近 30 条）
+            cursor.execute('''
+                SELECT xp_type, amount, created_at FROM user_xp_log
+                WHERE user_id = %s ORDER BY created_at DESC, id DESC LIMIT 30
+            ''', (current_user_id,))
+            recent_logs = [{
+                'xp_type': row['xp_type'],
+                'amount': round(float(row['amount'] or 0), 1),
+                'created_at': str(row['created_at']) if row['created_at'] else '',
+            } for row in cursor.fetchall()]
+            cursor.close()
+
+            # 6. 等级字段由 xp 纯函数实时推导（与 /api/user/info 一致）
+            level = compute_level(total_xp)
+            return jsonify({
+                "code": 200,
+                "msg": "ok",
+                "data": {
+                    "total_xp": round(total_xp, 1),
+                    "level": level,
+                    "next_level_xp": xp_to_next_level(total_xp),
+                    "xp_progress": level_progress(total_xp),
+                    "level_title": level_title(level),
+                    "total_listening_xp": round(total_listening_xp, 1),
+                    "today_listening": round(listening_daily[-1]['duration'], 1),
+                    "today_bonus": round(today_bonus, 1),
+                    "today_xp": round(listening_daily[-1]['duration'] + today_bonus, 1),
+                    "daily_xp": build_daily_xp(listening_daily, bonus_daily),
+                    "source_totals": source_totals,
+                    "recent_logs": recent_logs,
+                }
+            })
+        except Exception as e:
+            print(f"❌ 获取经验详情失败：{str(e)}")
+            print(traceback.format_exc())
+            return jsonify({"code": 500, "msg": "获取经验详情失败，请稍后重试！"}), 500
