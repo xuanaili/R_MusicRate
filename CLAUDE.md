@@ -135,7 +135,7 @@ portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 
 ## 铁律
 - 每次修改，都要git上传，并说明修改内容
 - 开发新功能前，必须先阅读 `ai/skill/` 目录下的规则文件，避免重复踩坑
-- **大版本规划**：按 `ai/skill/20260810_big_version_planning_workflow.md` 执行——规划产出 = **直接写 README 版本章节 + git 提交**，不进 plan mode、不出独立方案文件；需用户拍板的决策用 AskUserQuestion
+- **版本规划**：按 `ai/skill/20260810_big_version_planning_workflow.md` 执行——规划产出 = **直接写 README 版本章节（最新版本在前） + git 提交**，不进 plan mode、不出独立方案文件；需用户拍板的决策用 AskUserQuestion
 - **新需求（新对话）启动时，先同时加载「开发 skill」`ai/skill/20260810_feature_development_workflow.md` +「测试 skill」`ai/skill/20260810_testing_workflow.md`**，两者成对使用：测试先行→实现→跑测试→提交，互相验证修改；测试失败 = 改代码或按新需求改测试，不得静默跳过
 
 ## 对话结束归档
