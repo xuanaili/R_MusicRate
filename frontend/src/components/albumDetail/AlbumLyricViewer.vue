@@ -41,6 +41,32 @@
               <h2>{{ currentPlayingTrackName }}</h2>
             </div>
 
+            <!-- v0.8.4 P0：当前单曲快捷评分（歌名标题栏内、上传/编辑歌词按钮左侧；悬停显示，
+                 复用单曲列表评分交互：拖拽/点击定位 + 滚轮 ±1 微调；非管理员同样可见） -->
+            <div
+              class="lyric-score-slider-wrap"
+              @click.stop
+              @mousedown.stop
+              @mouseup.stop
+              @mouseleave.stop
+              @wheel.prevent="handleTrackScoreWheel"
+            >
+              <div
+                class="lyric-score-slider"
+                ref="lyricScoreSlider"
+                @mousedown="startTrackScore"
+                @mouseup="stopTrackScore"
+                @mouseleave="stopTrackScore"
+                @click="setTrackScoreByClick"
+              >
+                <div
+                  class="lyric-score-progress"
+                  :style="{ width: currentTrackScore + '%' }"
+                ></div>
+              </div>
+              <span class="lyric-score-text">{{ currentTrackScore }}分</span>
+            </div>
+
             <!-- v0.8.1 P2：AI 识别整轨歌词按钮（悬停显示，与上传/编辑歌词对称放左侧，仅歌词展示页、仅管理员；
                  轮询逻辑在父组件 AlbumDetail，切换子页面识别持续） -->
             <button
@@ -285,6 +311,9 @@
 // v0.8.3 P0：歌词时间纯函数抽公共（parseTimeStr/formatTime/formatTimeForOutput），
 // 与后端 backend/utils/lrc.py str_to_seconds/seconds_to_str 语义一致，可被 node 单测
 import { parseTimeStr, formatTime, formatTimeForOutput } from '@/utils/lrcTime';
+// v0.8.4 P0：评分列表纯函数（parseScoreList/getTrackScore/setTrackScore，可被 node 单测）
+import { parseScoreList, getTrackScore, setTrackScore } from '@/utils/scoreList';
+import { handleLevelFeedback } from '@/utils/levelFeedback';
 
 export default {
   name: 'AlbumLyricViewer',
@@ -387,6 +416,12 @@ export default {
       batchUploadCurrent: 0,
       batchUploadTotal: 0,
       batchUploadTimer: null,
+      // v0.8.4 P0：歌词页顶部当前单曲快捷评分（本地评分快照 + 防抖保存）
+      lyricScoreList: [],
+      saveScoreTimer: null,
+      pendingScoreSave: null, // { albumId, scoreList } 防抖期间快照，避免切歌/离开写错专辑
+      currentTrackIdx: -1,    // 正在评分的单曲 index（mousedown 时捕获，避免拖拽中切歌写错位）
+      currentSliderDom: null,
     };
   },
   computed: {
@@ -436,6 +471,10 @@ export default {
       }
 
       return currentTrackIndex;
+    },
+    // v0.8.4 P0：当前播放单曲的评分（评分数组 index0 是专辑整体分，单曲分在 index+1）
+    currentTrackScore() {
+      return getTrackScore(this.lyricScoreList, this.currentPlayingTrackIndex);
     }
   },
   watch: {
@@ -451,10 +490,21 @@ export default {
     },
     album: {
       handler(newVal, oldVal) {
-        if (oldVal && oldVal.id && newVal && newVal.id && oldVal.id !== newVal.id) {
+        // v0.8.4 P0：始终同步最新评分快照；拖拽中不覆盖本地快照（等保存后父组件回同步再对齐）
+        if (this.currentTrackIdx === -1) this.initLyricScoreList();
+        // v0.8.4 P0 收敛：仅「专辑切换 / 曲目结构 / 歌词」变化才重建 trackList——initTrackLyricsMap
+        // 会重置歌词编辑器内容（currentTrackLyricContent），纯 my_score 变化（如评分保存后父组件
+        // 同步 album.my_score）若也重建会把正在编辑的歌词清空。tracks/tracks_time/lyrics 的单独
+        // watcher 已覆盖各自变化，此处只需按结构变化重建。
+        const oldId = oldVal && oldVal.id, newId = newVal && newVal.id;
+        const changed = (key) => JSON.stringify((oldVal || {})[key]) !== JSON.stringify((newVal || {})[key]);
+        const structuralChanged = oldId !== newId
+          || changed('tracks') || changed('tracks_time')
+          || (oldVal || {}).lyric_text !== (newVal || {}).lyric_text
+          || (oldVal || {}).lyric_translate !== (newVal || {}).lyric_translate;
+        if (structuralChanged) {
           this.initTrackList(true);
         }
-        this.initTrackList(true);
       }, deep: true
     },
     selectedTrackIndex: {
@@ -507,6 +557,7 @@ export default {
   },
   mounted() {
     this.initTrackList();
+    this.initLyricScoreList(); // v0.8.4 P0：评分快照（album.my_score 已在专辑加载时随详情返回）
     document.addEventListener('click', this.handleClickOutside);
 
     this.$nextTick(() => {
@@ -521,6 +572,9 @@ export default {
 
     clearTimeout(this.scrollAnimationTimer);
     if (this.batchUploadTimer) clearTimeout(this.batchUploadTimer);
+
+    // v0.8.4 P0：离开歌词页前落盘待保存的评分快照，避免切子页面丢分
+    this.flushTrackScoreSave();
 
     if (this.$refs.originalLyricTextarea) {
       this.$refs.originalLyricTextarea.removeEventListener('paste', this.handleLyricPaste);
@@ -1000,6 +1054,90 @@ export default {
     },
     closeModal() { this.showUploadLyricModal = false; },
 
+    // ========== v0.8.4 P0：歌词页顶部当前单曲快捷评分 ==========
+    // 评分源 = 父组件已同步的 album.my_score（[专辑整体分, 单曲1分, ...]），
+    // 不在本组件重复 GET，规避 stale-GET 覆盖竞态（AlbumTrackList 用 scoreEditVersion 防的是同问题）。
+    initLyricScoreList() {
+      this.lyricScoreList = parseScoreList(this.album.my_score);
+    },
+    // 防抖 800ms 保存；快照 albumId + scoreList，切歌/离开页面也能写回正确专辑（同 AlbumTrackList 模式）
+    scheduleTrackScoreSave() {
+      const albumId = this.album.id;
+      if (!albumId) return;
+      this.pendingScoreSave = {albumId, scoreList: this.lyricScoreList.slice()};
+      if (this.saveScoreTimer) clearTimeout(this.saveScoreTimer);
+      this.saveScoreTimer = setTimeout(() => {
+        this.saveScoreTimer = null;
+        const pending = this.pendingScoreSave;
+        this.pendingScoreSave = null;
+        if (pending) this.doTrackScoreSave(pending.albumId, pending.scoreList);
+      }, 800);
+    },
+    flushTrackScoreSave() {
+      if (this.saveScoreTimer) {
+        clearTimeout(this.saveScoreTimer);
+        this.saveScoreTimer = null;
+      }
+      const pending = this.pendingScoreSave;
+      this.pendingScoreSave = null;
+      if (pending) this.doTrackScoreSave(pending.albumId, pending.scoreList);
+    },
+    async doTrackScoreSave(albumId, scoreList) {
+      try {
+        if (!albumId) return;
+        // 仅保存的是当前专辑时同步父组件展示，避免切歌后旧专辑快照污染新专辑显示
+        if (albumId === this.album.id) {
+          this.$emit('score-list-change', scoreList);
+        }
+        const res = await this.$axios.put(`/api/album/score/save/${albumId}`, {score_list: scoreList}, {
+          headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
+        });
+        // v0.7.1 P0：评分保存加分反馈（+N 经验 toast + 升级检测，与 AlbumTrackList 一致）
+        if (res.data && res.data.code === 200) {
+          handleLevelFeedback(res.data.data, {toast: '评分保存'});
+        }
+      } catch (err) {
+        console.error('保存评分失败：', err);
+      }
+    },
+    startTrackScore(e) {
+      this.currentTrackIdx = this.currentPlayingTrackIndex;
+      this.currentSliderDom = e.currentTarget;
+      this.calcTrackScore(e);
+      document.addEventListener('mousemove', this.handleTrackScoreMouseMove);
+      e.stopPropagation();
+    },
+    stopTrackScore() {
+      this.currentTrackIdx = -1;
+      this.currentSliderDom = null;
+      document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
+    },
+    handleTrackScoreMouseMove(e) {
+      if (this.currentTrackIdx !== -1 && this.currentSliderDom) {
+        this.calcTrackScore(e);
+      }
+    },
+    calcTrackScore(e) {
+      const rect = this.currentSliderDom.getBoundingClientRect();
+      let percent = ((e.clientX - rect.left) / rect.width) * 100;
+      percent = Math.max(0, Math.min(100, Math.round(percent)));
+      this.lyricScoreList = setTrackScore(this.lyricScoreList, this.currentTrackIdx, percent);
+      this.scheduleTrackScoreSave();
+    },
+    setTrackScoreByClick(e) {
+      this.currentTrackIdx = this.currentPlayingTrackIndex;
+      this.currentSliderDom = e.currentTarget;
+      this.calcTrackScore(e);
+    },
+    // 滚轮 ±1 微调（同 AlbumTrackList.handleTrackScoreWheel）
+    handleTrackScoreWheel(e) {
+      const step = e.deltaY < 0 ? 1 : -1;
+      const idx = this.currentPlayingTrackIndex;
+      const next = Math.max(0, Math.min(100, getTrackScore(this.lyricScoreList, idx) + step));
+      this.lyricScoreList = setTrackScore(this.lyricScoreList, idx, next);
+      this.scheduleTrackScoreSave();
+    },
+
     async saveAndUploadAllLyrics() {
       if (!this.currentTrackLyricContent.trim()) {
         this.$message?.warning('原版歌词不能为空');
@@ -1229,6 +1367,54 @@ export default {
 	border-radius: 2px;
   background-color: v-bind(mainColorDark) !important;
   opacity: 1 !important;
+}
+
+/* v0.8.4 P0：当前单曲快捷评分进度条（歌名标题栏内、上传/编辑歌词按钮左侧；悬停显示，复用单曲列表滑块样式）。
+   绝对定位在右侧、位于上传按钮（right:20px）左侧，隐藏时不参与布局、不破坏歌名居中；
+   pointer-events:none 保证隐藏时不拦截该区域的点击/滚轮。 */
+.lyric-score-slider-wrap {
+  position: absolute;
+  right: 210px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 160px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.fixed-track-title:hover .lyric-score-slider-wrap {
+  opacity: 1;
+  pointer-events: auto;
+}
+.lyric-score-slider {
+  flex: 1;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+}
+.lyric-score-slider:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.lyric-score-progress {
+  height: 100%;
+  background: v-bind(mainColorDark);
+  border-radius: 6px;
+  transition: width 0.05s linear;
+}
+.lyric-score-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: v-bind(mainColorDarkDouble);
+  white-space: nowrap;
+  min-width: 44px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .upload-lyric-btn {
