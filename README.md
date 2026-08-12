@@ -149,6 +149,87 @@ MusicRate/
 
 ---
 
+## v0.8.3 — 歌词样式统一 + AI 助手 BPM 预触发（规划已定稿）
+
+> 承接 v0.8.1 AI 系列的两个体验收尾 + 把 v0.8 歌词遗留待办并入：① 解决 AI 助手「首次提问才开始分析 BPM」的滞后——打开专辑详情页 / AI 助手 tab 即预触发节奏分析（幂等），提问不再首问必「节奏分析中」；② 歌词展示页样式一致性美化——修复单曲歌名标题选择器失配（模板 `<h2>`、CSS 却是 `.fixed-track-title h3`，歌名一直无样式）与全页硬编码颜色主题化，顺带修 v0.8 遗留三件（当前句抖动 / 长歌词省略号 / `parseTimeStr` 小数精度）。规划于 2026-08-12 定稿（**注：v0.8.2 未在 README 留档，直接规划 v0.8.3**），实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P2 落地。
+
+### 功能概述
+
+1. **BPM 预触发（消除滞后）**：新增任意登录用户可用的 get-or-trigger 接口 `POST /api/ai/tempo/ensure/<album_pool_id>`；前端在**专辑详情页打开**（`getAlbumDetail` 成功）与 **AI 助手 tab 打开**（`created()`）两个时机各调一次，幂等防重复（`album_tempo` 缓存短路 + `tasks.find_active`）。AI 助手页显示「节奏分析中…」提示条并轮询就绪。`chat` 接口在 tempo 缺失/分析中时**照常回答**（暂缺【单曲节奏 BPM】段，不再返回「节奏分析中」占位），BPM 就绪后自动带上。
+2. **歌词展示页样式统一**：修复歌名标题 `<h2>` 与 CSS `.fixed-track-title h3` 选择器失配 bug（歌名一直无样式）；歌词页硬编码 `#333/#666/#888/#999` 统一收敛到主题色三档（`mainColorDarkDouble` 高亮/时间/歌名、`mainColorDark` 下划线/按钮/激活项、`mainColor`/`White` 按钮/进度条）。
+3. **v0.8 遗留三件并入**：当前句抖动（字号动画与滚动目标 offsetTop 反馈循环）、长歌词省略号（`.lyric-text` nowrap 撑破居中布局）、`parseTimeStr` 小数 `/1000` 不自洽（`00:05.5` 被解析成 5.005s）。
+4. **其他优化并入**：听取时长显示格式统一（抽公共 `utils/duration.js`，v0.7.1 遗留）；`album_pool.tracks_time` DDL 漂移统一（v0.8 遗留）。
+
+### 已定决策（2026-08-12 拍板）
+
+| 决策点 | 结论 |
+|--------|------|
+| BPM 预触发时机 | **专辑详情页打开 + AI 助手 tab 打开都触发**；幂等不重复（缓存短路 + find_active） |
+| BPM 触发权限 | **任意登录用户**（新增 ensure 接口）；BPM 为 album_pool 级共享缓存非私有数据；serial_lock 串行 + find_active 防重复控滥用 |
+| 分析中提问行为 | **照常回答**（暂缺 BPM 段），不再返回「节奏分析中」占位；BPM 就绪后自动带上 |
+| 歌词美化范围 | **全量样式统一**（歌名 h2 修复 + 全页主题化 + v0.8 遗留三件一起修） |
+
+### 数据来源
+
+| 数据 | 存哪 | 现成 or 需新建 | 查询接口 / 字段 |
+|------|------|--------------|----------------|
+| 每曲 BPM / 节奏结构 | `album_tempo`（album_pool_id 唯一） | 现成 | ensure 短路判断 + chat 上下文 |
+| 整轨 mp3 是否可分析 | `album_pool.mp3_url` + 磁盘存在性 | 现成 | `_resolve_audio_path` |
+| 活跃 tempo 任务 | `tasks`（内存任务表） | 现成 | `find_active(kind='tempo')` |
+| 歌词展示样式 | `AlbumLyricViewer.vue`（前端纯样式） | 现成 | — |
+| 听取时长格式 | 前端 4 组件各写一遍 | 需抽公共 | `utils/duration.js` |
+
+### 架构设计
+
+- **ensure get-or-trigger**：`backend/api/tempo_ai.py` 新增 `ensure_tempo(app, album_pool_id, user_id)` 帮助函数——① `album_tempo` 已有 → `{ready:true}`；② 有活跃 tempo 任务 → `{ready:false, analyzing:true, task_id}`；③ 否则 `start_tempo_task` → `{ready:false, analyzing:true, task_id}`；池不存在 404 / 无 mp3 → `{ready:false, has_mp3:false}`（前端忽略）。路由 `POST /api/ai/tempo/ensure/<album_pool_id>` 仅 `@login_required`（任意登录用户，不再校验 is_admin）
+- **chat 语义变更**：`ai_chat()` 的懒分析分支删除「返回占位 JSON」，改为「tempo 缺失 + 有 mp3 → 触发 ensure（防重复）+ 照常走 SSE/非流式回答（`format_tempo(None)` → 无 BPM 段）」；前端 `tempo_analyzing` JSON 分支随之删除
+- **前端预触发**：`AlbumDetail.vue` `getAlbumDetail` 成功后调 ensure；`AlbumAIAssistant.vue` `created()` 调 ensure + 若 `analyzing` 显示顶部提示条「⏳ 正在分析专辑节奏（BPM）…」并轮询 `GET /api/ai/tempo/status/<task_id>`（~4s）就绪后隐藏（beforeDestroy 清定时器）
+- **歌词样式统一**：AlbumLyricViewer 颜色收敛三档主题色；`.fixed-track-title` 选择器改对（`h2`）；`.lyric-text` 长行改约束换行；`getLyricItemStyle` + `scrollToCurrentCombinedLyric` 改稳定滚动锚点
+- **parseTimeStr 精度**：按小数位数 `/10`（1位）/`/100`（2位）/`/1000`（3位），对齐 `parseLrcToStandardFormat` 已正确实现
+
+### 数据库
+
+v0.8.3 **无新增表**。`album_pool.tracks_time` 建表 DDL 补默认值 `'[]'`（漂移统一，幂等 CREATE 只影响新表；线上库不强制迁移）。
+
+### 后端接口
+
+- `POST /api/ai/tempo/ensure/<album_pool_id>`（新增，任意登录用户）——get-or-trigger，见架构设计
+- `POST /api/ai/tempo/analyze/<album_pool_id>`（保持）——管理员手动触发入口不变
+- `GET /api/ai/tempo/status/<task_id>`（保持）——前端提示条就绪检测复用
+- `POST /api/ai/chat`（改）——tempo 缺失分支由「返回占位」改为「触发 ensure + 照常回答（无 BPM 段）」
+
+### 前端组件
+
+- `views/AlbumDetail.vue`（改）——`getAlbumDetail` 成功后预触发 ensure
+- `components/albumDetail/AlbumAIAssistant.vue`（改）——`created()` ensure + 节奏分析中提示条 + 轮询就绪隐藏；删 `tempo_analyzing` JSON 分支
+- `components/albumDetail/AlbumLyricViewer.vue`（改）——h2 歌名样式 + 全页颜色主题化 + 修抖动/省略号/parseTimeStr
+- `utils/duration.js`（新增）+ `item/AlbumItem.vue`、`albumDetail/AlbumBaseInfo.vue`、`albumDetail/AlbumReviewEditor.vue`、`albumDetail/AlbumCommentSection.vue`（改）——听取时长格式统一
+
+### 分阶段路线
+
+- **P0 歌词展示页样式统一**：h2 选择器修复 + 全页颜色主题化 → `parseTimeStr` 精度修复 → 长歌词省略号 → 当前句抖动 → 单测（`parseTimeStr` 纯函数可测）+ `npm run lint` + 手动回归
+- **P1 BPM 预触发**：`ensure_tempo` 帮助函数 + ensure 路由 + chat 改照常回答 → 单测 + realdata（test_ai_chat_realdata 懒分析断言同步更新）→ 前端 AlbumDetail + AlbumAIAssistant 预触发 + 提示条轮询 → lint + 手动回归
+- **P2 其他优化**：`duration.js` 抽取统一 4 处格式 → `album_pool.tracks_time` DDL 漂移统一 → realdata + 回归
+
+### 难点与对策
+
+- **多时机预触发防重**：ensure 短路（`album_tempo` 已有即 ready）+ `find_active(kind='tempo', album_pool_id)` 防重复启动；AlbumDetail 与 AI tab 两次触发不冲突
+- **非管理员触发滥用**：serial_lock 全局串行（CPU 同一时间只跑一个后台任务）+ 每专辑分析一次即缓存 → 滥用收益极低，可接受
+- **chat 语义变更回归**：v0.8.1 realdata 断言「tempo 缺失返回 tempo_analyzing」需同步改为「照常回答且 system 无 BPM 段 + ensure 被调用」；AI 无 BPM 上下文时基于其他段作答，信息不足会如实告知（prompt 已约束）
+- **抖动修复**：根因是字号随距离动画改变每行 offsetTop，滚动目标漂移 → 用「index × 固定行高」作稳定锚点或动画结束二次定位，避免反馈循环
+- **parseTimeStr 精度**：与 `parseLrcToStandardFormat` 对齐按位数除，双端行为一致；顺带校验 `formatTime`/`formatTimeForOutput` round-trip
+
+### 待做（勾选清单）
+
+- [ ] P0 歌名 h2 选择器修复 + 歌词页颜色主题化
+- [ ] P0 `parseTimeStr` 小数精度修复（对齐 parseLrcToStandardFormat）
+- [ ] P0 长歌词省略号撑破布局修复
+- [ ] P0 当前句抖动修复
+- [ ] P1 `ensure` 接口 + chat 改照常回答 + 单测/realdata
+- [ ] P1 前端双时机预触发 + 提示条轮询
+- [ ] P2 `utils/duration.js` 抽取统一 4 处格式
+- [ ] P2 `album_pool.tracks_time` DDL 漂移统一
+
 ## v0.8.1 — AI 系列：歌词识别正式管线 + AI 助手（P0-P6 已完成）
 
 > 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地；**P0 识别器升级、P1 异步任务 + 接口、P2 DeepSeek 校正 + 前端按钮、P3 AI key 配置（个人中心）、P4 BPM 节奏分析（tempo_analyzer + album_tempo 缓存 + 异步任务，与歌词识别共用同一任务表串行）已完成（2026-08-12）**。2026-08-12 增补：**AI 识别整轨进度条（实时转写进度）+ 添加专辑自动触发识别**（管理员添加带整轨 mp3 的专辑时自动启动识别，省得每次手动再识别一次）。2026-08-12 增补：**平台参考歌词辅助校正**——DeepSeek 校正环节按曲目实时拉取网易云/酷狗/QQ 官方歌词作纠错参考，专治中文同音错字（参考仅用于消歧，不改草稿行文与时间戳）。2026-08-12 增补：**P5 AI 助手后端**——`ai_conversation` / `ai_quota` 表 + 上下文组装（专辑/歌手/评分/听后感/标签/BPM/当前歌歌词/平台评论/全网听后感，纯函数放 `ai_context.py` 可单测）+ OpenAI 兼容 chat（deepseek/openai）+ SSE 流式 + 配额（提问成功才计数）+ 会话按 user+album_pool_id 持久化；BPM 懒分析（tempo 缺失 + 有整轨 mp3 → 异步触发分析返回「节奏分析中」，防重复用 `tasks.find_active(kind='tempo')`）完成（2026-08-12）。2026-08-12 增补：**P6 AI 助手前端**——`AlbumAIAssistant.vue` 专辑详情子页（消息列表用户气泡/AI markdown 气泡 + 空态引导问题 + 底部 textarea Enter 发送/Shift+Enter 换行 + SSE 流式渲染原生 fetch/ReadableStream + 思考中动画 + 单条删除 + 重置对话）+ `AlbumDetail.vue` 左侧菜单「AI 助手」入口（`/api/ai/status` has_key 显隐）+ 前端新增 `markdown-it`（`html:false` 防 XSS）完成（2026-08-12）。
@@ -401,11 +482,11 @@ v0.8 **无新增表**，全部复用 `album_lyric`（歌词）与现有表。备
 
 ### 后续小版本待办（本大版本不做）
 
-- [ ] **歌词当前句抖动**：`getLyricItemStyle` 字号随距离变化 + `smoothScrollTo` 的 offsetTop 不稳定形成反馈循环
-- [ ] **长歌词省略号**：`.lyric-text` 的 `white-space: nowrap; text-overflow: ellipsis` 撑破居中布局导致其他歌词不显示
-- [ ] **歌词样式迭代**：整体美化（含前端 `parseTimeStr` 小数精度 bug）
+- [x] **歌词当前句抖动**：`getLyricItemStyle` 字号随距离变化 + `smoothScrollTo` 的 offsetTop 不稳定形成反馈循环 → **已并入 v0.8.3（P0）**
+- [x] **长歌词省略号**：`.lyric-text` 的 `white-space: nowrap; text-overflow: ellipsis` 撑破居中布局导致其他歌词不显示 → **已并入 v0.8.3（P0）**
+- [x] **歌词样式迭代**：整体美化（含前端 `parseTimeStr` 小数精度 bug） → **已并入 v0.8.3（P0 全量样式统一）**
 - [ ] ~~DeepSeek 歌词校正正式落地~~ → 已并入 v0.8.1 正式管线
-- [ ] **`album_pool.tracks_time` DDL 漂移**统一
+- [x] **`album_pool.tracks_time` DDL 漂移**统一 → **已并入 v0.8.3（P2）**
 
 
 ---
@@ -568,7 +649,7 @@ v0.8 **无新增表**，全部复用 `album_lyric`（歌词）与现有表。备
 - [x] P0 等级经验系统 + 经验反馈（升级横幅 + +N 经验 toast + 每日加分上限 100）✅ 2026-08-11
 - [x] P1 统计优化（h + 1 位小数 + 总时长口径统一 + 连续收听天数 / 活跃度）✅ 2026-08-11
 - [x] P2 蒙版滑轨偏移修复 + 拖动数值气泡 / 刻度线 ✅ 2026-08-11（headless 实测：填充渐变边界 vs thumb 中心收敛至 ≤0.4px；**thumb 垂直方向实测已居中，未加 margin-top**；补 0/25/60 刻度线 + 拖动数值气泡）
-- [ ] （补充）听取时长显示格式统一：AlbumItem / AlbumBaseInfo / AlbumReviewEditor / AlbumCommentSection 多处格式各异，抽公共 `utils/duration.js`
+- [x] （补充）听取时长显示格式统一：AlbumItem / AlbumBaseInfo / AlbumReviewEditor / AlbumCommentSection 多处格式各异，抽公共 `utils/duration.js` → **已并入 v0.8.3（P2）**
 - [ ] （补充）等级徽章入口扩展：UserAvatar（WebHome 右上角）+ 评论区展示等级（待定）
 - [ ] （补充）等级称号文案确认（如 Lv1-3 初听者 → Lv4-7 爱乐人 → Lv8-12 资深乐迷 → …）
 
