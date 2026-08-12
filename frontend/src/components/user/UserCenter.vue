@@ -20,6 +20,13 @@
         :style="tabStyle('stats')"
         @click="activeTab = 'stats'"
       >音乐统计</div>
+      <!-- v0.8.1 P3：AI 配置 tab（个人 AI key） -->
+      <div
+        class="uc-tab"
+        :class="{ active: activeTab === 'ai' }"
+        :style="tabStyle('ai')"
+        @click="activeTab = 'ai'"
+      >AI 配置</div>
       <span v-if="dismissible" class="uc-close-btn" @click="$emit('close')">×</span>
     </div>
 
@@ -37,7 +44,14 @@
         :mainColorDarkDouble="mainColorDarkDouble"
       />
       <StatsPanel
-        v-else
+        v-else-if="activeTab === 'stats'"
+        :mainColor="mainColor"
+        :mainColorDark="mainColorDark"
+        :mainColorDarkDouble="mainColorDarkDouble"
+      />
+      <!-- v0.8.1 P3：AI 配置 tab（个人 AI key） -->
+      <AISettingsTab
+        v-else-if="activeTab === 'ai'"
         :mainColor="mainColor"
         :mainColorDark="mainColorDark"
         :mainColorDarkDouble="mainColorDarkDouble"
@@ -50,10 +64,11 @@
 import ProfilePanel from '@/components/user/ProfilePanel.vue'
 import AppearancePanel from '@/components/user/AppearancePanel.vue'
 import StatsPanel from '@/components/user/StatsPanel.vue'
+import AISettingsTab from '@/components/user/AISettingsTab.vue'
 
 export default {
   name: 'UserCenter',
-  components: { ProfilePanel, AppearancePanel, StatsPanel },
+  components: { ProfilePanel, AppearancePanel, StatsPanel, AISettingsTab },
   props: {
     mainColor: { type: String, default: 'transparent' },
     mainColorDark: { type: String, default: 'transparent' },
