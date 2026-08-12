@@ -115,6 +115,30 @@ def _run_tempo(app, task_id, album_pool_id, user_id):
         tasks.serial_lock.release()
 
 
+def start_tempo_task(app, album_pool_id, album_name, user_id):
+    """创建并启动 BPM 分析后台任务（tempo/analyze 路由 与 AI chat 懒分析共用）
+    - 复用全局任务表单例 tasks（kind='tempo'，find_active 区分歌词识别任务）；CPU 串行由 _run_tempo 的 serial_lock 保证
+    - 调用方负责前置校验（池存在 / 有整轨 mp3 / 管理员）；返回 task_id
+    """
+    task_id = tasks.new_task_id()
+    tasks.create(
+        task_id=task_id,
+        kind='tempo',
+        album_pool_id=album_pool_id,
+        album_name=album_name,
+        user_id=user_id,
+        status='queued',
+        message='任务已创建，排队等待分析',
+        progress=0,
+        created_at=datetime.now(),
+    )
+    t = threading.Thread(
+        target=_run_tempo, args=(app, task_id, album_pool_id, user_id), daemon=True,
+    )
+    t.start()
+    return task_id
+
+
 def register_tempo_ai_routes(app):
     """注册 BPM 节奏分析异步任务路由（analyze 触发 + status 轮询），仅管理员可触发"""
     global _app
@@ -146,22 +170,8 @@ def register_tempo_ai_routes(app):
                 return jsonify({"code": 400, "msg": "整轨 MP3 文件不存在，请先上传音频！"}), 400
 
             # 幂等：重复触发视为新任务（README：内存任务表不持久化，接口幂等）
-            task_id = tasks.new_task_id()
-            tasks.create(
-                task_id=task_id,
-                album_pool_id=album_pool_id,
-                album_name=pool['album_name'],
-                user_id=current_user_id,
-                status='queued',
-                message='任务已创建，排队等待分析',
-                progress=0,
-                created_at=datetime.now(),
-            )
-
-            t = threading.Thread(
-                target=_run_tempo, args=(app, task_id, album_pool_id, current_user_id), daemon=True,
-            )
-            t.start()
+            # 与 AI chat 懒分析共用 start_tempo_task（kind='tempo'，find_active 区分任务类型）
+            task_id = start_tempo_task(app, album_pool_id, pool['album_name'], current_user_id)
 
             return jsonify({
                 "code": 200,

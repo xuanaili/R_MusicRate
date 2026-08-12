@@ -695,6 +695,68 @@ CREATE TABLE IF NOT EXISTS album_tempo (
         raise e
 
 
+# ========== ✅ v0.8.1 P5：AI 对话历史表 ai_conversation ==========
+def create_ai_conversation():
+    """创建 AI 助手对话历史表（按 user + album_pool_id 持久化，P5）
+    - 决策（README v0.8.1）：消息【成功才落库】（失败/中断不留半会话，镜像 BookRate 踩坑）
+    - role 枚举：user / assistant；content 存单条消息原文
+    - INDEX(user_id, album_pool_id)：加载某专辑对话历史（最近 20 条）
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+CREATE TABLE IF NOT EXISTS ai_conversation (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    user_id INT NOT NULL COMMENT '用户ID（关联users表，INT）',
+    album_pool_id INT NOT NULL COMMENT '公共专辑ID（album_pool.id）',
+    role VARCHAR(10) NOT NULL COMMENT '角色：user/assistant',
+    content TEXT NOT NULL COMMENT '消息内容',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX idx_user_album (user_id, album_pool_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI助手对话历史表（v0.8.1 P5，成功才落库）';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ ai_conversation AI助手对话历史表 创建/检查成功！")
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ 创建ai_conversation表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
+# ========== ✅ v0.8.1 P5：AI 用量表 ai_quota ==========
+def create_ai_quota():
+    """创建 AI 用量表（按 user + quota_date 统计每日提问次数/字符，P5）
+    - 列名 requests / chars（对齐 P3 已存在的 _get_daily_usage 查询，README DDL）
+    - UNIQUE(user_id, quota_date)：每日一行，chat 成功后 upsert 累加
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+CREATE TABLE IF NOT EXISTS ai_quota (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    user_id INT NOT NULL COMMENT '用户ID（关联users表，INT）',
+    quota_date DATE NOT NULL COMMENT '日期（按天统计）',
+    requests INT NOT NULL DEFAULT 0 COMMENT '当日提问次数',
+    chars INT NOT NULL DEFAULT 0 COMMENT '当日消费字符数',
+    UNIQUE KEY uk_user_date (user_id, quota_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI用量表（v0.8.1 P5，按日统计提问次数/字符）';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ ai_quota AI用量表 创建/检查成功！")
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ 创建ai_quota表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
 # ========== ✅✅✅ 核心：初始化所有基础表 ==========
 def init_base_tables():
     """初始化基础表"""
@@ -726,6 +788,9 @@ def init_base_tables():
         create_ai_key()
         # v0.8.1 P4：专辑节奏分析缓存表（AI 助手上下文 BPM）
         create_album_tempo()
+        # v0.8.1 P5：AI 助手对话历史 + 用量表（chat 成功才落库 + 每日配额）
+        create_ai_conversation()
+        create_ai_quota()
 
         print("✅ MySQL基础表初始化成功！")
         init_default_admin()

@@ -175,6 +175,7 @@ def start_recognize_task(app, album_pool_id, album_name, user_id):
     task_id = tasks.new_task_id()
     tasks.create(
         task_id=task_id,
+        kind='lyric',
         album_pool_id=album_pool_id,
         album_name=album_name,
         user_id=user_id,

@@ -48,6 +48,24 @@ class TaskTable:
             if task:
                 task.update(fields)
 
+    def find_active(self, kind=None, **kwargs):
+        """查找运行中/排队中的任务（按 kind 与可选字段过滤）
+        - status ∈ (queued, running) 才返回（已完成/失败不算活跃，可重复触发）
+        - kind 非空则要求 task['kind'] == kind（区分歌词识别 lyric / BPM 分析 tempo）
+        - 用于 AI chat 懒分析防重复触发：album_tempo 缺失时，若已有活跃 tempo 任务则不重复创建
+        - 返回匹配的任务列表（按创建顺序）
+        """
+        with self._lock:
+            out = []
+            for t in self._tasks.values():
+                if t.get('status') not in ('queued', 'running'):
+                    continue
+                if kind is not None and t.get('kind') != kind:
+                    continue
+                if all(t.get(k) == v for k, v in kwargs.items()):
+                    out.append(t)
+            return out
+
 
 # 模块级共享任务表单例（v0.8.1 P4）：歌词识别 lyric_ai 与 BPM 分析 tempo_ai 共用同一实例，
 # serial_lock 全局唯一 → 所有 CPU 密集后台任务严格串行（同一时间只跑一个），避免 CPU 100% 抢占
