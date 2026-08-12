@@ -149,9 +149,9 @@ MusicRate/
 
 ---
 
-## v0.8.1 — AI 系列：歌词识别正式管线 + AI 助手（P0-P5 已完成，P6 待实现）
+## v0.8.1 — AI 系列：歌词识别正式管线 + AI 助手（P0-P6 已完成）
 
-> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地；**P0 识别器升级、P1 异步任务 + 接口、P2 DeepSeek 校正 + 前端按钮、P3 AI key 配置（个人中心）、P4 BPM 节奏分析（tempo_analyzer + album_tempo 缓存 + 异步任务，与歌词识别共用同一任务表串行）已完成（2026-08-12）**。2026-08-12 增补：**AI 识别整轨进度条（实时转写进度）+ 添加专辑自动触发识别**（管理员添加带整轨 mp3 的专辑时自动启动识别，省得每次手动再识别一次）。2026-08-12 增补：**平台参考歌词辅助校正**——DeepSeek 校正环节按曲目实时拉取网易云/酷狗/QQ 官方歌词作纠错参考，专治中文同音错字（参考仅用于消歧，不改草稿行文与时间戳）。2026-08-12 增补：**P5 AI 助手后端**——`ai_conversation` / `ai_quota` 表 + 上下文组装（专辑/歌手/评分/听后感/标签/BPM/当前歌歌词/平台评论/全网听后感，纯函数放 `ai_context.py` 可单测）+ OpenAI 兼容 chat（deepseek/openai）+ SSE 流式 + 配额（提问成功才计数）+ 会话按 user+album_pool_id 持久化；BPM 懒分析（tempo 缺失 + 有整轨 mp3 → 异步触发分析返回「节奏分析中」，防重复用 `tasks.find_active(kind='tempo')`）完成（2026-08-12）。
+> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地；**P0 识别器升级、P1 异步任务 + 接口、P2 DeepSeek 校正 + 前端按钮、P3 AI key 配置（个人中心）、P4 BPM 节奏分析（tempo_analyzer + album_tempo 缓存 + 异步任务，与歌词识别共用同一任务表串行）已完成（2026-08-12）**。2026-08-12 增补：**AI 识别整轨进度条（实时转写进度）+ 添加专辑自动触发识别**（管理员添加带整轨 mp3 的专辑时自动启动识别，省得每次手动再识别一次）。2026-08-12 增补：**平台参考歌词辅助校正**——DeepSeek 校正环节按曲目实时拉取网易云/酷狗/QQ 官方歌词作纠错参考，专治中文同音错字（参考仅用于消歧，不改草稿行文与时间戳）。2026-08-12 增补：**P5 AI 助手后端**——`ai_conversation` / `ai_quota` 表 + 上下文组装（专辑/歌手/评分/听后感/标签/BPM/当前歌歌词/平台评论/全网听后感，纯函数放 `ai_context.py` 可单测）+ OpenAI 兼容 chat（deepseek/openai）+ SSE 流式 + 配额（提问成功才计数）+ 会话按 user+album_pool_id 持久化；BPM 懒分析（tempo 缺失 + 有整轨 mp3 → 异步触发分析返回「节奏分析中」，防重复用 `tasks.find_active(kind='tempo')`）完成（2026-08-12）。2026-08-12 增补：**P6 AI 助手前端**——`AlbumAIAssistant.vue` 专辑详情子页（消息列表用户气泡/AI markdown 气泡 + 空态引导问题 + 底部 textarea Enter 发送/Shift+Enter 换行 + SSE 流式渲染原生 fetch/ReadableStream + 思考中动画 + 单条删除 + 重置对话）+ `AlbumDetail.vue` 左侧菜单「AI 助手」入口（`/api/ai/status` has_key 显隐）+ 前端新增 `markdown-it`（`html:false` 防 XSS）完成（2026-08-12）。
 
 ### 功能概述
 
@@ -265,7 +265,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - **增补：AI 识别按钮移出弹窗、悬停显示**：弹窗内 AI 按钮迁到歌词展示页歌名标题栏左侧（与右上「上传/编辑歌词」对称、悬停才显示，仅歌词展示页；无歌词提示区也并排展示）；轮询逻辑迁到常驻父组件 `AlbumDetail.vue`（props 下传 + 事件触发）——切换听后感/评论/其他子页面时识别持续轮询、进度条在标题栏下方实时可见；done 后 `getAlbumLyrics()` 刷新歌词联动子组件 ✅ 2026-08-12
 - **增补：平台参考歌词辅助校正**：`lyric_reference.py`（网易云优先/酷狗/QQ 兜底拉取 LRC + 纯文字解析 + 优先级逐级降级 + 5s 超时）+ `build_correct_prompt` 加可选 `reference_text` 参数（为空则 prompt 不变）+ `lyric_ai` 集成（DeepSeek 校正前按 `album_pool.tracks`+`singer` 逐曲拉参考）+ 单测（解析/prompt）+ realdata 验证（真实拉取知名中文歌）
 - **P5 AI 助手后端**：`ai_conversation` / `ai_quota` 表 + 上下文组装（含 BPM/歌词/听后感/评论/全网听后感）+ OpenAI 兼容 chat + SSE 流式 + 配额 → 单测 + realdata ✅ 2026-08-12（`ai.py` chat/conversation/reset/delete + `ai_context.py` 纯函数 + `task_table.find_active`/`start_tempo_task` 抽取 + 懒分析；单测 32 条 + realdata 19 条）
-- **P6 AI 助手前端**：`AlbumAIAssistant.vue` 子页 + SSE 流式渲染 + markdown + AlbumDetail 菜单入口（has_key 显隐）+ `npm run lint` + 手动回归
+- **P6 AI 助手前端**：`AlbumAIAssistant.vue` 子页 + SSE 流式渲染 + markdown + AlbumDetail 菜单入口（has_key 显隐）+ `npm run lint` + 手动回归 ✅ 2026-08-12（`markdown-it` 依赖 + 组件 + 菜单入口；lint 通过 + build 通过）
 
 ### 难点与对策
 
@@ -295,7 +295,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - [x] 增补：AI 识别按钮移出弹窗、悬停显示（歌名标题栏左侧，与上传/编辑歌词对称；轮询迁入常驻父组件 AlbumDetail，切换子页面识别持续）✅ 2026-08-12
 - [x] 增补：平台参考歌词辅助校正（lyric_reference.py 网易云优先/酷狗/QQ 兜底 + build_correct_prompt reference 参数 + lyric_ai 集成 + 单测 + realdata）✅ 2026-08-12
 - [x] P5 AI 助手后端（conversation/quota 表 + 上下文组装 + OpenAI 兼容 chat + SSE 流式 + 配额）✅ 2026-08-12
-- [ ] P6 AI 助手前端（AlbumAIAssistant 子页 + markdown + AlbumDetail 入口）
+- [x] P6 AI 助手前端（AlbumAIAssistant 子页 + markdown-it + SSE 流式渲染 + AlbumDetail 菜单入口 has_key 显隐）✅ 2026-08-12
 ## v0.8 — 歌词版：本地上传 LRC 接口（干净版）+ AI 歌词识别可行性验证（P0 已完成）
 
 > v0.8 主题为歌词，重点是 `album/detail` 下的歌词展示页面。规划已于 2026-08-11 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对落地；**P0（LRC 纯函数双端同构 + 后端重构删 QQ/权限修复/整轨上传接口 + 前端删 QQ 加整轨上传入口）已完成（2026-08-11）**；**P1 AI 歌词识别 spike（faster-whisper 可行性验证）已完成（2026-08-12），验证通过 → 正式管线拍板落地，见 v0.8.1 章节**。歌词样式迭代与两个已知 bug（当前句抖动、长歌词省略号）明确留给后续小版本。

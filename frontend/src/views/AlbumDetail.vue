@@ -20,8 +20,8 @@
                  <div class="menu-item" :class="{active: activeTab === 'lyric'}" :style="activeTab==='lyric'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'lyric'">歌词展示</div>
         <div class="menu-item" :class="{active: activeTab === 'review'}" :style="activeTab==='review'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'review'">听后感</div>
         <div class="menu-item" :class="{active: activeTab === 'comments'}" :style="activeTab==='comments'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'comments'">平台评论</div>
-
-
+        <!-- v0.8.1 P6：AI 助手菜单项（仅配置 key 的用户可见，P5 后端 chat 依赖） -->
+        <div v-if="aiHasKey" class="menu-item" :class="{active: activeTab === 'ai'}" :style="activeTab==='ai'?{color:albumMainColorDarkDouble, fontWeight:'600', backgroundColor:activeMenuBg}:{}" @click="activeTab = 'ai'">AI 助手</div>
 
 
       </div>
@@ -136,6 +136,18 @@
   @jump-to-time="handleTrackJump"
   @update:lyrics="updateAlbumLyrics"
 />
+
+      <!-- v0.8.1 P6：AI 助手子页（仅配置 key 的用户可见菜单入口；currentTrackIndex 由播放器 currentTime+tracks_time 推导，用于后端切当前歌歌词） -->
+      <AlbumAIAssistant
+        v-if="activeTab === 'ai'"
+        :album-pool-id="albumPoolId"
+        :current-track-index="currentTrackIndex"
+        :main-color="albumMainColor"
+        :main-color-dark="albumMainColorDark"
+        :main-color-dark-double="albumMainColorDarkDouble"
+        :main-color-white="albumMainColorWhite"
+        :main-color-white-double="albumMainColorWhiteDouble"
+      />
     </main>
 
     <!-- 播放列表组件传参完整，双向绑定+防抖保存 -->
@@ -252,6 +264,7 @@ import PlayerPlaylist from '@/components/sidebar/PlayerPlaylist'
 // 核心新增：引入评分计算工具函数
 
 import AlbumLyricViewer from '@/components/albumDetail/AlbumLyricViewer'
+import AlbumAIAssistant from '@/components/albumDetail/AlbumAIAssistant'
 import {calculateAlbumTotalScore} from '@/utils/scoreCalc.js'
 import {handleLevelFeedback} from '@/utils/levelFeedback'
 // ✅✅✅ 整合新增：引入全局配置文件 (小球动画配置)
@@ -265,7 +278,8 @@ export default {
     AlbumCommentSection,
     PlayerPlaylist,
     AlbumAudioUpload,
-    AlbumLyricViewer
+    AlbumLyricViewer,
+    AlbumAIAssistant
   },
   data() {
     return {
@@ -295,6 +309,8 @@ export default {
   lyric_translate: '{}' // 翻译歌词JSON字符串
       },
       activeTab: 'base',
+      // v0.8.1 P6：AI 助手菜单显隐（仅配置了 key 的用户显示）
+      aiHasKey: false,
       newCommentContent: '',
       publicComments: [],
       currentUserId: localStorage.getItem('user_id') || '',
@@ -581,6 +597,7 @@ async created() {
   }
   this.currentUserId = localStorage.getItem('user_id');
   this.isAdmin = localStorage.getItem('is_admin') === '1';
+  this.loadAiStatus(); // v0.8.1 P6：决定「AI 助手」菜单是否显示
 
   const albumId = this.$route.params.id || this.$route.query.id;
   if (!albumId) {
@@ -1591,6 +1608,18 @@ handleUpdateAlbumScore(scoreList) {
         console.error('检查用户评论失败：', err);
         return false;
       }
+    },
+
+    // v0.8.1 P6：加载 AI 配置状态 → 决定左侧菜单是否显示「AI 助手」（仅配置 key 的用户可见）
+    loadAiStatus() {
+      this.$axios.get('/api/ai/status').then(res => {
+        if (res.data.code === 200) {
+          this.aiHasKey = !!res.data.data.has_key;
+        }
+      }).catch(err => {
+        // 接口失败不阻断详情页（AI 菜单隐藏即可）
+        console.error('❌ 加载 AI 配置状态失败：', err);
+      });
     },
 
     // 核心修复5：getAlbumDetail 加加载状态锁，异步请求有开始/结束标记
