@@ -199,11 +199,14 @@ def build_full_storage_text(items):
     return items_to_storage(items)
 
 
-def transcribe(audio_path, model_size='small', limit_secs=None, language=None, vad_filter=False):
+def transcribe(audio_path, model_size='small', limit_secs=None, language=None, vad_filter=False,
+               progress_callback=None):
     """转写音频文件 → (segments, info, metrics)
     - word_timestamps=True + vad_filter 默认 False（v0.8.1 P0 拍板：音乐场景 VAD 会整首丢失曲目）
     - word_timestamps=True 时 segment 带 no_speech_prob（幻觉过滤的数据源，保留到返回 dict）
     - limit_secs 用 clip_timestamps 限制（只转写前 N 秒，spike 首跑拿 RTF 用）
+    - progress_callback：可选回调，每产出一个 segment 调用 progress_callback(ratio)（0.0~1.0），
+      ratio = 已转写音频比例（segment.end / 总时长 估算；无总时长信息则不回调），前端进度条用
     - 返回 faster-whisper segment 列表（含 start/end/text/no_speech_prob）与模型 info（语言 / 时长）
     """
     model = get_model(model_size)
@@ -215,17 +218,18 @@ def transcribe(audio_path, model_size='small', limit_secs=None, language=None, v
 
     t0 = time.time()
     segments_iter, info = model.transcribe(audio_path, **kwargs)
-    segments = [
-        {
+    audio_seconds = limit_secs if limit_secs else (getattr(info, 'duration', None) or 0)
+    segments = []
+    for s in segments_iter:
+        segments.append({
             'start': s.start,
             'end': s.end,
             'text': s.text,
             'no_speech_prob': getattr(s, 'no_speech_prob', 0.0) or 0.0,
-        }
-        for s in segments_iter
-    ]
+        })
+        if progress_callback and audio_seconds:
+            progress_callback(min(1.0, (s.end or 0.0) / audio_seconds))
     elapsed = time.time() - t0
 
-    audio_seconds = limit_secs if limit_secs else (getattr(info, 'duration', None) or 0)
     rtf = (elapsed / audio_seconds) if audio_seconds else 0.0
     return segments, info, {'elapsed': elapsed, 'audio_seconds': audio_seconds, 'rtf': rtf}

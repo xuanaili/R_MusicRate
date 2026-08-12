@@ -61,7 +61,10 @@ def fake_transcribe(monkeypatch):
     """替换 lyric_ai.transcribe 为固定 segments（含 P0 过滤/转简验证样例），避免真模型慢 + 依赖真实音频
     三条 segment：1 条正常繁体歌词 + 2 条幻觉噪音（詞曲/字幕by）→ 预期只落库 1 条简体「某夜你离开」
     """
-    def _fake(audio_path, model_size='small', limit_secs=None, language=None, vad_filter=False):
+    def _fake(audio_path, model_size='small', limit_secs=None, language=None, vad_filter=False,
+              progress_callback=None):
+        if progress_callback:
+            progress_callback(1.0)  # 模拟转写完成回调（_do_recognize 已接 progress_callback）
         segments = [
             {'start': 0.0, 'end': 2.0, 'text': '某夜你離開', 'no_speech_prob': 0.05},
             {'start': 2.5, 'end': 4.0, 'text': '詞曲 李宗盛', 'no_speech_prob': 0.05},
@@ -236,6 +239,59 @@ def test_recognize_repeat_creates_new_task(client, admin_user, fake_transcribe):
         assert r1['code'] == 200 and r2['code'] == 200
         assert r1['data']['task_id'] != r2['data']['task_id']
         _wait_status(client, r2['data']['task_id'], admin_user['headers'])
+    finally:
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+
+
+@pytest.mark.realdata
+def test_recognize_reports_transcribe_progress(client, admin_user, monkeypatch):
+    """转写进度实时上报（进度条数据源）：fake transcribe 分段回调 progress_callback →
+    轮询 status 应能观察到 10~90 的中间进度与对应 message，最后 done + progress=100"""
+    import backend.api.lyric_ai as mod
+
+    def _fake_with_progress(audio_path, model_size='small', limit_secs=None, language=None,
+                            vad_filter=False, progress_callback=None):
+        # 模拟整轨多段转写：逐段小睡 + 回调比例（保证轮询线程能抓到中间进度）
+        for ratio in (0.25, 0.5, 0.75, 1.0):
+            time.sleep(0.1)
+            if progress_callback:
+                progress_callback(ratio)
+        segments = [
+            {'start': 0.0, 'end': 6.0, 'text': '某夜你离开', 'no_speech_prob': 0.05},
+        ]
+        info = type('Info', (), {'language': 'zh', 'duration': 6.0})()
+        metrics = {'elapsed': 0.1, 'audio_seconds': 6.0, 'rtf': 0.017}
+        return segments, info, metrics
+
+    monkeypatch.setattr(mod, 'transcribe', _fake_with_progress)
+    monkeypatch.setattr('backend.config.DEEPSEEK_API_KEY', '')  # 锁死无 key → 草稿路径
+    filename, audio_path = _make_mp3_file(client)
+    try:
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
+        r = client.post(f'/api/album/lyric/recognize/{pool_id}', headers=admin_user['headers']).get_json()
+        assert r['code'] == 200, r
+        task_id = r['data']['task_id']
+
+        seen_mid = False
+        deadline = time.time() + 10
+        last = None
+        while time.time() < deadline:
+            s = client.get(f'/api/album/lyric/recognize/status/{task_id}', headers=admin_user['headers']).get_json()['data']
+            last = s
+            if 10 < s['progress'] < 100:
+                seen_mid = True
+                # 严格转写阶段（<90）message 必须带阶段提示；==90 已进入写入歌词阶段，不在此断言
+                if s['progress'] < 90:
+                    assert '模型转写中' in (s['message'] or ''), \
+                        f'转写中间态 message 应含阶段提示，got={s["message"]}'
+            if s['status'] in ('done', 'failed'):
+                break
+            time.sleep(0.02)
+        assert seen_mid, f'未观察到转写中间进度（10~90），最后状态={last}'
+        assert last['status'] == 'done', last
+        assert last['progress'] == 100
+        assert last['lyric_lines'] == 1
     finally:
         if os.path.exists(audio_path):
             os.remove(audio_path)

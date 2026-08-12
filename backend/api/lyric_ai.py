@@ -27,6 +27,14 @@ from backend.api.lyric import upsert_album_lyric
 _app = None
 
 
+def _map_transcribe_progress(ratio):
+    """转写阶段进度映射（纯函数）：已转写比例 ratio(0.0~1.0) → 任务进度(10~90)
+    10 = 转写开始、90 = 转写完成；剩余 90→93 写入歌词 / 93→100 DeepSeek 校正 + 收尾（进度条用）
+    """
+    ratio = max(0.0, min(1.0, ratio))
+    return 10 + int(80 * ratio)
+
+
 def _resolve_audio_path(mp3_url):
     """mp3_url（http://localhost:5000/tracks/<filename>）→ 磁盘绝对路径
     backend/data/album_track/<filename>（与 audio_resource.py 存储/读取一致）
@@ -59,8 +67,14 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
             raise ValueError(f'整轨 MP3 文件不存在：{audio_path}')
 
         tasks.update(task_id, progress=10, message='模型转写中（VAD 关）…')
+
+        def _progress(ratio):
+            # 转写进度实时上报（基于 segment.end / 音频时长，10→90 平滑推进）
+            pct = _map_transcribe_progress(ratio)
+            tasks.update(task_id, progress=pct, message=f'模型转写中（VAD 关）… {pct}%')
+
         # P0 管线：vad_filter=False + no_speech_prob 幻觉过滤 + 噪音模式滤除 + OpenCC 繁转简（segments_to_items 内置）
-        segments, info, metrics = transcribe(audio_path)
+        segments, info, metrics = transcribe(audio_path, progress_callback=_progress)
         items = segments_to_items(segments)
 
         audio_seconds = metrics.get('audio_seconds') or 0
@@ -129,6 +143,29 @@ def _run_recognize(app, task_id, album_pool_id, user_id):
         tasks.serial_lock.release()
 
 
+def start_recognize_task(app, album_pool_id, album_name, user_id):
+    """创建并启动歌词识别后台任务（recognize 路由 与 专辑添加自动触发 共用）
+    - 复用全局任务表单例 tasks；CPU 串行由 _run_recognize 的 serial_lock 保证
+    - 调用方负责前置校验（池存在 / 有整轨 mp3 / 管理员）；返回 task_id
+    """
+    task_id = tasks.new_task_id()
+    tasks.create(
+        task_id=task_id,
+        album_pool_id=album_pool_id,
+        album_name=album_name,
+        user_id=user_id,
+        status='queued',
+        message='任务已创建，排队等待识别',
+        progress=0,
+        created_at=datetime.now(),
+    )
+    t = threading.Thread(
+        target=_run_recognize, args=(app, task_id, album_pool_id, user_id), daemon=True,
+    )
+    t.start()
+    return task_id
+
+
 def format_dt(dt):
     return dt.strftime('%Y-%m-%d %H:%M:%S') if dt else None
 
@@ -164,22 +201,7 @@ def register_lyric_ai_routes(app):
                 return jsonify({"code": 400, "msg": "整轨 MP3 文件不存在，请先上传音频！"}), 400
 
             # 幂等：重复触发视为新任务（README：内存任务表不持久化，接口幂等）
-            task_id = tasks.new_task_id()
-            tasks.create(
-                task_id=task_id,
-                album_pool_id=album_pool_id,
-                album_name=pool['album_name'],
-                user_id=current_user_id,
-                status='queued',
-                message='任务已创建，排队等待识别',
-                progress=0,
-                created_at=datetime.now(),
-            )
-
-            t = threading.Thread(
-                target=_run_recognize, args=(app, task_id, album_pool_id, current_user_id), daemon=True,
-            )
-            t.start()
+            task_id = start_recognize_task(app, album_pool_id, pool['album_name'], current_user_id)
 
             return jsonify({
                 "code": 200,

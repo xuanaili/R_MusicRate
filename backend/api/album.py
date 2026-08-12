@@ -6,7 +6,7 @@ from .unlock import format_duration
 from backend.utils.db import (
     get_db, get_album_table_name, get_current_user_id
 )
-from backend.utils.decorators import login_required
+from backend.utils.decorators import login_required, is_admin_user
 from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 import pymysql
 
@@ -588,6 +588,19 @@ def register_album_routes(app):
                 save_user_album_intro(current_user_id, new_album_id, album_intro)
             db.commit()
             cursor.close()
+
+            # v0.8.1 增补：管理员添加带整轨 mp3 的专辑 → 自动启动 AI 歌词识别（省得每次新专辑再手动识别一次）
+            # 识别失败不影响专辑添加（后台任务标记 failed，可稍后在歌词弹窗手动重新触发）
+            recognize_task_id = None
+            if mp3_url and is_admin_user(current_user_id):
+                from backend.api.lyric_ai import start_recognize_task
+                try:
+                    recognize_task_id = start_recognize_task(app, new_pool_id, album_name, current_user_id)
+                except Exception as e:
+                    print(f"⚠️ 自动触发 AI 识别失败（不影响专辑添加）：{e}")
+                    traceback.print_exc()
+                    recognize_task_id = None
+
             return_album = new_album.copy()
             return_album['id'] = new_album_id
             return_album['tags'] = json.loads(return_album['tags'])
@@ -598,6 +611,7 @@ def register_album_routes(app):
             return_album['tracks_time'] = json.loads(return_album['tracks_time'])
             return_album['mp3_url'] = mp3_url
             return_album['mp3_duration'] = mp3_duration  # 返回时长给前端
+            return_album['recognize_task_id'] = recognize_task_id  # 非空=已自动开始 AI 识别
             return jsonify({
                 "code": 200,
                 "msg": "专辑添加成功！单曲时间戳和MP3地址已同步保存到公共池",
