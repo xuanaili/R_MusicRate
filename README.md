@@ -151,7 +151,7 @@ MusicRate/
 
 ## v0.8.4 — 歌词页顶部当前单曲快捷评分（规划已定稿）
 
-> 承接 v0.8.3 歌词展示页样式统一，新增歌词页顶部「当前单曲快捷评分」：在歌名标题栏、上传/编辑歌词按钮左侧，加一个与单曲列表同款交互的评分进度条（悬停显示），边看歌词边对当前播放单曲打分。纯前端增强，无后端/数据库改动，复用现有 `PUT /api/album/score/save/<album_id>` 评分保存接口。规划于 2026-08-12 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地。
+> 承接 v0.8.3 歌词展示页样式统一，新增歌词页顶部「当前单曲快捷评分」：在歌名标题栏、上传/编辑歌词按钮左侧，加一个与单曲列表同款交互的评分进度条（悬停显示），边看歌词边对当前播放单曲打分。纯前端增强，无后端/数据库改动，复用现有 `PUT /api/album/score/save/<album_id>` 评分保存接口。规划于 2026-08-12 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地；**P0 纯函数 + 单测、P1 组件集成已完成（2026-08-12）**。
 
 ### 功能概述
 
@@ -210,8 +210,8 @@ v0.8.4 **无新增表 / 无字段变更**。
 
 ### 待做（勾选清单）
 
-- [ ] P0 `scoreList.js` 纯函数 + `test_score_list.py` 单测
-- [ ] P1 AlbumLyricViewer 集成 + lint + 手动回归
+- [x] P0 `scoreList.js` 纯函数 + `test_score_list.py` 单测（node golden 29 例 + pytest 30 条）✅ 2026-08-12
+- [x] P1 AlbumLyricViewer 集成（进度条 + 交互 + 防抖保存 + watcher 收敛）+ lint + build ✅ 2026-08-12
 
 ---
 
