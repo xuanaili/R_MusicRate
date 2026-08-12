@@ -31,7 +31,7 @@
           <!-- ✅ 核心新增：听取时间，放在我的评分正下方，样式完全一致 -->
           <div class="meta-item">
             <span class="meta-label">听取时间：</span>
-            <span class="meta-value">{{ formatListeningDuration() }}</span>
+            <span class="meta-value">{{ formatDuration(album.listening_duration, '未知') }}</span>
           </div>
         </div>
 
@@ -120,6 +120,8 @@
 <script>
 import TagBubbleChart from '@/components/TagBubbleChart'
 import config from '@/config/index.js'
+// 听取时长格式化（v0.8.3 P2 抽公共统一 4 处格式）
+import { formatDuration } from '@/utils/duration.js'
 export default {
   name: 'AlbumBaseInfo',
   components: { TagBubbleChart },
@@ -199,6 +201,8 @@ export default {
     }
   },
   methods: {
+    // 听取时长格式化（v0.8.3 P2 公共函数，挂到methods便于模板解析）
+    formatDuration,
     darkenColor(hex, amount) {
       const r = parseInt(hex.slice(1, 3), 16) * (1 - amount);
       const g = parseInt(hex.slice(3, 5), 16) * (1 - amount);
@@ -228,19 +232,6 @@ export default {
         this.tagSearchInput = '';
       }
       this.handleSaveTags()
-    },
-    // ✅✅✅ 核心新增：纯秒数 转 xxh xxmin 格式 【精准适配你的需求】
-    formatListeningDuration() {
-      // 拿到专辑的纯秒数，容错处理：非数字/空/0 都返回 未知
-      const totalSeconds = this.album.listening_duration
-      if (!totalSeconds || isNaN(Number(totalSeconds)) || Number(totalSeconds) <= 0) {
-        return '未知'
-      }
-      const secNum = Number(totalSeconds)
-      const hours = Math.floor(secNum / 3600) // 总秒数 ÷3600 = 小时数
-      const minutes = Math.floor((secNum % 3600) / 60) // 剩余秒数 ÷60 = 分钟数
-      // 拼接格式：有小时显示xxhxxmin，无小时只显示xxmin，无多余空格/字符
-      return hours > 0 ? `${hours}h${minutes}min` : `${minutes}min`
     },
     removeMyTag(index) {
       this.selectedMyTags.splice(index, 1);

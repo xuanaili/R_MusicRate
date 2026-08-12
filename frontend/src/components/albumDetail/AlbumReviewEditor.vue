@@ -99,7 +99,7 @@
             </div>
             <div class="feeling-content">{{ feeling.content }}</div>
             <div class="duration-wrapper">
-              <div class="listening-duration">已听{{ formatSecondsToHourMin(feeling.listening_duration) }}</div>
+              <div class="listening-duration">已听{{ formatDuration(feeling.listening_duration) }}</div>
             </div>
             <button class="delete-single-btn" @click="handleDeleteSingle(feeling.id)">删除</button>
           </div>
@@ -123,6 +123,8 @@
 
 <script>
 import {calculateAlbumTotalScore} from "@/utils/scoreCalc";
+// 听取时长格式化（v0.8.3 P2 抽公共统一 4 处格式）
+import {formatDuration} from "@/utils/duration";
 
 export default {
   name: 'AlbumReviewEditor',
@@ -204,6 +206,8 @@ export default {
     this.fetchCalendarReviewData();
   },
   methods: {
+    // 听取时长格式化（v0.8.3 P2 公共函数，挂到methods便于模板解析）
+    formatDuration,
     // 核心：处理textarea键盘事件
     handleTextareaKeydown(e) {
       // 判断是否按下回车键
@@ -260,15 +264,6 @@ export default {
       const g = Math.min(255, parseInt(hex.slice(3, 5), 16) * (1 + amount));
       const b = Math.min(255, parseInt(hex.slice(5, 7), 16) * (1 + amount));
       return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
-    },
-    formatSecondsToHourMin(seconds) {
-      if (!seconds || isNaN(seconds) || Number(seconds) <= 0) {
-        return '0h0min';
-      }
-      const totalSeconds = Number(seconds);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      return `${hours}h${minutes}min`;
     },
     async fetchCalendarReviewData() {
       this.loading = true;

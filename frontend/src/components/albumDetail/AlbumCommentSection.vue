@@ -67,7 +67,7 @@
         <div class="comment-left-line-wrapper">
           <div class="comment-header" :style="{backgroundColor: 'transparent'}">
             <span class="comment-username" :style="{color: mainColorDarkDouble, fontWeight: '600'}">{{ myComment.username }}</span>
-            <span class="listen-duration sort-text-style">{{ formatListenTime(myComment.listening_duration) }}</span>
+            <span class="listen-duration sort-text-style">{{ formatDuration(myComment.listening_duration) }}</span>
             <span class="my-tag" :style="{backgroundColor:mainColorDark, color: '#ffffff'}">我的评论</span>
             <span v-if="myComment.is_admin" class="admin-tag">管理员</span>
           </div>
@@ -107,7 +107,7 @@
         <div class="comment-left-line-wrapper">
           <div class="comment-header" :style="{backgroundColor: 'transparent'}">
             <span class="comment-username" :style="{color: mainColorDarkDouble, fontWeight:600}">{{ comment.username }}</span>
-            <span class="listen-duration sort-text-style">{{ formatListenTime(comment.listening_duration) }}</span>
+            <span class="listen-duration sort-text-style">{{ formatDuration(comment.listening_duration) }}</span>
             <span v-if="comment.is_admin" class="admin-tag">管理员</span>
           </div>
           <div class="comment-content" :style="{color: mainColorDarkDouble, backgroundColor: 'transparent'}">{{ comment.content }}</div>
@@ -157,6 +157,8 @@
 </template>
 
 <script>
+// 听取时长格式化（v0.8.3 P2 抽公共统一 4 处格式）
+import { formatDuration } from '@/utils/duration.js';
 export default {
   name: 'AlbumCommentSection',
   props: {
@@ -252,6 +254,8 @@ export default {
     }
   },
   methods: {
+    // 听取时长格式化（v0.8.3 P2 公共函数，挂到methods便于模板解析）
+    formatDuration,
     handleSubmitComment() {
       this.$emit('submit-comment');
     },
@@ -266,20 +270,6 @@ export default {
       const g = parseInt(hex.slice(3, 5), 16);
       const b = parseInt(hex.slice(5, 7), 16);
       return (r * 299 + g * 587 + b * 114) / 1000;
-    },
-    formatListenTime(seconds) {
-      if (!seconds || isNaN(seconds) || seconds < 0) {
-        return '0min';
-      }
-      const totalMinutes = Math.floor(seconds / 60);
-      const hour = Math.floor(totalMinutes / 60);
-      const minute = totalMinutes % 60;
-      const minuteText = minute.toString().padStart(2, '0');
-      if (hour === 0) {
-        return `${minuteText}min`;
-      } else {
-        return `${hour}h${minuteText}min`;
-      }
     }
   }
 };

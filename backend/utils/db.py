@@ -347,6 +347,7 @@ def create_album_pool():
                 tags TEXT,
                 album_intro TEXT NULL COMMENT '专辑简介（支持长文本、分段、特殊符号）',
                 tracks TEXT COMMENT '单曲列表（JSON字符串）',
+                tracks_time TEXT NOT NULL DEFAULT ('[]') COMMENT '单曲时间戳数组（JSON）：[120,240,360]，与tracks一一对应（v0.8.3 P2 补 DDL 漂移列，MySQL8.0.13+ TEXT 默认值须表达式语法）',
                 my_score TEXT COMMENT '单曲评分数组【JSON】：[8.0,9.5,7.8] ✅TEXT类型 无默认值',
                 create_user INT NOT NULL COMMENT '创建用户ID',
                 create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

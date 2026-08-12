@@ -49,6 +49,8 @@
 import { calculateAlbumTotalScore } from '@/utils/scoreCalc.js';
 // 引入封面缩略图工具（列表页小图用缩略图URL）
 import { coverThumb as coverThumbUtil } from '@/utils/cover.js';
+// 引入听取时长格式化（v0.8.3 P2 抽公共统一 4 处格式）
+import { formatDuration } from '@/utils/duration.js';
 
 export default {
   props: {
@@ -97,6 +99,8 @@ export default {
     }
   },
   methods: {
+    // 听取时长格式化（v0.8.3 P2 公共函数，挂到methods便于模板解析）
+    formatDuration,
     // 列表页小图用缩略图URL（挂到methods便于模板解析）
     coverThumb(url) {
       return coverThumbUtil(url);
@@ -137,16 +141,6 @@ export default {
         scoreArr = []
       }
       return scoreArr
-    },
-    // 已听时长：秒数 转 xxxhxxmin 格式
-    formatDuration(seconds) {
-      const sec = Number(seconds);
-      if (isNaN(sec) || sec <= 0) return '0min';
-      const hours = Math.floor(sec / 3600);
-      const mins = Math.floor((sec % 3600) / 60);
-      if (hours === 0) return `${mins}min`;
-      if (mins === 0) return `${hours}h`;
-      return `${hours}h${mins}min`;
     },
     // 标签：提取英文展示
     getTagEnglish(tagStr) {
