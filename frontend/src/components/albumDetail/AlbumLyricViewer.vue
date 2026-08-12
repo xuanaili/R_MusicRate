@@ -282,6 +282,10 @@
 </template>
 
 <script>
+// v0.8.3 P0：歌词时间纯函数抽公共（parseTimeStr/formatTime/formatTimeForOutput），
+// 与后端 backend/utils/lrc.py str_to_seconds/seconds_to_str 语义一致，可被 node 单测
+import { parseTimeStr, formatTime, formatTimeForOutput } from '@/utils/lrcTime';
+
 export default {
   name: 'AlbumLyricViewer',
   props: {
@@ -376,6 +380,8 @@ export default {
       showUploadBtn: false,
       trackDropdownOpen: false,
       scrollAnimationTimer: null,
+      // v0.8.3 P0：上次已滚动定位的高亮行 index，用于「同一句不重复滚动」防抖动
+      lastScrolledIndex: -1,
       wholeLrcUploadLoading: false,
       batchUploadLoading: false,
       batchUploadCurrent: 0,
@@ -521,6 +527,11 @@ export default {
     }
   },
   methods: {
+    // v0.8.3 P0：时间纯函数来自 utils/lrcTime.js（删除组件内重复实现，修复 parseTimeStr /1000 bug）
+    parseTimeStr,
+    formatTime,
+    formatTimeForOutput,
+
     bindLyricPasteEvent() {
       const textarea = this.$refs.originalLyricTextarea;
       if (textarea) {
@@ -601,16 +612,6 @@ export default {
         console.error('粘贴失败', err);
         this.currentTrackLyricContent = await navigator.clipboard.readText();
       }
-    },
-
-    formatTimeForOutput(seconds) {
-      if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
-      const min = Math.floor(seconds / 60);
-      const sec = Math.floor(seconds % 60);
-      const ms = Math.floor((seconds % 1) * 10);
-      return ms > 0
-        ? `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}.${ms}`
-        : `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
     },
 
     triggerLrcFileInput() {
@@ -815,6 +816,7 @@ export default {
 
     initTrackList() {
       this.trackList = [];
+      this.lastScrolledIndex = -1; // 曲目/歌词结构变化后重新允许定位
       const names = this.tracks || [], secs = this.tracksTime || [];
       names.forEach((name, i) => {
         this.trackList.push({
@@ -849,29 +851,6 @@ export default {
       this.currentTrackTranslateContent = this.trackLyricsMap[this.selectedTrackIndex]?.translate || '';
     },
 
-    formatTime(s) {
-      if (!s || isNaN(s) || s < 0) return '00:00';
-      const min = Math.floor(s/60), sec = Math.floor(s%60), ms = Math.floor((s%1)*10);
-      return ms > 0
-        ? `${min.toString().padStart(2,0)}:${sec.toString().padStart(2,0)}.${ms}`
-        : `${min.toString().padStart(2,0)}:${sec.toString().padStart(2,0)}`;
-    },
-
-    parseTimeStr(str) {
-      try {
-        const [mPart, rest] = str.split(':');
-        const m = parseInt(mPart);
-        let sec = 0;
-        if (rest.includes('.')) {
-          const [sPart, msPart] = rest.split('.');
-          sec = parseInt(sPart) + parseInt(msPart) / 1000;
-        } else {
-          sec = parseInt(rest);
-        }
-        return m * 60 + sec;
-      } catch { return 0; }
-    },
-
     parseLyricText(text) {
       if (!text) return [];
       const lines = text.trim().split('\n');
@@ -888,6 +867,7 @@ export default {
 
     combineLyrics() {
       this.combinedLyrics = [];
+      this.lastScrolledIndex = -1; // 歌词变化后重新允许定位
       const cn = this.localParsedTranslateLyrics.CN || [];
       const map = new Map();
       cn.forEach(i => map.set(Math.floor(i.time*10)/10, i.text));
@@ -919,15 +899,19 @@ export default {
     },
 
     updateCurrentLyric() {
-      if (this.isScrolling) return;
+      // 高亮始终实时更新（不受滚动锁影响）；滚动只在高亮行「切换」时触发一次，
+      // 避免字号过渡期间对漂移中的 offsetTop 反复滚动 → 当前句抖动
       this.updateHighlightedCombinedIndex();
+      const idx = this.highlightedCombinedIndex;
+      if (idx === -1) return;
+      if (this.isScrolling) return;
+      if (idx === this.lastScrolledIndex) return;
+      this.lastScrolledIndex = idx;
       this.$nextTick(() => {
-        if (this.highlightedCombinedIndex !== -1) {
-          clearTimeout(this.scrollAnimationTimer);
-          this.scrollAnimationTimer = setTimeout(() => {
-            this.scrollToCurrentCombinedLyric(this.highlightedCombinedIndex);
-          }, 50);
-        }
+        clearTimeout(this.scrollAnimationTimer);
+        this.scrollAnimationTimer = setTimeout(() => {
+          this.scrollToCurrentCombinedLyric(idx);
+        }, 50);
       });
     },
 
@@ -949,22 +933,48 @@ export default {
         const box = this.$refs.lyricsContent;
         if (!box) { this.isScrolling = false; return; }
         const items = box.querySelectorAll('.lyric-pair');
-        if (!items[idx]) { this.isScrolling = false; return; }
-        const h = box.clientHeight, ih = items[idx].offsetHeight;
-        const top = items[idx].offsetTop - h/2 + ih/2;
-        this.smoothScrollTo(box, Math.max(0, top), 300);
+        const item = items[idx];
+        if (!item) { this.isScrolling = false; return; }
+        const h = box.clientHeight;
+        // 用 getBoundingClientRect 相对容器取当前真实位置（比 offsetTop 更抗 offsetParent 干扰）
+        const itemRect = item.getBoundingClientRect();
+        const boxRect = box.getBoundingClientRect();
+        const top = itemRect.top - boxRect.top + box.scrollTop - h/2 + itemRect.height/2;
+        this.smoothScrollTo(box, Math.max(0, top), 300, () => {
+          // 动画结束二次定位：字号过渡（0.4s）仍可能让目标偏移，等过渡稳定后对齐真实中心
+          clearTimeout(this.scrollAnimationTimer);
+          this.scrollAnimationTimer = setTimeout(() => {
+            this.recenterCurrentLyric(idx);
+          }, 450);
+        });
       });
     },
 
-    smoothScrollTo(el, to, dur) {
+    // v0.8.3 P0：字号过渡结束后布局稳定，把当前高亮行对齐到容器中心（一次性微调，非反馈循环）
+    recenterCurrentLyric(idx) {
+      if (idx !== this.highlightedCombinedIndex) { this.isScrolling = false; return; }
+      const box = this.$refs.lyricsContent;
+      const items = box.querySelectorAll('.lyric-pair');
+      const item = items[idx];
+      if (!box || !item) { this.isScrolling = false; return; }
+      const h = box.clientHeight;
+      const itemRect = item.getBoundingClientRect();
+      const boxRect = box.getBoundingClientRect();
+      const delta = (itemRect.top + itemRect.height/2) - (boxRect.top + h/2);
+      if (Math.abs(delta) > 2) box.scrollTop += delta;
+      this.isScrolling = false;
+    },
+
+    smoothScrollTo(el, to, dur, cb) {
       const st = el.scrollTop, d = to - st;
+      if (d === 0) { if (cb) cb(); return; }
       const beg = performance.now();
       const ease = t => -t*(t-2);
       const run = now => {
         const p = Math.min(1, (now-beg)/dur);
         el.scrollTop = st + d*ease(p);
         if (p < 1) requestAnimationFrame(run);
-        else setTimeout(()=>this.isScrolling=false, 50);
+        else if (cb) cb();
       };
       requestAnimationFrame(run);
     },
@@ -1144,7 +1154,7 @@ export default {
 .no-lyric-tip {
   text-align: center;
   font-size: 18px;
-  color: #666;
+  color: v-bind(mainColorDark);
   margin-top: 50px;
   padding: 20px;
   background: rgba(255, 255, 255, 0.2);
@@ -1202,10 +1212,11 @@ export default {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-.fixed-track-title h3 {
+/* v0.8.3 P0：模板歌名是 <h2>，原选择器写 h3 导致歌名一直无样式——修正选择器并主题化 */
+.fixed-track-title h2 {
   margin: 0;
   font-size: 20px;
-  color: #333;
+  color: v-bind(mainColorDarkDouble);
   font-weight: 600;
 }
 .fixed-track-title::after {
@@ -1295,7 +1306,7 @@ export default {
 }
 .ai-recognize-progress-text {
   font-size: 12px;
-  color: #666;
+  color: v-bind(mainColorDark);
   white-space: nowrap;
   max-width: 55%;
   overflow: hidden;
@@ -1416,7 +1427,7 @@ export default {
   justify-content: center;
   align-items: center;
   position: relative;
-  color: #888888;
+  color: v-bind(mainColorDark);
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   transform: translateZ(0);
   backface-visibility: hidden;
@@ -1430,7 +1441,7 @@ export default {
   justify-content: center;
   align-items: center;
   position: relative;
-  color: #888888;
+  color: v-bind(mainColorDark);
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   transform: translateZ(0);
   backface-visibility: hidden;
@@ -1450,12 +1461,12 @@ export default {
   opacity: 1;
 }
 
+/* v0.8.3 P0：长歌词省略号撑破居中布局——去掉 nowrap/ellipsis，改约束换行，长行不撑破、其他歌词正常显示 */
 .lyric-text {
   text-align: center;
   width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .lyrics-content::-webkit-scrollbar {
