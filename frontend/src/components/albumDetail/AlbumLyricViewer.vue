@@ -8,14 +8,27 @@
         <!-- 无歌词提示 -->
         <div v-if="!hasLyricContent" class="no-lyric-tip">
           暂无歌词数据
-          <button
-            v-if="isAdmin"
-            class="upload-lyric-btn no-lyric-upload-btn"
-            :style="{backgroundColor: mainColorDark}"
-            @click="showUploadLyricModal = true"
-          >
-            上传/编辑歌词
-          </button>
+          <!-- v0.8.1 P2：无歌词时也可直接触发 AI 识别整轨（生成草稿歌词），与上传按钮同排展示 -->
+          <div v-if="isAdmin" class="no-lyric-btn-group">
+            <button
+              class="upload-lyric-btn no-lyric-upload-btn"
+              :style="{backgroundColor: mainColorDark}"
+              @click="showUploadLyricModal = true"
+            >
+              上传/编辑歌词
+            </button>
+            <button
+              class="upload-lyric-btn no-lyric-upload-btn"
+              :style="{backgroundColor: mainColor}"
+              @click="$emit('trigger-ai-recognize')"
+              :disabled="aiRecognizeLoading"
+              title="对该专辑整轨 MP3 进行 AI 语音识别（需已上传整轨 MP3），识别结果自动写入全专辑歌词"
+            >
+              <i class="icon-ai-recognize">🤖</i>
+              <span v-if="!aiRecognizeLoading">AI 识别整轨歌词</span>
+              <span v-if="aiRecognizeLoading">识别中… {{ aiRecognizeProgress }}%</span>
+            </button>
+          </div>
         </div>
 
         <!-- 歌词展示区域 -->
@@ -27,6 +40,21 @@
             <div class="track-title-wrapper" @click="toggleTrackDropdown">
               <h2>{{ currentPlayingTrackName }}</h2>
             </div>
+
+            <!-- v0.8.1 P2：AI 识别整轨歌词按钮（悬停显示，与上传/编辑歌词对称放左侧，仅歌词展示页、仅管理员；
+                 轮询逻辑在父组件 AlbumDetail，切换子页面识别持续） -->
+            <button
+              v-if="isAdmin && (showUploadBtn || aiRecognizeLoading)"
+              class="ai-recognize-btn"
+              :style="{backgroundColor: mainColor}"
+              @click="$emit('trigger-ai-recognize')"
+              :disabled="aiRecognizeLoading"
+              title="对该专辑整轨 MP3 进行 AI 语音识别（需已上传整轨 MP3），识别结果自动写入全专辑歌词"
+            >
+              <i class="icon-ai-recognize">🤖</i>
+              <span v-if="!aiRecognizeLoading">AI 识别整轨歌词</span>
+              <span v-if="aiRecognizeLoading">识别中… {{ aiRecognizeProgress }}%</span>
+            </button>
 
             <button
               v-if="isAdmin && showUploadBtn"
@@ -50,6 +78,22 @@
                 <span class="track-duration">{{ track.duration }}</span>
               </div>
             </div>
+          </div>
+
+          <!-- v0.8.1 P2：AI 识别进度条（识别进行中显示，实时转写进度 + 阶段提示） -->
+          <div
+            v-if="aiRecognizeLoading || aiRecognizeProgress > 0"
+            class="ai-recognize-progress-row"
+          >
+            <div class="ai-recognize-progress-track">
+              <div
+                class="ai-recognize-progress-fill"
+                :style="{width: aiRecognizeProgress + '%', backgroundColor: mainColor}"
+              ></div>
+            </div>
+            <span class="ai-recognize-progress-text">
+              {{ aiRecognizeProgress }}% · {{ aiRecognizeStatusMsg }}
+            </span>
           </div>
 
           <!-- 滚动的歌词内容 -->
@@ -290,6 +334,19 @@ export default {
     isMusicPlaying: {
       type: Boolean,
       default: true
+    },
+    // v0.8.1 P2：AI 识别状态（轮询逻辑在父组件 AlbumDetail 常驻，本组件只接收展示）
+    aiRecognizeLoading: {
+      type: Boolean,
+      default: false
+    },
+    aiRecognizeProgress: {
+      type: Number,
+      default: 0
+    },
+    aiRecognizeStatusMsg: {
+      type: String,
+      default: ''
     }
   },
   data() {
@@ -1094,6 +1151,27 @@ export default {
   border-radius: 8px;
 }
 
+/* 无歌词提示内的按钮组：覆盖 .upload-lyric-btn 的 absolute+opacity:0（悬停才显示）样式，改为正常静态排布可见 */
+.no-lyric-btn-group {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+.no-lyric-btn-group .no-lyric-upload-btn {
+  position: static;
+  opacity: 1;
+  transform: none;
+}
+.no-lyric-btn-group .no-lyric-upload-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+.no-lyric-btn-group .no-lyric-upload-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .lyrics-wrapper {
   flex: 1;
   display: flex;
@@ -1164,6 +1242,64 @@ export default {
 .upload-lyric-btn:hover {
   opacity: 0.9;
   transform: scale(1.05);
+}
+
+/* v0.8.1 P2：AI 识别整轨歌词按钮（与上传/编辑歌词对称放左侧，悬停显示；识别中保持可见显示进度） */
+.ai-recognize-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  position: absolute;
+  left: 20px;
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.fixed-track-title:hover .ai-recognize-btn {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.ai-recognize-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+.ai-recognize-btn:disabled {
+  cursor: not-allowed;
+  opacity: 1; /* 识别中保持可见，用于展示实时进度百分比 */
+}
+
+/* v0.8.1 P2：AI 识别进度条（歌词展示页标题下方，识别进行中显示） */
+.ai-recognize-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+.ai-recognize-progress-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: #eee;
+  overflow: hidden;
+}
+.ai-recognize-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.ai-recognize-progress-text {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .track-dropdown {

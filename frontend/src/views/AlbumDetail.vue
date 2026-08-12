@@ -29,32 +29,6 @@
 
     <!-- 右侧主内容区域 -->
     <main class="main-content">
-      <!-- v0.8.1 P2 增补：AI 识别整轨歌词按钮移出弹窗，置主内容左上方（对面上传/编辑歌词），切换子页面识别持续 -->
-      <div v-if="isAdmin" class="ai-recognize-fixed">
-        <button
-          class="ai-recognize-btn"
-          :style="{backgroundColor: albumMainColor}"
-          @click="triggerAiRecognize"
-          :disabled="aiRecognizeLoading"
-          title="对该专辑整轨 MP3 进行 AI 语音识别（需已上传整轨 MP3），识别结果自动写入全专辑歌词"
-        >
-          <i class="icon-ai-recognize">🤖</i>
-          <span v-if="!aiRecognizeLoading">AI 识别整轨歌词</span>
-          <span v-if="aiRecognizeLoading">识别中… {{ aiRecognizeProgress }}%</span>
-        </button>
-        <div
-          v-if="aiRecognizeLoading || aiRecognizeProgress > 0"
-          class="ai-recognize-progress-row"
-        >
-          <div class="ai-recognize-progress-track">
-            <div
-              class="ai-recognize-progress-fill"
-              :style="{width: aiRecognizeProgress + '%', backgroundColor: albumMainColor}"
-            ></div>
-          </div>
-          <span class="ai-recognize-progress-text">{{ aiRecognizeProgress }}% · {{ aiRecognizeStatusMsg }}</span>
-        </div>
-      </div>
       <AlbumBaseInfo
         ref="albumBaseInfo"
         v-if="activeTab === 'base'"
@@ -155,6 +129,10 @@
   :main-color-dark="albumMainColorDark"
   :main-color-dark-double="albumMainColorDarkDouble"
   :is-admin="isAdmin"
+  :ai-recognize-loading="aiRecognizeLoading"
+  :ai-recognize-progress="aiRecognizeProgress"
+  :ai-recognize-status-msg="aiRecognizeStatusMsg"
+  @trigger-ai-recognize="triggerAiRecognize"
   @jump-to-time="handleTrackJump"
   @update:lyrics="updateAlbumLyrics"
 />
@@ -3039,67 +3017,5 @@ h4 {
   overflow: hidden !important;
   cursor: none !important;
   pointer-events: none !important;
-}
-
-/* v0.8.1 P2 增补：AI 识别整轨歌词按钮（移出弹窗到父组件，置于主内容左上方，切换子页面识别持续） */
-.ai-recognize-fixed {
-  position: fixed;
-  top: 20px;
-  left: 220px;   /* 侧边栏 200px 右侧，与播放器/侧栏不重叠 */
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 320px;
-}
-.ai-recognize-btn {
-  padding: 8px 14px;
-  border: none;
-  border-radius: 4px;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  align-self: flex-start;
-  white-space: nowrap;
-}
-.ai-recognize-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-.ai-recognize-btn:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: scale(1.02);
-}
-.ai-recognize-progress-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.85);
-  border-radius: 6px;
-  padding: 6px 10px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-}
-.ai-recognize-progress-track {
-  flex: 1;
-  height: 8px;
-  border-radius: 4px;
-  background: #eee;
-  overflow: hidden;
-  min-width: 120px;
-}
-.ai-recognize-progress-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.4s ease;
-}
-.ai-recognize-progress-text {
-  font-size: 12px;
-  color: #666;
-  white-space: nowrap;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 </style>
