@@ -1,6 +1,6 @@
 # MusicRate\backend\api\__init__.py 接口模块初始化 - 统一注册所有业务接口
 from . import auth, album, album_pool, review, comment, audio_resource, playlist, listening, score, recommend, \
-    unlock, tags, lyric, share, user, lyric_ai, ai  # 新增：导入音频接口；v0.7 新增个人用户中心接口；v0.8.1 新增 AI 识别异步任务接口 + AI key 配置接口
+    unlock, tags, lyric, share, user, lyric_ai, ai, tempo_ai  # 新增：导入音频接口；v0.7 新增个人用户中心接口；v0.8.1 新增 AI 识别异步任务接口 + AI key 配置接口 + BPM 节奏分析接口
 
 
 
@@ -44,6 +44,9 @@ def register_all_api_routes(app):
 
     # v0.8.1 歌词 AI 识别异步任务接口（recognize 触发 + status 轮询）
     lyric_ai.register_lyric_ai_routes(app)
+
+    # v0.8.1 P4 BPM 节奏分析异步任务接口（analyze 触发 + status 轮询，与歌词识别共用任务表串行执行）
+    tempo_ai.register_tempo_ai_routes(app)
 
     # 专题接口
     share.register_share_routes(app)

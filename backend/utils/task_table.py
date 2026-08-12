@@ -49,6 +49,11 @@ class TaskTable:
                 task.update(fields)
 
 
+# 模块级共享任务表单例（v0.8.1 P4）：歌词识别 lyric_ai 与 BPM 分析 tempo_ai 共用同一实例，
+# serial_lock 全局唯一 → 所有 CPU 密集后台任务严格串行（同一时间只跑一个），避免 CPU 100% 抢占
+tasks = TaskTable()
+
+
 def format_dt(dt):
     """datetime → 字符串（任务表时间字段展示用），None → None"""
     return dt.strftime('%Y-%m-%d %H:%M:%S') if dt else None

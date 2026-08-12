@@ -18,14 +18,12 @@ from backend import config
 from backend.config import AUDIO_UPLOAD_FOLDER
 from backend.utils.db import get_current_user_id, get_db
 from backend.utils.decorators import is_admin_user, login_required
-from backend.utils.task_table import TaskTable, format_dt
+from backend.utils.task_table import tasks, format_dt
 from backend.utils.deepseek_correct import correct_lyric
 from backend.utils.lyric_recognizer import build_full_storage_text, segments_to_items, transcribe
 from backend.api.lyric import upsert_album_lyric
 
-# 后台任务内存任务表（v0.8.1 P4 抽取共享：歌词识别 + BPM 分析共用；串行化 + 容量清理见 task_table.py）
-tasks = TaskTable()
-# 后台任务线程用的 Flask app 引用（register 时注入）
+# 后台任务内存任务表（v0.8.1 P4 抽取共享：歌词识别 + BPM 分析共用同一实例，serial_lock 全局唯一保证 CPU 串行）
 _app = None
 
 
