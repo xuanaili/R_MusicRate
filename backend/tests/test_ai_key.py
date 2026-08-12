@@ -58,6 +58,24 @@ class TestValidateAiKeyParams:
         assert err == ''
         assert len(k) == MAX_API_KEY_LENGTH
 
+    def test_non_ascii_api_key_rejected(self):
+        # 误粘贴中文文本当密钥 → 拒绝并提示（请求头 latin-1 编码会炸，见 ai.py 实测坑）
+        p, k, err = validate_ai_key_params('deepseek', 'sk-今日计划abc')
+        assert err != ''
+        assert '非ASCII' in err
+
+    def test_control_char_api_key_rejected(self):
+        # 含控制字符（如换行）的密钥 → 拒绝（latin-1 头不允许控制字符）
+        p, k, err = validate_ai_key_params('deepseek', 'sk-abc\x01def')
+        assert err != ''
+        assert '非ASCII' in err
+
+    def test_ascii_with_inner_space_allowed(self):
+        # 可打印 ASCII（含空格）→ 通过（strip 只去首尾空白，内部空格合法）
+        p, k, err = validate_ai_key_params('deepseek', 'sk ab c')
+        assert err == ''
+        assert k == 'sk ab c'
+
     def test_both_invalid_returns_provider_error_first(self):
         # 非法 provider + 空 key → provider 错误优先（先校验 provider）
         p, k, err = validate_ai_key_params('unknown', '')

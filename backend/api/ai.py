@@ -63,6 +63,13 @@ DAILY_LIMIT_CHARS = 99999
 MAX_API_KEY_LENGTH = 1000
 
 
+def _is_ascii_printable(text):
+    """API 密钥必须为可打印 ASCII：请求头按 latin-1 编码发送，含中文等非 ASCII 会在 putheader 时 500
+    （实测坑：误粘贴中文记事文本进密钥字段，Authorization 头编码炸 latin-1，位置恰好是中文起止）
+    """
+    return all(32 <= ord(c) < 127 for c in (text or ''))
+
+
 def validate_ai_key_params(provider, api_key):
     """纯函数：规范化并校验 AI key 配置参数（可单测，零 DB 依赖）
     - provider：去空白 + 小写，空则回退 DEFAULT_PROVIDER；不在 PROVIDER_CONFIG 返回错误
@@ -77,6 +84,8 @@ def validate_ai_key_params(provider, api_key):
         return provider, api_key, "API密钥不能为空！"
     if len(api_key) > MAX_API_KEY_LENGTH:
         return provider, api_key, f"API密钥过长（超过{MAX_API_KEY_LENGTH}字符），请检查粘贴内容！"
+    if not _is_ascii_printable(api_key):
+        return provider, api_key, "API密钥包含非ASCII字符（可能误粘贴了中文文本），请重新粘贴正确的密钥！"
     return provider, api_key, ''
 
 
@@ -348,6 +357,8 @@ def _call_ai(provider, api_key, messages):
     provider_cfg = PROVIDER_CONFIG.get(provider)
     if not provider_cfg:
         raise ValueError(f"暂不支持该AI服务商：{provider}，请重新配置密钥")
+    if not _is_ascii_printable(api_key):
+        raise RuntimeError("API密钥格式不正确（包含非ASCII字符），请重新配置密钥！")
     resp = requests.post(
         provider_cfg['base_url'],
         headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
@@ -368,6 +379,8 @@ def _call_ai_stream(provider, api_key, messages):
     provider_cfg = PROVIDER_CONFIG.get(provider)
     if not provider_cfg:
         raise ValueError(f"暂不支持该AI服务商：{provider}，请重新配置密钥")
+    if not _is_ascii_printable(api_key):
+        raise RuntimeError("API密钥格式不正确（包含非ASCII字符），请重新配置密钥！")
     resp = requests.post(
         provider_cfg['base_url'],
         headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
@@ -688,7 +701,9 @@ def register_ai_routes(app):
                                     gdb.rollback()
                                 print(f"❌ AI流式对话出错：{str(e)}")
                                 traceback.print_exc()
-                                yield f"data: {json.dumps({'type': 'error', 'msg': 'AI服务暂不可用，请稍后重试'}, ensure_ascii=False)}\n\n"
+                                # 透传具体原因（如密钥格式错误/服务商报错），方便前端定位，而非一律「暂不可用」
+                                err_msg = (str(e) or 'AI服务暂不可用，请稍后重试')[:200]
+                                yield f"data: {json.dumps({'type': 'error', 'msg': err_msg}, ensure_ascii=False)}\n\n"
                             finally:
                                 if gcur:
                                     gcur.close()
@@ -706,7 +721,7 @@ def register_ai_routes(app):
                 except Exception as e:
                     db.rollback()
                     print(f"❌ AI调用失败：{str(e)}")
-                    return jsonify({"code": 502, "msg": "AI服务暂不可用，请稍后重试！"}), 502
+                    return jsonify({"code": 502, "msg": str(e) or "AI服务暂不可用，请稍后重试！"}), 502
                 user_msg_id = _save_message(db, cursor, user_id, album_pool_id, 'user', question)
                 assistant_msg_id = _save_message(db, cursor, user_id, album_pool_id, 'assistant', answer)
                 _incr_quota(db, cursor, user_id, len(question) + len(answer))
