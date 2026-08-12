@@ -665,6 +665,36 @@ CREATE TABLE IF NOT EXISTS ai_key (
         raise e
 
 
+# ========== ✅ v0.8.1 P4：专辑节奏分析缓存表 album_tempo ==========
+def create_album_tempo():
+    """创建专辑节奏分析缓存表（AI 助手上下文：单曲 BPM + 整专节奏结构，懒分析 + 缓存）
+    tempo TEXT 存 JSON：{track_tempos:[bpm...], avg_bpm, min_bpm, max_bpm, track_durations:[...]}
+    album_pool_id 唯一（每张池专辑一条缓存；AI 首次提问缺失时异步分析补齐）
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+CREATE TABLE IF NOT EXISTS album_tempo (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    album_pool_id INT NOT NULL COMMENT '搜索池专辑ID（唯一，每张池专辑一条缓存）',
+    tempo TEXT NOT NULL COMMENT '节奏结构JSON：{track_tempos, avg_bpm, min_bpm, max_bpm, track_durations}',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_album_pool_id (album_pool_id) COMMENT '池专辑唯一索引'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专辑节奏分析缓存表（v0.8.1 P4）';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ album_tempo 专辑节奏分析缓存表 创建/检查成功！")
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ 创建album_tempo表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
 # ========== ✅✅✅ 核心：初始化所有基础表 ==========
 def init_base_tables():
     """初始化基础表"""
@@ -694,6 +724,8 @@ def init_base_tables():
 
         # v0.8.1 P3：用户 AI 密钥配置表（个人中心「AI 配置」tab）
         create_ai_key()
+        # v0.8.1 P4：专辑节奏分析缓存表（AI 助手上下文 BPM）
+        create_album_tempo()
 
         print("✅ MySQL基础表初始化成功！")
         init_default_admin()

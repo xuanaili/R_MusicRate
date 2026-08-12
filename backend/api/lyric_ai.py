@@ -3,13 +3,12 @@
 # 前端「AI 识别歌词」按钮触发后轮询状态，完成后自动落 album_lyric。
 # 决策（README v0.8.1）：
 #   - 内存任务表不持久化（后端重启任务状态丢失，接口幂等：重复触发视为新任务）
-#   - 识别串行化（_serial_lock）：同一时间只跑一个识别任务，避免 CPU 100% 抢占，并发请求排队
+#   - 识别串行化（tasks.serial_lock）：同一时间只跑一个识别任务，避免 CPU 100% 抢占，并发请求排队
 #   - 产物整轨绝对时间存储文本落 album_lyric（复用 lyric.upsert_album_lyric），前端按 tracks_time 切分
 #   - 识别器走 v0.8.1 P0：vad_filter=False（音乐场景 VAD 会整首丢失）+ 幻觉过滤 + OpenCC 繁转简
 import os
 import threading
 import traceback
-import uuid
 from datetime import datetime
 
 import pymysql
@@ -19,38 +18,15 @@ from backend import config
 from backend.config import AUDIO_UPLOAD_FOLDER
 from backend.utils.db import get_current_user_id, get_db
 from backend.utils.decorators import is_admin_user, login_required
+from backend.utils.task_table import TaskTable, format_dt
 from backend.utils.deepseek_correct import correct_lyric
 from backend.utils.lyric_recognizer import build_full_storage_text, segments_to_items, transcribe
 from backend.api.lyric import upsert_album_lyric
 
-# 内存任务表最大保留数（防止无限增长；超限清理最早完成/失败的任务）
-MAX_TASKS = 100
-
-# 内存任务表：task_id → {task_id, album_pool_id, album_name, user_id, status, message, ...}
-_tasks = {}
-# RLock：嵌套访问安全（创建任务 + 容量清理同一临界区）
-_tasks_lock = threading.RLock()
-# 串行识别锁：同一时间只允许一个识别任务运行（README：识别/分析串行化，避免 CPU 抢占）
-_serial_lock = threading.Lock()
+# 后台任务内存任务表（v0.8.1 P4 抽取共享：歌词识别 + BPM 分析共用；串行化 + 容量清理见 task_table.py）
+tasks = TaskTable()
 # 后台任务线程用的 Flask app 引用（register 时注入）
 _app = None
-
-
-def _new_task_id():
-    """生成任务 id（短随机，内存表足够）"""
-    return uuid.uuid4().hex[:12]
-
-
-def _get_task(task_id):
-    with _tasks_lock:
-        return _tasks.get(task_id)
-
-
-def _update_task(task_id, **fields):
-    with _tasks_lock:
-        task = _tasks.get(task_id)
-        if task:
-            task.update(fields)
 
 
 def _resolve_audio_path(mp3_url):
@@ -84,7 +60,7 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
         if not audio_path or not os.path.exists(audio_path):
             raise ValueError(f'整轨 MP3 文件不存在：{audio_path}')
 
-        _update_task(task_id, progress=10, message='模型转写中（VAD 关）…')
+        tasks.update(task_id, progress=10, message='模型转写中（VAD 关）…')
         # P0 管线：vad_filter=False + no_speech_prob 幻觉过滤 + 噪音模式滤除 + OpenCC 繁转简（segments_to_items 内置）
         segments, info, metrics = transcribe(audio_path)
         items = segments_to_items(segments)
@@ -103,7 +79,7 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
             result['message'] = '识别完成但未产出有效歌词（音频可能是纯音乐/器乐，或识别异常）'
             return result
 
-        _update_task(task_id, progress=90, message='写入歌词…')
+        tasks.update(task_id, progress=90, message='写入歌词…')
         # whisper 草稿（整轨绝对时间存储文本）
         lyric_text = build_full_storage_text(items)
         corrected = False
@@ -111,7 +87,7 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
         # v0.8.1 P2：若配置服务器端 DEEPSEEK_API_KEY → DeepSeek 校正（difflib 保时间戳只改文字）
         # 校正失败/未配置 → 回退 whisper 草稿（deepseek_correct.correct_lyric 内置回退），不阻断落库
         if config.DEEPSEEK_API_KEY:
-            _update_task(task_id, progress=93, message='DeepSeek 校正歌词中…')
+            tasks.update(task_id, progress=93, message='DeepSeek 校正歌词中…')
             corrected_text, meta = correct_lyric(lyric_text, api_key=config.DEEPSEEK_API_KEY)
             corrected = meta.get('corrected') is True
             correct_reason = meta.get('reason') if not corrected else None
@@ -137,25 +113,25 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
 def _run_recognize(app, task_id, album_pool_id, user_id):
     """后台线程入口：串行锁排队 → 识别 → 更新任务状态"""
     # 排队等待（README：识别/分析串行化；同一时间只跑一个识别任务）
-    _serial_lock.acquire()
+    tasks.serial_lock.acquire()
     try:
-        if not _get_task(task_id):
+        if not tasks.get(task_id):
             return
-        _update_task(task_id, status='running', started_at=datetime.now())
+        tasks.update(task_id, status='running', started_at=datetime.now())
         try:
             result = _do_recognize(app, album_pool_id, user_id, task_id)
             message = result.pop('message', '识别完成')
-            _update_task(task_id, status='done', message=message, **result)
+            tasks.update(task_id, status='done', message=message, **result)
         except Exception as e:
             print(f"❌ AI 识别任务[{task_id}]失败：{e}")
             traceback.print_exc()
-            _update_task(task_id, status='failed', progress=100, message=f'识别失败：{e}')
-        _update_task(task_id, finished_at=datetime.now())
+            tasks.update(task_id, status='failed', progress=100, message=f'识别失败：{e}')
+        tasks.update(task_id, finished_at=datetime.now())
     finally:
-        _serial_lock.release()
+        tasks.serial_lock.release()
 
 
-def _format_dt(dt):
+def format_dt(dt):
     return dt.strftime('%Y-%m-%d %H:%M:%S') if dt else None
 
 
@@ -190,26 +166,17 @@ def register_lyric_ai_routes(app):
                 return jsonify({"code": 400, "msg": "整轨 MP3 文件不存在，请先上传音频！"}), 400
 
             # 幂等：重复触发视为新任务（README：内存任务表不持久化，接口幂等）
-            task_id = _new_task_id()
-            with _tasks_lock:
-                _tasks[task_id] = {
-                    'task_id': task_id,
-                    'album_pool_id': album_pool_id,
-                    'album_name': pool['album_name'],
-                    'user_id': current_user_id,
-                    'status': 'queued',
-                    'message': '任务已创建，排队等待识别',
-                    'progress': 0,
-                    'created_at': datetime.now(),
-                }
-                # 容量控制：超限清理最早完成/失败的任务（运行/排队中的不删）
-                if len(_tasks) > MAX_TASKS:
-                    completed_ids = sorted(
-                        [tid for tid, t in _tasks.items() if t.get('status') in ('done', 'failed')],
-                        key=lambda tid: _tasks[tid]['created_at'],
-                    )
-                    while len(_tasks) > MAX_TASKS and completed_ids:
-                        _tasks.pop(completed_ids.pop(0), None)
+            task_id = tasks.new_task_id()
+            tasks.create(
+                task_id=task_id,
+                album_pool_id=album_pool_id,
+                album_name=pool['album_name'],
+                user_id=current_user_id,
+                status='queued',
+                message='任务已创建，排队等待识别',
+                progress=0,
+                created_at=datetime.now(),
+            )
 
             t = threading.Thread(
                 target=_run_recognize, args=(app, task_id, album_pool_id, current_user_id), daemon=True,
@@ -236,7 +203,7 @@ def register_lyric_ai_routes(app):
     @login_required
     def recognize_status(task_id):
         try:
-            task = _get_task(task_id)
+            task = tasks.get(task_id)
             if not task:
                 return jsonify({"code": 404, "msg": f"任务[{task_id}]不存在（后端重启会丢失内存任务）"}), 404
             return jsonify({
@@ -259,9 +226,9 @@ def register_lyric_ai_routes(app):
                     "corrected_lines": task.get('corrected_lines'),
                     "elapsed": task.get('elapsed'),
                     "rtf": task.get('rtf'),
-                    "created_at": _format_dt(task.get('created_at')),
-                    "started_at": _format_dt(task.get('started_at')),
-                    "finished_at": _format_dt(task.get('finished_at')),
+                    "created_at": format_dt(task.get('created_at')),
+                    "started_at": format_dt(task.get('started_at')),
+                    "finished_at": format_dt(task.get('finished_at')),
                 }
             })
         except Exception as e:
