@@ -151,12 +151,12 @@ MusicRate/
 
 ## v0.8.1 — AI 系列：歌词识别正式管线 + AI 助手（P0-P4 已完成，P5-P6 待实现）
 
-> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地；**P0 识别器升级、P1 异步任务 + 接口、P2 DeepSeek 校正 + 前端按钮、P3 AI key 配置（个人中心）、P4 BPM 节奏分析（tempo_analyzer + album_tempo 缓存 + 异步任务，与歌词识别共用同一任务表串行）已完成（2026-08-12）**。
+> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地；**P0 识别器升级、P1 异步任务 + 接口、P2 DeepSeek 校正 + 前端按钮、P3 AI key 配置（个人中心）、P4 BPM 节奏分析（tempo_analyzer + album_tempo 缓存 + 异步任务，与歌词识别共用同一任务表串行）已完成（2026-08-12）**。2026-08-12 增补：**AI 识别整轨进度条（实时转写进度）+ 添加专辑自动触发识别**（管理员添加带整轨 mp3 的专辑时自动启动识别，省得每次手动再识别一次）。
 
 ### 功能概述
 
-1. **识别触发**：管理员在歌词弹窗对已有整轨 mp3 的专辑点「AI 识别歌词」→ 后台异步识别（RTF 0.18，44min 专辑 ≈ 8min，串行任务队列）→ 完成落库
-2. **草稿产出**：faster-whisper small（CPU int8，VAD 关）→ 幻觉过滤（no_speech_prob 阈值 + 噪音模式 + 器乐标签滤除）→ OpenCC 繁→简 → 按 `tracks_time` 切分验证
+1. **识别触发**：管理员在歌词弹窗对已有整轨 mp3 的专辑点「AI 识别歌词」→ 后台异步识别（RTF 0.18，44min 专辑 ≈ 8min，串行任务队列）→ 完成落库；**自动触发**——管理员通过「添加专辑」提交带整轨 mp3 的新专辑时，后端自动启动识别（响应 `recognize_task_id`，失败不影响添加）
+2. **草稿产出**：faster-whisper small（CPU int8，VAD 关）→ 幻觉过滤（no_speech_prob 阈值 + 噪音模式 + 器乐标签滤除）→ OpenCC 繁→简 → 按 `tracks_time` 切分验证；**进度实时上报**——转写阶段按 `segment.end / 音频总时长` 逐段回调，任务 `progress` 10→90 平滑推进 + 阶段 message，前端进度条展示
 3. **DeepSeek 校正**：以 whisper 逐行 `mm:ss.x 文本` 为锚，强制保行数/行序/时间戳只改文字，difflib.SequenceMatcher 处理行数变化再对齐回时间戳
 4. **AI key 配置**：个人中心新增「AI 配置」tab（镜像 BookRate `AISettingsTab`）——服务商下拉（deepseek 默认 + openai）+ API 密钥，key 明文存后端 `ai_key` 表（按 user_id 唯一），前端只存「是否已配置」布尔、绝不返回明文；状态徽章 + 今日用量
 5. **BPM 节奏分析**：为 AI 助手提供「歌曲节奏」数据——librosa 对整轨 mp3 做节奏分析，按 `tracks_time` 切分得每曲 BPM + 整专节奏结构，结果缓存 `album_tempo` 表（按 album_pool_id）；异步任务分析（与歌词识别共用同一内存任务表实例，serial_lock 全局唯一保证 CPU 串行）
@@ -224,9 +224,10 @@ MusicRate/
 ### 后端接口
 
 歌词识别（保持原规划）：
-- `POST /api/album/lyric/recognize/<album_pool_id>`（新增，管理员）——触发异步识别，返回 `task_id`；校验 album 有整轨 mp3 + 管理员权限
-- `GET /api/album/lyric/recognize/status/<task_id>`（新增）——轮询任务状态（running/done/failed + message）
+- `POST /api/album/lyric/recognize/<album_pool_id>`（新增，管理员）——触发异步识别，返回 `task_id`；校验 album 有整轨 mp3 + 管理员权限（识别逻辑抽为 `start_recognize_task` 帮助函数，与专辑添加自动触发共用）
+- `GET /api/album/lyric/recognize/status/<task_id>`（新增）——轮询任务状态（running/done/failed + `progress` 0~100 + `message` 阶段提示；转写进度实时上报）
 - 复用：`POST /api/album/lyric/save/<album_pool_id>`（识别完成后也可再手动覆盖）
+- `POST /api/album/add`（改）——管理员 + 带整轨 `mp3_url` → 添加成功后自动启动识别，响应 `data.recognize_task_id`（非空即已自动开始；失败置空不影响添加）
 
 AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - `POST /api/ai/key`——保存/更新用户 AI key（`{provider, api_key, is_enabled}`），upsert `ai_key`，响应不含明文
@@ -239,7 +240,8 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 
 ### 前端组件
 
-- `AlbumLyricViewer.vue`（改，保持原规划）——弹窗头部新增「AI 识别歌词」按钮（仅管理员，`isAdmin` 口径），点击触发 + 轮询状态 + 完成 toast + 刷新歌词；识别中禁用按钮 + 提示耗时
+- `AlbumLyricViewer.vue`（改，保持原规划）——弹窗头部新增「AI 识别歌词」按钮（仅管理员，`isAdmin` 口径），点击触发 + 轮询状态 + 完成 toast + 刷新歌词；识别中禁用按钮 + **实时进度条**（进度 0~100 + 阶段文案，按钮显示当前百分比）
+- `AddAlbum.vue`（改）——提交专辑成功且响应带 `recognize_task_id` → toast 提示「AI 歌词识别已自动开始（后台生成中）」
 - `components/user/AISettingsTab.vue`（新增）——镜像 BookRate：服务商下拉（deepseek/openai）+ 密码框 API key（已配置显示占位「输入新密钥可覆盖」）+ 保存 + 状态徽章 + 今日用量 + 说明文案；保存成功后清空输入框
 - `components/user/UserCenter.vue`（改）——tabs 新增「AI 配置」（`activeTab='ai'`），与个人资料/外观/音乐统计同级
 - `components/albumDetail/AlbumAIAssistant.vue`（新增）——专辑详情**子页形态**（非侧边栏）：消息列表（用户气泡 / AI markdown 气泡）+ 空态引导问题 + 底部 textarea（Enter 发送、Shift+Enter 换行）+ SSE 流式渲染（原生 fetch）+ 思考中动画 + 单条删除 + 重置对话
@@ -253,6 +255,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - **P2 DeepSeek 校正 + 前端**（保持）：`deepseek_correct.py`（difflib 保时间戳）+ config API key + 前端按钮 + realdata 验证 + README 归档 ✅ 2026-08-12
 - **P3 AI key 配置**：`ai_key` 表 + `ai.py` key/status 接口 + 单测 → `AISettingsTab.vue` + UserCenter tab + realdata 验证 ✅ 2026-08-12
 - **P4 BPM 节奏分析**：librosa 安装 spike（portable Python 兼容性验证，同 faster-whisper spike 流程；装不上降级 aubio）→ `tempo_analyzer.py` 纯函数（整轨 mp3 → 每曲 BPM，单测）→ `album_tempo` 表 + 异步任务（与歌词识别共用共享 TaskTable）→ realdata 验证 ✅ 2026-08-12
+- **增补：识别进度条 + 自动触发**：`transcribe` 增加 `progress_callback`（segment.end/总时长 实时比例）+ `_map_transcribe_progress`（10→90 映射）+ 前端进度条；`start_recognize_task` 帮助函数抽取 + `album/add` 管理员带 mp3 自动触发识别（响应 `recognize_task_id`）→ 单测 + realdata ✅ 2026-08-12
 - **P5 AI 助手后端**：`ai_conversation` / `ai_quota` 表 + 上下文组装（含 BPM/歌词/听后感/评论/全网听后感）+ OpenAI 兼容 chat + SSE 流式 + 配额 → 单测 + realdata
 - **P6 AI 助手前端**：`AlbumAIAssistant.vue` 子页 + SSE 流式渲染 + markdown + AlbumDetail 菜单入口（has_key 显隐）+ `npm run lint` + 手动回归
 
@@ -279,6 +282,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - [x] P2 DeepSeek 校正（difflib 保时间戳）+ config API key + 前端入口 + README 归档 ✅ 2026-08-12
 - [x] P3 AI key 配置（ai_key 表 + key/status 接口 + AISettingsTab + UserCenter tab）✅ 2026-08-12
 - [x] P4 BPM 节奏分析（librosa spike + tempo_analyzer + album_tempo 表 + 共享 TaskTable + analyze/status 异步接口 + realdata 测试）✅ 2026-08-12
+- [x] 增补：识别进度条 + 添加专辑自动触发（transcribe progress_callback + 前端进度条 + album/add 自动识别 + 测试）✅ 2026-08-12
 - [ ] P5 AI 助手后端（conversation/quota 表 + 上下文组装 + SSE chat）
 - [ ] P6 AI 助手前端（AlbumAIAssistant 子页 + markdown + AlbumDetail 入口）
 ## v0.8 — 歌词版：本地上传 LRC 接口（干净版）+ AI 歌词识别可行性验证（P0 已完成）
