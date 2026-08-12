@@ -289,3 +289,40 @@ def test_tempo_analyze_repeat_creates_new_task(client, admin_user, fake_analyze_
 def test_tempo_status_not_found(client, admin_user):
     r = client.get('/api/ai/tempo/status/nonexistent_task', headers=admin_user['headers']).get_json()
     assert r['code'] == 404, r
+
+
+# ==================== 真实 librosa 冒烟（验证正式管线端到端） ====================
+
+@pytest.mark.realdata
+def test_real_tempo_pipeline_smoke(client, admin_user):
+    """真实冒烟：找库中带整轨 mp3 且文件存在的池专辑，走正式异步接口（真 librosa 后台测拍）
+    验证 analyze → 后台线程 analyze_tempo → done → album_tempo 缓存全链路；无数据则 skip
+    """
+    from backend.api.tempo_ai import _resolve_audio_path
+    app = client.application
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute("SELECT id, album_name, mp3_url FROM album_pool WHERE mp3_url IS NOT NULL AND mp3_url != '' LIMIT 5")
+        rows = cursor.fetchall()
+        cursor.close()
+    pool = None
+    for row in rows:
+        if _resolve_audio_path(row['mp3_url']) and os.path.exists(_resolve_audio_path(row['mp3_url'])):
+            pool = row
+            break
+    if not pool:
+        pytest.skip('库中无带整轨 mp3 文件的池专辑，跳过真实节奏分析冒烟')
+
+    r = client.post(f"/api/ai/tempo/analyze/{pool['id']}", headers=admin_user['headers']).get_json()
+    assert r['code'] == 200, r
+
+    status = _wait_status(client, r['data']['task_id'], admin_user['headers'], timeout=120)
+    assert status['status'] == 'done', status
+    assert status['saved'] is True
+    assert status['segments'] >= 1
+    assert status['avg_bpm'] > 0, status  # 真 librosa 测回有效 BPM
+    assert status['max_bpm'] >= status['min_bpm'] >= 0
+
+    cached = _get_tempo(client, pool['id'])
+    assert cached and cached['avg_bpm'] == status['avg_bpm']
