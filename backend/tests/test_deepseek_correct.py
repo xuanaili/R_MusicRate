@@ -22,6 +22,26 @@ class TestBuildCorrectPrompt:
         assert '时间戳' in prompt
         assert '不增删行' in prompt or '不要增加或删除行' in prompt
 
+    def test_prompt_without_reference_has_no_reference_section(self):
+        prompt = build_correct_prompt('00:00 某夜你离开', reference_text=None)
+        assert '参考歌词' not in prompt
+        assert '歌词草稿' in prompt
+
+    def test_prompt_with_reference_includes_section(self):
+        reference = '【第1首《七里香》- 来源：网易云】\n窗外的麻雀\n在电线杆上多嘴'
+        prompt = build_correct_prompt('00:00 某夜你离开', reference_text=reference)
+        assert '参考歌词' in prompt
+        assert '窗外的麻雀' in prompt
+        assert '在电线杆上多嘴' in prompt
+        # 仍保留草稿与强约束（参考只是辅助，草稿时间戳/行序不变）
+        assert '歌词草稿' in prompt
+        assert '时间戳' in prompt
+        assert '不增删行' in prompt or '不要增加或删除行' in prompt
+
+    def test_prompt_with_blank_reference_treated_as_none(self):
+        prompt = build_correct_prompt('00:00 某夜你离开', reference_text='   ')
+        assert '参考歌词' not in prompt
+
 
 class TestParseCorrectedLines:
     def test_lines_with_timestamp_prefix(self):
@@ -159,6 +179,23 @@ class TestCorrectLyric:
         assert meta['corrected_lines'] == 2
         # 校正 prompt 已带歌词草稿
         assert '某夜你離開' in captured['prompt']
+
+    def test_success_with_reference_included(self, monkeypatch):
+        captured = self._monkey_call(monkeypatch, response_text='00:00 某夜你离开')
+        reference = '【第1首《七里香》- 来源：网易云】\n窗外的麻雀'
+        text, meta = correct_lyric('00:00 某夜你離開', api_key='key', reference_text=reference)
+        assert meta['corrected'] is True
+        # 参考文本已注入 prompt，meta 带参考统计
+        assert '窗外的麻雀' in captured['prompt']
+        assert meta['with_reference'] is True
+        assert meta['reference_lines'] == 2
+
+    def test_success_without_reference_meta(self, monkeypatch):
+        self._monkey_call(monkeypatch, response_text='00:00 某夜你离开')
+        text, meta = correct_lyric('00:00 某夜你離開', api_key='key')
+        assert meta['corrected'] is True
+        assert meta['with_reference'] is False
+        assert meta['reference_lines'] == 0
 
     def test_success_with_code_block_wrap(self, monkeypatch):
         # 模型返回包 ``` 代码块 → 解析后仍成功

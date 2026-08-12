@@ -293,7 +293,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - [x] P4 BPM 节奏分析（librosa spike + tempo_analyzer + album_tempo 表 + 共享 TaskTable + analyze/status 异步接口 + realdata 测试）✅ 2026-08-12
 - [x] 增补：识别进度条 + 添加专辑自动触发（transcribe progress_callback + 前端进度条 + album/add 自动识别 + 测试）✅ 2026-08-12
 - [x] 增补：AI 识别按钮移出弹窗、悬停显示（歌名标题栏左侧，与上传/编辑歌词对称；轮询迁入常驻父组件 AlbumDetail，切换子页面识别持续）✅ 2026-08-12
-- [ ] 增补：平台参考歌词辅助校正（lyric_reference.py 网易云优先/酷狗/QQ 兜底 + build_correct_prompt reference 参数 + lyric_ai 集成 + 单测 + realdata）
+- [x] 增补：平台参考歌词辅助校正（lyric_reference.py 网易云优先/酷狗/QQ 兜底 + build_correct_prompt reference 参数 + lyric_ai 集成 + 单测 + realdata）✅ 2026-08-12
 - [ ] P5 AI 助手后端（conversation/quota 表 + 上下文组装 + SSE chat）
 - [ ] P6 AI 助手前端（AlbumAIAssistant 子页 + markdown + AlbumDetail 入口）
 ## v0.8 — 歌词版：本地上传 LRC 接口（干净版）+ AI 歌词识别可行性验证（P0 已完成）

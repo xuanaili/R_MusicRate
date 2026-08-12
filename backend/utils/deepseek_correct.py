@@ -26,16 +26,32 @@ _CORRECT_PROMPT_TPL = """你是专业的歌词校对专家。下面是 AI 语音
 3. 保持行数与顺序与原文完全一致，逐行对应输出
 4. 仅输出校对后的歌词（每行「时间戳 歌词文本」），不要输出任何解释、引号或额外内容
 
-歌词草稿：
+{reference_section}歌词草稿：
 {lyric_text}
 """
 
+# 参考歌词段落（v0.8.1 增补）：各平台官方歌词仅作纠错参考，明确「不改变草稿时间戳/行序」
+_REFERENCE_SECTION_TPL = """下面附上各曲目的官方歌词参考（来自网易云/酷狗/QQ 平台，仅用于辅助修正同音字、错字与断句；参考歌词不含时间戳，且不保证与草稿逐行对应）：
+{reference_text}
 
-def build_correct_prompt(lyric_text):
+请优先依据参考歌词消除草稿中的同音字/错字歧义；若某行在参考歌词中找不到对应内容，按你的语言知识判断修正。注意：参考歌词只是纠错参考而非校正目标——你仍须逐行输出「时间戳 修正后的歌词」，保持草稿每行时间戳不变、行数与顺序与原文完全一致。
+
+"""
+
+
+def build_correct_prompt(lyric_text, reference_text=None):
     """构造校正 prompt（纯函数，可单测）
     - lyric_text 为整轨绝对时间存储格式（每行 mm:ss(.x) 文本）
+    - reference_text 可选：平台参考歌词段落（lyric_reference.build_reference_text 产出）；
+      为空 → 与旧版 prompt 完全一致（向后兼容）
     """
-    return _CORRECT_PROMPT_TPL.format(lyric_text=lyric_text.strip())
+    reference_text = (reference_text or '').strip()
+    reference_section = (
+        _REFERENCE_SECTION_TPL.format(reference_text=reference_text) if reference_text else ''
+    )
+    return _CORRECT_PROMPT_TPL.format(
+        reference_section=reference_section, lyric_text=lyric_text.strip(),
+    )
 
 
 def parse_corrected_lines(raw):
@@ -122,11 +138,13 @@ def _call_chat(api_key, prompt, timeout=60):
     return data['choices'][0]['message']['content']
 
 
-def correct_lyric(lyric_text, api_key=None, timeout=60):
+def correct_lyric(lyric_text, api_key=None, timeout=60, reference_text=None):
     """DeepSeek 校正整轨歌词草稿（总入口，供 lyric_ai 后台任务调用）
     - api_key 为空 → 未配置跳过校正，返回 (原稿, {corrected: False, reason: 未配置})
+    - reference_text 可选：平台参考歌词段落（注入校正 prompt 作纠错参考，README v0.8.1 增补）
     - 调用失败（网络/HTTP/解析/无可校正行）→ 回退 whisper 原稿（README：校正失败回退原稿）
-    - 成功 → (校正文本, {corrected: True, anchor_lines, corrected_lines, lyric_lines})
+    - 成功 → (校正文本, {corrected: True, anchor_lines, corrected_lines, lyric_lines,
+                          with_reference, reference_lines})
     """
     if not api_key:
         return lyric_text, {'corrected': False, 'reason': '未配置 DEEPSEEK_API_KEY，跳过校正'}
@@ -135,11 +153,13 @@ def correct_lyric(lyric_text, api_key=None, timeout=60):
     if not items:
         return lyric_text, {'corrected': False, 'reason': '无可校正歌词行'}
 
+    reference_text = (reference_text or '').strip()
+
     # anchor 时间戳：保留原始时间戳字符串与浮点值（对齐后 items_to_storage 用 float）
     anchor_lines = [{'time': it['time'], 'time_str': seconds_to_str(it['time']), 'text': it['text']} for it in items]
 
     try:
-        raw = _call_chat(api_key, build_correct_prompt(lyric_text), timeout=timeout)
+        raw = _call_chat(api_key, build_correct_prompt(lyric_text, reference_text), timeout=timeout)
     except Exception as e:
         return lyric_text, {'corrected': False, 'reason': f'DeepSeek 调用失败：{e}'}
 
@@ -159,4 +179,6 @@ def correct_lyric(lyric_text, api_key=None, timeout=60):
         'anchor_lines': len(anchor_lines),
         'corrected_lines': len(corrected_lines),
         'lyric_lines': len(corrected_text.splitlines()),
+        'with_reference': bool(reference_text),
+        'reference_lines': len(reference_text.splitlines()) if reference_text else 0,
     }

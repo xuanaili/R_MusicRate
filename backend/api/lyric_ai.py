@@ -20,6 +20,8 @@ from backend.utils.db import get_current_user_id, get_db
 from backend.utils.decorators import is_admin_user, login_required
 from backend.utils.task_table import tasks, format_dt
 from backend.utils.deepseek_correct import correct_lyric
+from backend.utils.json import safe_json_loads
+from backend.utils.lyric_reference import fetch_all_references
 from backend.utils.lyric_recognizer import build_full_storage_text, segments_to_items, transcribe
 from backend.api.lyric import upsert_album_lyric
 
@@ -29,7 +31,7 @@ _app = None
 
 def _map_transcribe_progress(ratio):
     """转写阶段进度映射（纯函数）：已转写比例 ratio(0.0~1.0) → 任务进度(10~90)
-    10 = 转写开始、90 = 转写完成；剩余 90→93 写入歌词 / 93→100 DeepSeek 校正 + 收尾（进度条用）
+    10 = 转写开始、90 = 转写完成；剩余 90→93 写入歌词 / 93→96 拉平台参考歌词 / 96→100 DeepSeek 校正 + 收尾（进度条用）
     """
     ratio = max(0.0, min(1.0, ratio))
     return 10 + int(80 * ratio)
@@ -54,7 +56,7 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
     with app.app_context():
         db = get_db()
         cursor = db.cursor(pymysql.cursors.DictCursor)
-        cursor.execute('SELECT id, album_name, singer, mp3_url FROM album_pool WHERE id = %s', (album_pool_id,))
+        cursor.execute('SELECT id, album_name, singer, mp3_url, tracks FROM album_pool WHERE id = %s', (album_pool_id,))
         pool = cursor.fetchone()
         cursor.close()
         if not pool:
@@ -99,14 +101,31 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
         # v0.8.1 P2：若配置服务器端 DEEPSEEK_API_KEY → DeepSeek 校正（difflib 保时间戳只改文字）
         # 校正失败/未配置 → 回退 whisper 草稿（deepseek_correct.correct_lyric 内置回退），不阻断落库
         if config.DEEPSEEK_API_KEY:
-            tasks.update(task_id, progress=93, message='DeepSeek 校正歌词中…')
-            corrected_text, meta = correct_lyric(lyric_text, api_key=config.DEEPSEEK_API_KEY)
+            # v0.8.1 增补：校正前按 album_pool.tracks + singer 逐曲拉平台参考歌词（网易云→酷狗→QQ 兜底），
+            # 参考文本注入校正 prompt 作纠错参考（专治中文同音错字）；拉取失败/无曲目 → 无参考，行为与旧版一致
+            reference_text = ''
+            reference_stats = None
+            tracks = safe_json_loads(pool.get('tracks'))
+            if isinstance(tracks, list) and tracks:
+                tasks.update(task_id, progress=93, message='拉取平台参考歌词（网易云/酷狗/QQ）…')
+                reference_text, reference_stats = fetch_all_references(tracks, pool.get('singer') or '')
+                if reference_stats:
+                    result['reference_total'] = reference_stats['total']
+                    result['reference_fetched'] = reference_stats['fetched']
+                    if reference_stats['sources']:
+                        result['reference_sources'] = reference_stats['sources']
+            tasks.update(task_id, progress=96, message='DeepSeek 校正歌词中…')
+            corrected_text, meta = correct_lyric(
+                lyric_text, api_key=config.DEEPSEEK_API_KEY, reference_text=reference_text,
+            )
             corrected = meta.get('corrected') is True
             correct_reason = meta.get('reason') if not corrected else None
             if corrected:
                 lyric_text = corrected_text
                 result['anchor_lines'] = meta.get('anchor_lines')
                 result['corrected_lines'] = meta.get('corrected_lines')
+                result['with_reference'] = meta.get('with_reference')
+                result['reference_lines'] = meta.get('reference_lines')
 
         # 整轨绝对时间存储文本落库（复用 save/upload 的 upsert 幂等路径，识别产物为草稿可再手动覆盖）
         upsert_album_lyric(db, album_pool_id, lyric_text, '{}', str(user_id))
@@ -116,8 +135,13 @@ def _do_recognize(app, album_pool_id, user_id, task_id):
         result['progress'] = 100
         result['saved'] = True
         result['lyric_lines'] = len(lyric_text.splitlines()) if lyric_text else 0
+        # 校正消息：已校正且拉了参考 → 附带参考曲目命中统计（如 参考3/5首）
+        ref_part = ''
+        if corrected and result.get('with_reference') and result.get('reference_fetched') is not None:
+            ref_part = f'（参考{result["reference_fetched"]}/{result["reference_total"]}首）'
         result['message'] = (
-            f'识别完成，{"已 DeepSeek 校正" if corrected else "草稿歌词"}已落库（{result["lyric_lines"]} 行）'
+            f'识别完成，{"已 DeepSeek 校正" + ref_part if corrected else "草稿歌词"}'
+            f'已落库（{result["lyric_lines"]} 行）'
         )
         return result
 
@@ -244,6 +268,11 @@ def register_lyric_ai_routes(app):
                     "correct_reason": task.get('correct_reason'),
                     "anchor_lines": task.get('anchor_lines'),
                     "corrected_lines": task.get('corrected_lines'),
+                    "with_reference": task.get('with_reference'),
+                    "reference_lines": task.get('reference_lines'),
+                    "reference_total": task.get('reference_total'),
+                    "reference_fetched": task.get('reference_fetched'),
+                    "reference_sources": task.get('reference_sources'),
                     "elapsed": task.get('elapsed'),
                     "rtf": task.get('rtf'),
                     "created_at": format_dt(task.get('created_at')),

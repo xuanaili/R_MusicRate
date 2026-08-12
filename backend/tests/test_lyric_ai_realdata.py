@@ -193,18 +193,24 @@ def test_recognize_done_persists_lyric(client, admin_user, fake_transcribe, monk
 
 @pytest.mark.realdata
 def test_recognize_with_deepseek_correction(client, admin_user, fake_transcribe, monkeypatch):
-    """P2 接入验证：配置 key + 校正返回 → done + corrected=True + 落库校正文本"""
+    """P2 接入验证：配置 key + 校正返回 → done + corrected=True + 落库校正文本
+    该池专辑无 tracks → 不拉参考（reference_text=''）→ with_reference=False"""
     monkeypatch.setattr('backend.config.DEEPSEEK_API_KEY', 'test-key')
 
     # 替换 lyric_ai 命名空间中的 correct_lyric（固定校正结果：difflib 保时间戳回 00:00）
     import backend.api.lyric_ai as mod
 
-    def _fake_correct(lyric_text, api_key=None, timeout=60):
+    captured = {}
+
+    def _fake_correct(lyric_text, api_key=None, timeout=60, reference_text=None):
+        captured['reference_text'] = reference_text
         return '00:00 某夜你离开（已校正）', {
             'corrected': True,
             'anchor_lines': 1,
             'corrected_lines': 1,
             'lyric_lines': 1,
+            'with_reference': bool(reference_text),
+            'reference_lines': len((reference_text or '').splitlines()) if reference_text else 0,
         }
 
     monkeypatch.setattr(mod, 'correct_lyric', _fake_correct)
@@ -219,8 +225,66 @@ def test_recognize_with_deepseek_correction(client, admin_user, fake_transcribe,
         assert status['corrected'] is True
         assert status['anchor_lines'] == 1
         assert status['corrected_lines'] == 1
+        # 无 tracks → 未拉参考
+        assert status['with_reference'] is False
+        assert captured['reference_text'] == ''
 
         # 落库的是校正后文本
+        row = _get_lyric(client, pool_id)
+        assert row['lyric_text'] == '00:00 某夜你离开（已校正）'
+    finally:
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+
+
+@pytest.mark.realdata
+def test_recognize_with_reference_fetched(client, admin_user, fake_transcribe, monkeypatch):
+    """v0.8.1 增补接入验证：配置 key + 池专辑带 tracks → 校正前拉平台参考 → 参考文本注入 correct_lyric + 结果带统计"""
+    monkeypatch.setattr('backend.config.DEEPSEEK_API_KEY', 'test-key')
+    import backend.api.lyric_ai as mod
+    captured = {}
+
+    def _fake_correct(lyric_text, api_key=None, timeout=60, reference_text=None):
+        captured['reference_text'] = reference_text
+        return '00:00 某夜你离开（已校正）', {
+            'corrected': True, 'anchor_lines': 1, 'corrected_lines': 1, 'lyric_lines': 1,
+            'with_reference': bool(reference_text),
+            'reference_lines': len((reference_text or '').splitlines()) if reference_text else 0,
+        }
+
+    def _fake_fetch(tracks, singer, fetchers=None, timeout=5):
+        captured['tracks'] = tracks
+        captured['singer'] = singer
+        return '【第1首《七里香》- 来源：QQ音乐】\n窗外的麻雀', {'total': 1, 'fetched': 1, 'sources': {'QQ音乐': 1}}
+
+    monkeypatch.setattr(mod, 'correct_lyric', _fake_correct)
+    monkeypatch.setattr(mod, 'fetch_all_references', _fake_fetch)
+    filename, audio_path = _make_mp3_file(client)
+    try:
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
+        # 该池专辑补 tracks + singer（拉参考的数据源）
+        with client.application.app_context():
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('UPDATE album_pool SET tracks = %s, singer = %s WHERE id = %s',
+                           ('["七里香"]', '周杰伦', pool_id))
+            db.commit()
+            cursor.close()
+        r = client.post(f'/api/album/lyric/recognize/{pool_id}', headers=admin_user['headers']).get_json()
+        assert r['code'] == 200, r
+
+        status = _wait_status(client, r['data']['task_id'], admin_user['headers'])
+        assert status['status'] == 'done', status
+        assert status['corrected'] is True
+        assert status['with_reference'] is True
+        assert status['reference_total'] == 1
+        assert status['reference_fetched'] == 1
+        assert status['reference_sources'] == {'QQ音乐': 1}
+        # fetch_all_references 收到 tracks + singer；correct_lyric 收到参考文本
+        assert captured['tracks'] == ['七里香']
+        assert captured['singer'] == '周杰伦'
+        assert '窗外的麻雀' in captured['reference_text']
+
         row = _get_lyric(client, pool_id)
         assert row['lyric_text'] == '00:00 某夜你离开（已校正）'
     finally:
