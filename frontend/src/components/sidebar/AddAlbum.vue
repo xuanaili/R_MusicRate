@@ -316,6 +316,11 @@ export default {
         data: submitData
       }).then(res => {
         if (res.data.code === 200) {
+          // v0.8.1 增补：后端已对管理员带整轨 mp3 的专辑自动启动 AI 歌词识别（响应带 recognize_task_id）
+          const data = res.data.data || {};
+          if (data.recognize_task_id) {
+            this.$message?.info('AI 歌词识别已自动开始（后台生成中，可稍后在专辑歌词页查看进度）');
+          }
           this.$router.push({ path: '/webhome' }).then(() => {
             const webHomeVm = this.$router.app.$children.find(vm => vm.$options.name === 'WebHome')
             if (webHomeVm) webHomeVm.activeMainTab = 'mymusic'

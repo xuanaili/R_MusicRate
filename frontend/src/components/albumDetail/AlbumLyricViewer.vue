@@ -177,9 +177,24 @@
                     >
                       <i class="icon-ai-recognize">🤖</i>
                       <span v-if="!aiRecognizeLoading">AI 识别整轨歌词</span>
-                      <span v-if="aiRecognizeLoading">识别中…后台生成</span>
+                      <span v-if="aiRecognizeLoading">识别中… {{ aiRecognizeProgress }}%</span>
                     </button>
                   </div>
+                </div>
+                <!-- v0.8.1 增补：AI 识别进度条（实时转写进度 + 阶段提示） -->
+                <div
+                  v-if="aiRecognizeLoading || aiRecognizeProgress > 0"
+                  class="ai-recognize-progress-row"
+                >
+                  <div class="ai-recognize-progress-track">
+                    <div
+                      class="ai-recognize-progress-fill"
+                      :style="{width: aiRecognizeProgress + '%', backgroundColor: mainColor}"
+                    ></div>
+                  </div>
+                  <span class="ai-recognize-progress-text">
+                    {{ aiRecognizeProgress }}% · {{ aiRecognizeStatusMsg }}
+                  </span>
                 </div>
                 <!-- 关键修改：添加ref="originalLyricTextarea" -->
                 <textarea
@@ -339,6 +354,8 @@ export default {
       batchUploadTimer: null,
       aiRecognizeLoading: false,
       aiRecognizeTimer: null,
+      aiRecognizeProgress: 0,     // AI 识别进度 0-100（进度条用，轮询 status.progress 更新）
+      aiRecognizeStatusMsg: '',   // 当前阶段提示（排队中/转写中…%/写入歌词…/校正中…/完成）
     };
   },
   computed: {
@@ -1037,6 +1054,8 @@ export default {
       if (this.aiRecognizeLoading) return;
       const poolId = this.album.source_pool_id || this.album.id;
       this.aiRecognizeLoading = true;  // 轮询期间保持禁用，done/failed 时由 pollAiRecognize 复位
+      this.aiRecognizeProgress = 0;    // 新任务从 0 开始展示进度
+      this.aiRecognizeStatusMsg = '任务已创建，排队等待识别';
       try {
         const res = await this.$axios.post(
           `/api/album/lyric/recognize/${poolId}`,
@@ -1054,6 +1073,7 @@ export default {
       } catch (err) {
         this.$message?.error('触发 AI 识别异常：' + (err.response?.data?.msg || err.message));
         this.aiRecognizeLoading = false;
+        this.aiRecognizeStatusMsg = '触发失败';
       }
     },
 
@@ -1066,9 +1086,14 @@ export default {
         );
         if (res.data.code !== 200) return;
         const status = res.data.data;
+        // 实时更新进度条（后端 tasks.update 上报 progress 0~100 + 阶段 message）
+        if (typeof status.progress === 'number') this.aiRecognizeProgress = status.progress;
+        if (status.message) this.aiRecognizeStatusMsg = status.message;
         if (status.status === 'done') {
           this.stopAiRecognizePolling();
           this.aiRecognizeLoading = false;
+          this.aiRecognizeProgress = 100;
+          this.aiRecognizeStatusMsg = '识别完成，歌词已写入';
           // 拉取最新歌词 → 触发父组件 update:lyrics 刷新全专辑歌词
           const getRes = await this.$axios.get(
             `/api/album/lyric/get/${this.album.source_pool_id || this.album.id}`,
@@ -1087,6 +1112,7 @@ export default {
         } else if (status.status === 'failed') {
           this.stopAiRecognizePolling();
           this.aiRecognizeLoading = false;
+          this.aiRecognizeStatusMsg = status.message || '识别失败';
           this.$message?.error(status.message || 'AI 识别失败');
         }
         // running/queued → 下一轮轮询
@@ -1095,6 +1121,7 @@ export default {
         if (err.response && err.response.status === 404) {
           this.stopAiRecognizePolling();
           this.aiRecognizeLoading = false;
+          this.aiRecognizeStatusMsg = '识别任务已丢失（后端可能重启）';
           this.$message?.warning('识别任务已丢失（后端可能重启），请重新触发');
         }
       }
@@ -1154,6 +1181,34 @@ export default {
 .ai-recognize-btn:hover:not(:disabled) {
   opacity: 0.9;
   transform: scale(1.02);
+}
+
+/* v0.8.1 增补：AI 识别进度条（实时转写进度 + 阶段提示） */
+.ai-recognize-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+.ai-recognize-progress-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: #eee;
+  overflow: hidden;
+}
+.ai-recognize-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.ai-recognize-progress-text {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lyric-detail-container {
