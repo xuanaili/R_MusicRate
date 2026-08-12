@@ -149,6 +149,72 @@ MusicRate/
 
 ---
 
+## v0.8.4 — 歌词页顶部当前单曲快捷评分（规划已定稿）
+
+> 承接 v0.8.3 歌词展示页样式统一，新增歌词页顶部「当前单曲快捷评分」：在歌名标题栏、上传/编辑歌词按钮左侧，加一个与单曲列表同款交互的评分进度条（悬停显示），边看歌词边对当前播放单曲打分。纯前端增强，无后端/数据库改动，复用现有 `PUT /api/album/score/save/<album_id>` 评分保存接口。规划于 2026-08-12 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地。
+
+### 功能概述
+
+1. **评分入口前置**：歌词展示页顶部歌名标题栏、上传/编辑歌词按钮左侧新增单曲评分进度条（悬停显示，与上传按钮同款交互）；显示当前播放单曲的评分。
+2. **同款交互**：复用单曲列表滑块的全部交互——拖拽 / 点击定位 / 滚轮 ±1 微调；评分即时防抖保存（800ms）+ XP 反馈 + `score-list-change` 事件同步父组件 `album.my_score`，切回单曲列表 / 离开页面评分不丢。
+3. **随播放联动**：播放进度切歌时进度条自动切换到当前单曲的评分。
+
+### 已定决策（2026-08-12 拍板）
+
+| 决策点 | 结论 |
+|--------|------|
+| 评分对象 | 当前播放单曲（index = `currentPlayingTrackIndex`），评分数组 index0 为专辑整体分不动 |
+| 位置 / 显隐 | 歌名标题栏内、上传/编辑歌词按钮左侧（`right:210px` 绝对定位，隐藏时不破坏歌名居中）；悬停显示；**非管理员同样可见**（评分非管理员专属） |
+| 保存 | 复用 `PUT /api/album/score/save` 800ms 防抖 + `score-list-change` 事件同步父组件（与 AlbumTrackList 一致）；评分实际变化才 +5 XP |
+| 数据来源 | 直接读 `album.my_score` prop（父组件已加载并同步），**不在歌词页重复 GET**，规避 stale-GET 覆盖竞态 |
+| 纯函数抽公共 | 评分列表解析 / 读取 / 写入抽 `utils/scoreList.js`（可 node 单测，镜像 lrcTime / duration 既有模式） |
+
+### 数据来源
+
+| 数据 | 存哪 | 现成 or 需新建 | 查询接口 / 字段 |
+|------|------|--------------|----------------|
+| 当前单曲评分 | `albums_{user_id}.my_score` 数组 `[专辑分, 单曲1分, ...]` | 现成 | `album.my_score` prop + `PUT /api/album/score/save` |
+| 当前单曲 index | 播放器 currentTime + tracks_time 推导 | 现成 | AlbumLyricViewer computed `currentPlayingTrackIndex` |
+| 评分显示 / 写入纯函数 | `frontend/src/utils/scoreList.js` | 需新建 | parseScoreList / getTrackScore / setTrackScore |
+
+### 架构设计
+
+- **纯函数抽公共**：`scoreList.js` 三个纯函数——`parseScoreList(myScore)`（兼容数组 / JSON 字符串 / 空值 → 规范化数字数组，至少含 index0 占位）、`getTrackScore(list, idx)`（取 `list[idx+1]`，0-100 收敛）、`setTrackScore(list, idx, score)`（克隆 + 补位 + 写入，不污染原数组）
+- **组件内状态**：AlbumLyricViewer 新增 `lyricScoreList` 本地快照（源 = `album.my_score`），交互时经 `setTrackScore` 重建新数组触发响应式；防抖 800ms 后 `doTrackScoreSave` PUT 保存 + emit `score-list-change`（复用父组件 `handleScoreList` 同步 `album.my_score`）
+- **album 深 watcher 收敛**：原 `album` deep watcher 每次深度变化都 `initTrackList(true)`（内部 `initTrackLyricsMap` 会重置歌词编辑器内容）→ 改为仅「id / tracks / tracks_time / 歌词结构变化」才重建；纯 `my_score` 变化只同步 `lyricScoreList`，避免评分保存完成瞬间清空正在编辑的歌词
+- **复用拖拽模式**：document mousemove 拖拽 + 点击 + 滚轮；`beforeUnmount` 清理（组件原已有 `handleTrackScoreMouseMove` 清理引用）
+
+### 数据库
+
+v0.8.4 **无新增表 / 无字段变更**。
+
+### 后端接口
+
+无新增。复用 `PUT /api/album/score/save/<album_id>`（评分实际变化才 +5 XP，防抖保存天然幂等）。
+
+### 前端组件
+
+- `components/albumDetail/AlbumLyricViewer.vue`（改）——顶部标题栏新增评分进度条 + 交互方法 + album 深 watcher 收敛
+- `utils/scoreList.js`（新增）——评分列表纯函数（parseScoreList / getTrackScore / setTrackScore）
+
+### 分阶段路线
+
+- **P0 纯函数 + 单测**：`scoreList.js` 三函数 + node golden 硬编码 `test_score_list.py`（镜像 duration / lrcTime 模式）
+- **P1 组件集成**：AlbumLyricViewer 进度条 UI + 交互（拖拽/点击/滚轮）+ 防抖保存 + album watcher 收敛 → `npm run lint` + 手动回归（拖拽/点击/滚轮/切歌联动/切回单曲列表评分一致）
+
+### 难点与对策
+
+- **不重复 GET**：评分源直接读父组件已同步的 `album.my_score`，避免 AlbumTrackList 的 stale-GET 覆盖竞态
+- **深 watcher 重置歌词编辑器**：纯 `my_score` 变化跳过 `initTrackList`，防保存完成瞬间清空正在编辑的歌词
+- **布局不破坏歌名居中**：进度条绝对定位（上传按钮左侧），隐藏时不影响标题居中
+
+### 待做（勾选清单）
+
+- [ ] P0 `scoreList.js` 纯函数 + `test_score_list.py` 单测
+- [ ] P1 AlbumLyricViewer 集成 + lint + 手动回归
+
+---
+
 ## v0.8.3 — 歌词样式统一 + AI 助手 BPM 预触发（规划已定稿）
 
 > 承接 v0.8.1 AI 系列的两个体验收尾 + 把 v0.8 歌词遗留待办并入：① 解决 AI 助手「首次提问才开始分析 BPM」的滞后——打开专辑详情页 / AI 助手 tab 即预触发节奏分析（幂等），提问不再首问必「节奏分析中」；② 歌词展示页样式一致性美化——修复单曲歌名标题选择器失配（模板 `<h2>`、CSS 却是 `.fixed-track-title h3`，歌名一直无样式）与全页硬编码颜色主题化，顺带修 v0.8 遗留三件（当前句抖动 / 长歌词省略号 / `parseTimeStr` 小数精度）。规划于 2026-08-12 定稿（**注：v0.8.2 未在 README 留档，直接规划 v0.8.3**），实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P2 落地。
