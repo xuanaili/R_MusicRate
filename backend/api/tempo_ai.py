@@ -6,6 +6,10 @@
 #   - 触发管理员专属（同歌词识别）；重复触发视为新任务（内存任务表不持久化，接口幂等）
 #   - 单曲边界优先读 album_pool.tracks_time，为空则回退触发用户的私有副本（albums_{user_id}.source_pool_id）
 #   - 产物仅缓存 album_tempo，不改 mp3 / tracks_time / 歌词
+# v0.8.3 P1 BPM 预触发：
+#   - 新增 ensure_tempo get-or-trigger（album_tempo 缓存短路 + tasks.find_active 防重复）+ 任意登录用户可用的
+#     POST /api/ai/tempo/ensure/<album_pool_id>，供前端专辑详情页打开 / AI 助手 tab 打开两个时机幂等预触发，
+#     消除「首次提问才开始分析 BPM」的滞后；chat 不再返回「节奏分析中」占位（见 ai.py）
 import json
 import os
 import threading
@@ -13,7 +17,7 @@ import traceback
 from datetime import datetime
 
 import pymysql
-from flask import jsonify
+from flask import jsonify, request
 
 from backend.config import AUDIO_UPLOAD_FOLDER
 from backend.utils.db import get_album_table_name, get_current_user_id, get_db
@@ -139,10 +143,75 @@ def start_tempo_task(app, album_pool_id, album_name, user_id):
     return task_id
 
 
+def ensure_tempo(app, album_pool_id, user_id):
+    """get-or-trigger：确保该专辑节奏 BPM 分析已触发（幂等，v0.8.3 P1）
+    - 池不存在 / 无整轨 mp3（或磁盘文件缺失）→ {ready:false, has_mp3:false}（not_found 供路由 404）
+    - album_tempo 已有缓存 → {ready:true}
+    - 有活跃 tempo 任务（queued/running）→ {ready:false, analyzing:true, task_id}（find_active 防重复启动）
+    - 否则 start_tempo_task 启动 → {ready:false, analyzing:true, task_id}
+    供前端专辑详情页 / AI 助手 tab 双时机预触发 + ai_chat 懒分析共用；任意登录用户可调用（无 is_admin 校验）
+    """
+    db = get_db()
+    cursor = db.cursor(pymysql.cursors.DictCursor)
+    try:
+        cursor.execute('SELECT id, album_name, mp3_url FROM album_pool WHERE id = %s', (album_pool_id,))
+        pool = cursor.fetchone()
+        if not pool:
+            return {'ready': False, 'has_mp3': False, 'not_found': True}
+
+        mp3_url = pool.get('mp3_url') or ''
+        if not mp3_url:
+            return {'ready': False, 'has_mp3': False}
+        audio_path = _resolve_audio_path(mp3_url)
+        if not audio_path or not os.path.exists(audio_path):
+            return {'ready': False, 'has_mp3': False}
+
+        # ① 已有缓存 → ready（短路，不再分析）
+        cursor.execute('SELECT 1 FROM album_tempo WHERE album_pool_id = %s LIMIT 1', (album_pool_id,))
+        if cursor.fetchone():
+            return {'ready': True, 'has_mp3': True}
+
+        # ② 有活跃 tempo 任务 → 复用任务 id，不重复启动
+        active = tasks.find_active(kind='tempo', album_pool_id=album_pool_id)
+        if active:
+            return {'ready': False, 'has_mp3': True, 'analyzing': True, 'task_id': active[0].get('task_id')}
+
+        # ③ 启动后台分析任务
+        task_id = start_tempo_task(app, album_pool_id, pool['album_name'], user_id)
+        return {'ready': False, 'has_mp3': True, 'analyzing': True, 'task_id': task_id}
+    finally:
+        cursor.close()
+
+
 def register_tempo_ai_routes(app):
-    """注册 BPM 节奏分析异步任务路由（analyze 触发 + status 轮询），仅管理员可触发"""
+    """注册 BPM 节奏分析异步任务路由（analyze 管理员触发 + ensure 任意用户预触发 + status 轮询）"""
     global _app
     _app = app
+
+    # 0. BPM 预触发 get-or-trigger（v0.8.3 P1，任意登录用户）：album_tempo 已有 → ready；有活跃任务 → 复用；
+    #    否则启动后台线程。池不存在 404 / 无 mp3 → has_mp3:false（前端忽略）
+    @app.route('/api/ai/tempo/ensure/<int:album_pool_id>', methods=['POST', 'OPTIONS'])
+    @login_required
+    def tempo_ensure(album_pool_id):
+        try:
+            if request.method == 'OPTIONS':
+                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+
+            result = ensure_tempo(app, album_pool_id, current_user_id)
+            if result.get('not_found'):
+                return jsonify({"code": 404, "msg": f"公共专辑ID[{album_pool_id}]不存在！"}), 404
+            return jsonify({
+                "code": 200,
+                "msg": "节奏状态查询成功",
+                "data": result,
+            })
+        except Exception as e:
+            print(f"❌ BPM 预触发 ensure 出错：{str(e)}")
+            traceback.print_exc()
+            return jsonify({"code": 500, "msg": f"预触发节奏分析失败：{str(e)}"}), 500
 
     # 1. 触发 BPM 节奏分析（仅管理员）：校验池专辑存在 + 有整轨 mp3 → 启动后台线程 → 返回 task_id
     @app.route('/api/ai/tempo/analyze/<int:album_pool_id>', methods=['POST', 'OPTIONS'])

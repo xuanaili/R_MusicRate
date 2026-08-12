@@ -1610,6 +1610,20 @@ handleUpdateAlbumScore(scoreList) {
       }
     },
 
+    // v0.8.3 P1：打开专辑详情页即预触发 BPM 节奏分析（幂等 get-or-trigger），消除首次提问「节奏分析中」滞后；
+    // 失败不阻断详情页（非关键路径），与 AI 助手 tab 打开的触发互不冲突（ensure 内部缓存短路 + find_active 防重复）
+    preloadTempo() {
+      if (!this.albumPoolId) return;
+      this.$axios.post(`/api/ai/tempo/ensure/${this.albumPoolId}`)
+        .then(res => {
+          if (res.data.code !== 200) return;
+          // ready / analyzing / 无 mp3 皆无需处理：AI 助手 tab 打开时会自行轮询就绪
+        })
+        .catch(err => {
+          console.error('❌ 预触发节奏分析失败：', err);
+        });
+    },
+
     // v0.8.1 P6：加载 AI 配置状态 → 决定左侧菜单是否显示「AI 助手」（仅配置 key 的用户可见）
     loadAiStatus() {
       this.$axios.get('/api/ai/status').then(res => {
@@ -1642,6 +1656,8 @@ handleUpdateAlbumScore(scoreList) {
                 }
                 this.saveUserPlaylistData();
                 resolve();
+                // v0.8.3 P1：详情页打开即预触发 BPM 分析（幂等；专辑切换时 albumPoolId 已更新）
+                this.preloadTempo();
               } else {
                 alert(res.data.msg);
                 // ======== 【修改点2/4】替换跳转逻辑 ========

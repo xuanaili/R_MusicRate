@@ -8,8 +8,8 @@
 #   - SSE 流式：mock _call_ai_stream → delta 事件 + done 事件（含落库 id + 完整 answer）+ 落库/计数
 #   - 流式失败：中途异常 → error 事件兜底，不留半会话、不计数
 #   - 会话历史：GET 空/已存、reset 清空、delete 删除单条、删不存在的消息 404
-#   - BPM 懒分析：tempo 缺失 + 有整轨 mp3 → 触发异步分析返回「节奏分析中」；已有活跃任务不重复触发；
-#     已有 tempo 缓存 → 正常回答且 system 含【单曲节奏 BPM】
+#   - BPM 预触发（v0.8.3 P1）：tempo 缺失 + 有整轨 mp3 → ensure_tempo 被调用且本次照常回答（system 无 BPM 段）；
+#     无 mp3 → ensure 不调用；已有 tempo 缓存 → ensure 不调用且 system 含【单曲节奏 BPM】
 import json
 import os
 import tempfile
@@ -20,7 +20,6 @@ import pytest
 from backend import create_app
 from backend.config import AUDIO_BASE_URL, AUDIO_UPLOAD_FOLDER
 from backend.utils.db import get_album_table_name, get_db
-from backend.utils.task_table import tasks
 
 
 @pytest.fixture(scope='module')
@@ -241,16 +240,16 @@ def _mock_call_ai_stream(monkeypatch, chunks, fail_after=None):
     monkeypatch.setattr(mod, '_call_ai_stream', fake)
 
 
-def _mock_start_tempo_task(monkeypatch):
-    """替换 ai.start_tempo_task 记录调用（避免真起后台线程），返回 calls 列表"""
+def _mock_ensure_tempo(monkeypatch):
+    """替换 ai.ensure_tempo 记录调用（避免真起后台线程），返回 calls 列表"""
     import backend.api.ai as mod
     calls = []
 
-    def fake(app, album_pool_id, album_name, user_id):
-        calls.append({'album_pool_id': album_pool_id, 'album_name': album_name, 'user_id': user_id})
-        return 'fake-task'
+    def fake(app, album_pool_id, user_id):
+        calls.append({'album_pool_id': album_pool_id, 'user_id': user_id})
+        return {'ready': False, 'has_mp3': True, 'analyzing': True, 'task_id': 'fake-task'}
 
-    monkeypatch.setattr(mod, 'start_tempo_task', fake)
+    monkeypatch.setattr(mod, 'ensure_tempo', fake)
     return calls
 
 
@@ -480,52 +479,49 @@ def test_conversation_delete_not_found(client, test_user):
     assert r['code'] == 404, r
 
 
-# ==================== BPM 懒分析 ====================
+# ==================== BPM 预触发（v0.8.3 P1） ====================
 
 @pytest.mark.realdata
-def test_chat_tempo_missing_with_mp3_lazy_triggers(client, test_user, monkeypatch):
-    """album_tempo 缺失 + 池专辑有整轨 mp3 → 触发异步分析，返回「节奏分析中」提示"""
+def test_chat_tempo_missing_with_mp3_triggers_ensure_and_answers(client, test_user, monkeypatch):
+    """album_tempo 缺失 + 池专辑有整轨 mp3 → 触发 ensure 预触发，且本次提问照常回答（system 无 BPM 段）"""
     _save_key(client, test_user['headers'])
     filename, path = _make_mp3_file(client)
     try:
-        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
-        calls = _mock_start_tempo_task(monkeypatch)
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}', tracks='["歌一", "歌二"]')
+        ensure_calls = _mock_ensure_tempo(monkeypatch)
+        captured = _mock_call_ai(monkeypatch)
         r = _chat(client, test_user['headers'], pool_id, '这首歌什么节奏？').get_json()
         assert r['code'] == 200, r
-        assert r['data']['tempo_analyzing'] is True
-        assert '节奏' in r['data']['answer']
-        assert len(calls) == 1 and calls[0]['album_pool_id'] == pool_id
+        # 不再返回「节奏分析中」占位：照常回答 + 会话落库
+        assert r['data']['answer'] == '这是AI的测试回答'
+        assert r['data'].get('tempo_analyzing') is None
+        assert _count_conversation(client, test_user['user_id'], pool_id) == 2
+        # ensure 被调用（幂等防重逻辑在 ensure 内部，见 test_tempo_realdata）
+        assert len(ensure_calls) == 1 and ensure_calls[0]['album_pool_id'] == pool_id
+        # system 无 BPM 段（tempo 未就绪）
+        assert '【单曲节奏 BPM】' not in _system_of(captured)
     finally:
         if os.path.exists(path):
             os.remove(path)
 
 
 @pytest.mark.realdata
-def test_chat_tempo_missing_no_retrigger_if_active(client, test_user, monkeypatch):
-    """已有活跃 tempo 任务 → find_active 防抖，不再重复触发，仍返回「节奏分析中」"""
+def test_chat_tempo_missing_without_mp3_no_ensure(client, test_user, monkeypatch):
+    """池专辑无整轨 mp3 → 不触发 ensure，照常回答（无 BPM 段）"""
     _save_key(client, test_user['headers'])
-    filename, path = _make_mp3_file(client)
-    try:
-        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
-        tasks.create(
-            task_id='fake-active-tempo',
-            kind='tempo', album_pool_id=pool_id, album_name='AI对话测试专辑',
-            user_id=test_user['user_id'],
-            status='queued', message='预置活跃任务', progress=0, created_at=None,
-        )
-        calls = _mock_start_tempo_task(monkeypatch)
-        r = _chat(client, test_user['headers'], pool_id, '这首歌什么节奏？').get_json()
-        assert r['code'] == 200, r
-        assert r['data']['tempo_analyzing'] is True
-        assert calls == [], f'已存在活跃任务仍重复触发：{calls}'
-    finally:
-        if os.path.exists(path):
-            os.remove(path)
+    pool_id = _insert_pool_album(client)
+    ensure_calls = _mock_ensure_tempo(monkeypatch)
+    captured = _mock_call_ai(monkeypatch)
+    r = _chat(client, test_user['headers'], pool_id, '介绍一下').get_json()
+    assert r['code'] == 200, r
+    assert r['data']['answer'] == '这是AI的测试回答'
+    assert ensure_calls == [], '无 mp3 不应触发 ensure！'
+    assert '【单曲节奏 BPM】' not in _system_of(captured)
 
 
 @pytest.mark.realdata
-def test_chat_tempo_present_skips_lazy_and_includes_bpm(client, test_user, monkeypatch):
-    """已有 album_tempo 缓存 → 不触发懒分析，正常回答，且 system 含【单曲节奏 BPM】"""
+def test_chat_tempo_present_skips_ensure_and_includes_bpm(client, test_user, monkeypatch):
+    """已有 album_tempo 缓存 → 不触发 ensure，正常回答，且 system 含【单曲节奏 BPM】"""
     _save_key(client, test_user['headers'])
     filename, path = _make_mp3_file(client)
     try:
@@ -533,12 +529,12 @@ def test_chat_tempo_present_skips_lazy_and_includes_bpm(client, test_user, monke
         _insert_tempo(client, pool_id, {
             'track_tempos': [120.0, 90.0], 'avg_bpm': 105.0, 'min_bpm': 90.0, 'max_bpm': 120.0,
         })
-        calls = _mock_start_tempo_task(monkeypatch)
+        ensure_calls = _mock_ensure_tempo(monkeypatch)
         captured = _mock_call_ai(monkeypatch)
         r = _chat(client, test_user['headers'], pool_id, '节奏怎么样？').get_json()
         assert r['code'] == 200, r
         assert r['data']['answer'] == '这是AI的测试回答'
-        assert calls == [], '有 tempo 缓存仍触发懒分析！'
+        assert ensure_calls == [], '有 tempo 缓存仍触发 ensure！'
         sysp = _system_of(captured)
         assert '【单曲节奏 BPM】' in sysp
         assert '歌一：120.0 BPM' in sysp

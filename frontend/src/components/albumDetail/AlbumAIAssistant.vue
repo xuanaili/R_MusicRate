@@ -12,6 +12,11 @@
       >重置对话</button>
     </div>
 
+    <!-- v0.8.3 P1：节奏分析中提示条（打开 AI 助手 tab 预触发 BPM，轮询就绪后隐藏） -->
+    <div v-if="tempoAnalyzing" class="ai-tempo-banner" :style="{ backgroundColor: mainColorDark, color: '#ffffff' }">
+      ⏳ 正在分析专辑节奏（BPM），完成后会自动加入 AI 上下文…
+    </div>
+
     <!-- 消息列表 -->
     <div class="ai-chat-body" ref="chatBody">
       <div v-if="loadingHistory" class="ai-loading" :style="{ color: mainColorDarkDouble }">加载对话历史…</div>
@@ -85,7 +90,8 @@
 // 专辑详情左侧菜单「AI 助手」子页（非侧边栏形态）：围绕当前专辑与 AI 对话。
 // 决策（README v0.8.1）：
 //   - SSE 流式：axios 无法流式且 10s 超时杀长流 → 原生 fetch + ReadableStream 解析 `data:` 事件（delta/done/error）
-//   - BPM 懒分析：后端 tempo 缺失时返回普通 JSON（tempo_analyzing 提示）→ 按 Content-Type 分流解析
+//   - BPM 预触发（v0.8.3 P1）：created() 打开 tab 即调 /api/ai/tempo/ensure（幂等），analyzing → 顶部提示条 +
+//     轮询 status 就绪隐藏；chat 不再返回 tempo_analyzing 占位（照常回答，BPM 就绪后自动带上）
 //   - 消息成功才落库：乐观渲染 user 气泡 + AI 临时占位（tempId），done 事件回填真实 user_msg_id/assistant_msg_id
 //   - 对话历史按 album_pool_id 持久化，挂载时 GET /api/ai/conversation 加载
 //   - markdown 渲染 markdown-it({html:false}) 转义原始 HTML 防 XSS；Enter 发送 / Shift+Enter 换行
@@ -118,6 +124,8 @@ export default {
       thinking: false,       // 等待/流式输出中
       loadingHistory: false,
       abortController: null, // 离开页面时中断流式
+      tempoAnalyzing: false, // v0.8.3 P1：节奏分析中提示条显隐
+      tempoPollTimer: null,  // 轮询节奏分析任务状态的定时器
       suggestedQuestions: [
         '这张专辑的主题和风格是什么？',
         '结合我的评分和听后感，分析一下我的听歌口味',
@@ -147,16 +155,64 @@ export default {
   },
   created() {
     this.loadHistory()
+    // v0.8.3 P1：打开 AI 助手 tab 即预触发 BPM 节奏分析（幂等；analyzing 则轮询就绪显示提示条）
+    this.preloadTempo()
   },
   beforeDestroy() {
-    // 切换子页面/离开详情时中断进行中的流式请求（防泄漏）
+    // 切换子页面/离开详情时中断进行中的流式请求（防泄漏）+ 停止节奏轮询定时器
     if (this.abortController) {
       this.abortController.abort()
     }
+    this.stopTempoPolling()
   },
   methods: {
     mdRender(content) {
       return md.render(content || '')
+    },
+    // ==================== v0.8.3 P1：BPM 预触发 + 节奏分析提示条 ====================
+    preloadTempo() {
+      if (!this.albumPoolId) return
+      this.$axios.post(`/api/ai/tempo/ensure/${this.albumPoolId}`).then(res => {
+        if (res.data.code !== 200) return
+        const d = res.data.data || {}
+        if (d.ready) return                       // 已有缓存，无需提示
+        if (d.analyzing && d.task_id) {
+          this.tempoAnalyzing = true
+          this.pollTempoStatus(d.task_id)
+        }
+        // 无 mp3 / 池不存在 → 忽略（不展示提示条）
+      }).catch(err => {
+        // 预触发失败不阻断（非关键路径）
+        console.error('❌ 预触发节奏分析失败：', err)
+      })
+    },
+    pollTempoStatus(taskId) {
+      this.stopTempoPolling()
+      this.tempoPollTimer = setInterval(() => {
+        this.$axios.get(`/api/ai/tempo/status/${taskId}`).then(res => {
+          if (res.data.code !== 200) {
+            this.stopTempoPolling()
+            this.tempoAnalyzing = false
+            return
+          }
+          const st = res.data.data || {}
+          // done/failed → 停止轮询并隐藏提示条（failed 也隐藏，避免一直卡提示）
+          if (st.status === 'done' || st.status === 'failed') {
+            this.stopTempoPolling()
+            this.tempoAnalyzing = false
+          }
+        }).catch(() => {
+          // 任务不存在（后端重启丢内存任务）/ 网络异常 → 停止轮询，隐藏提示条
+          this.stopTempoPolling()
+          this.tempoAnalyzing = false
+        })
+      }, 4000)
+    },
+    stopTempoPolling() {
+      if (this.tempoPollTimer) {
+        clearInterval(this.tempoPollTimer)
+        this.tempoPollTimer = null
+      }
     },
     // ==================== 会话历史 ====================
     loadHistory() {
@@ -277,7 +333,7 @@ export default {
         if (contentType.includes('text/event-stream')) {
           await this.parseSseStream(res, aiMsg, userMsg)
         } else {
-          // 普通 JSON：BPM 懒分析「节奏分析中」提示（后端未落库 → 不回填 id，仅展示）
+          // 普通 JSON 回答（v0.8.3 P1：chat 已不再返回 tempo_analyzing 占位，BPM 缺失时照常回答无 BPM 段）
           const json = await res.json()
           if (json.code !== 200) throw new Error(json.msg || '请求失败')
           const d = json.data || {}
@@ -285,9 +341,6 @@ export default {
           aiMsg.streaming = false
           aiMsg.id = d.assistant_msg_id || null
           userMsg.id = d.user_msg_id || null
-          if (d.tempo_analyzing) {
-            this.showMsg('info', '正在分析专辑节奏，稍后再问即可获得 BPM 上下文')
-          }
         }
       } catch (err) {
         if (err.name === 'AbortError') {
@@ -416,6 +469,15 @@ export default {
 .ai-reset-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* v0.8.3 P1：节奏分析中提示条 */
+.ai-tempo-banner {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  flex-shrink: 0;
+  opacity: 0.92;
 }
 
 /* 消息列表 */

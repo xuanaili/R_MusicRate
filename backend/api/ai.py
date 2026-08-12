@@ -7,8 +7,8 @@
 #   - POST /api/ai/chat                 提问（context：BPM/歌词/听后感/评论/全网听后感；stream=true → SSE）
 # 决策（README v0.8.1，镜像 BookRate backend/api/ai.py）：
 #   - 上下文组装纯函数放 backend/utils/ai_context.py（零 DB 可单测），本模块只做 DB 查询与组装调用
-#   - BPM 懒分析：album_tempo 缺失 + 池专辑有可播放整轨 mp3 → 触发异步 start_tempo_task（防重复用
-#     tasks.find_active(kind='tempo')），返回「节奏分析中」提示，不阻塞提问
+#   - BPM 预触发（v0.8.3 P1）：album_tempo 缺失 + 池专辑有可播放整轨 mp3 → ensure_tempo 触发后台分析（幂等防重复），
+#     本次提问照常回答（format_tempo(None) → 无 BPM 段），BPM 就绪后自动带上，不再返回「节奏分析中」占位
 #   - 配额 ai_quota：提问成功才计数（requests+1 / chars 按问题+回答字符），失败/中断不落半会话
 #   - SSE 事件流：delta（增量文本）/ done（含落库的 user_msg_id、assistant_msg_id、完整 answer）/ error
 #   - 铁律：key 明文只存后端 DB，前端只存「是否已配置」布尔，绝不返回明文
@@ -26,7 +26,6 @@ from backend.config import AUDIO_UPLOAD_FOLDER
 from backend.utils.db import get_album_table_name, get_current_user_id, get_db
 from backend.utils.decorators import login_required
 from backend.utils.json import safe_json_loads
-from backend.utils.task_table import tasks
 from backend.utils.ai_context import (
     COMMENT_LIMIT,
     HISTORY_LIMIT,
@@ -40,7 +39,7 @@ from backend.utils.ai_context import (
     format_tempo,
     parse_feelings,
 )
-from backend.api.tempo_ai import start_tempo_task
+from backend.api.tempo_ai import ensure_tempo
 
 # 支持的 AI 服务商（OpenAI 兼容接口格式，P5 chat 复用）
 PROVIDER_CONFIG = {
@@ -652,19 +651,11 @@ def register_ai_routes(app):
                 if not pool:
                     return jsonify({"code": 404, "msg": f"公共专辑ID[{album_pool_id}]不存在！"}), 404
 
-                # BPM 懒分析：album_tempo 缺失 + 池专辑有可播放整轨 mp3 → 异步分析（防重复触发），
-                # 本次提问返回「节奏分析中」提示，不阻塞请求（README：避免请求线程等几十秒）
+                # BPM 预触发（v0.8.3 P1）：album_tempo 缺失 + 池专辑有可播放整轨 mp3 → ensure_tempo 触发后台分析
+                # （幂等防重复：缓存短路 + find_active），本次提问照常回答（tempo 未就绪 → format_tempo(None) 无 BPM 段，
+                # BPM 就绪后自动带上），不再返回「节奏分析中」占位
                 if not _get_tempo(db, cursor, album_pool_id) and _pool_has_playable_mp3(pool):
-                    if not tasks.find_active(kind='tempo', album_pool_id=album_pool_id):
-                        start_tempo_task(app, album_pool_id, pool['album_name'], user_id)
-                    return jsonify({
-                        "code": 200,
-                        "msg": "正在分析专辑节奏",
-                        "data": {
-                            "tempo_analyzing": True,
-                            "answer": "正在分析该专辑的单曲节奏（BPM），稍后再提问即可获得节奏上下文…",
-                        }
-                    })
+                    ensure_tempo(app, album_pool_id, user_id)
 
                 # ---------- SSE 流式 ----------
                 if data.get('stream'):

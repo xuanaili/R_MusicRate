@@ -15,6 +15,7 @@ import pytest
 from backend import create_app
 from backend.config import AUDIO_BASE_URL, AUDIO_UPLOAD_FOLDER
 from backend.utils.db import get_album_table_name, get_db
+from backend.utils.task_table import tasks
 
 
 @pytest.fixture(scope='module')
@@ -136,6 +137,33 @@ def _get_tempo(client, album_pool_id):
         return json.loads(row['tempo']) if row else None
 
 
+def _insert_tempo_cache(client, album_pool_id, tempo_dict):
+    """直接插入 album_tempo 缓存行（ensure ready 短路测试用）"""
+    app = client.application
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute(
+            'INSERT INTO album_tempo (album_pool_id, tempo) VALUES (%s, %s)',
+            (album_pool_id, json.dumps(tempo_dict, ensure_ascii=False)),
+        )
+        db.commit()
+        cursor.close()
+
+
+def _mock_start_tempo_task(monkeypatch):
+    """替换 tempo_ai.start_tempo_task 记录调用（避免真起后台线程），返回 calls 列表"""
+    import backend.api.tempo_ai as mod
+    calls = []
+
+    def fake(app, album_pool_id, album_name, user_id):
+        calls.append({'album_pool_id': album_pool_id, 'album_name': album_name, 'user_id': user_id})
+        return 'fake-ensure-task'
+
+    monkeypatch.setattr(mod, 'start_tempo_task', fake)
+    return calls
+
+
 def _wait_status(client, task_id, headers, timeout=10):
     """轮询任务状态直到 done/failed，超时抛错"""
     deadline = time.time() + timeout
@@ -179,6 +207,102 @@ def test_tempo_analyze_mp3_file_missing_rejected(client, admin_user):
     r = client.post(f'/api/ai/tempo/analyze/{pool_id}', headers=admin_user['headers']).get_json()
     assert r['code'] == 400, r
     assert '文件不存在' in r['msg']
+
+
+# ==================== BPM 预触发 ensure（v0.8.3 P1：任意登录用户 get-or-trigger） ====================
+
+@pytest.mark.realdata
+def test_tempo_ensure_pool_not_found(client, test_user):
+    r = client.post('/api/ai/tempo/ensure/999999', headers=test_user['headers']).get_json()
+    assert r['code'] == 404, r
+
+
+@pytest.mark.realdata
+def test_tempo_ensure_any_user_allowed(client, test_user, monkeypatch):
+    """ensure 任意登录用户可调用（非管理员也 200，不再校验 is_admin）"""
+    filename, path = _make_mp3_file(client)
+    try:
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
+        _mock_start_tempo_task(monkeypatch)
+        r = client.post(f'/api/ai/tempo/ensure/{pool_id}', headers=test_user['headers']).get_json()
+        assert r['code'] == 200, r
+        assert r['data']['analyzing'] is True
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+@pytest.mark.realdata
+def test_tempo_ensure_no_mp3_reports_has_mp3_false(client, test_user):
+    """池无整轨 mp3 → ready:false + has_mp3:false（前端忽略，不 400）"""
+    pool_id = _insert_pool_album(client)  # mp3_url 为空
+    r = client.post(f'/api/ai/tempo/ensure/{pool_id}', headers=test_user['headers']).get_json()
+    assert r['code'] == 200, r
+    assert r['data']['ready'] is False
+    assert r['data']['has_mp3'] is False
+
+
+@pytest.mark.realdata
+def test_tempo_ensure_cached_ready(client, test_user, monkeypatch):
+    """album_tempo 已有缓存 → ready:true，不启动新任务"""
+    filename, path = _make_mp3_file(client)
+    try:
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
+        _insert_tempo_cache(client, pool_id, {
+            'track_tempos': [120.0], 'avg_bpm': 120.0, 'min_bpm': 120.0, 'max_bpm': 120.0,
+        })
+        calls = _mock_start_tempo_task(monkeypatch)
+        r = client.post(f'/api/ai/tempo/ensure/{pool_id}', headers=test_user['headers']).get_json()
+        assert r['code'] == 200, r
+        assert r['data']['ready'] is True
+        assert r['data'].get('analyzing') is None
+        assert calls == [], '已有缓存仍启动任务！'
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+@pytest.mark.realdata
+def test_tempo_ensure_starts_task(client, test_user, monkeypatch):
+    """tempo 缺失 + 有整轨 mp3 + 无活跃任务 → 启动任务，返回 analyzing:true + task_id"""
+    filename, path = _make_mp3_file(client)
+    try:
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
+        calls = _mock_start_tempo_task(monkeypatch)
+        r = client.post(f'/api/ai/tempo/ensure/{pool_id}', headers=test_user['headers']).get_json()
+        assert r['code'] == 200, r
+        assert r['data']['ready'] is False
+        assert r['data']['has_mp3'] is True
+        assert r['data']['analyzing'] is True
+        assert r['data']['task_id'] == 'fake-ensure-task'
+        assert len(calls) == 1 and calls[0]['album_pool_id'] == pool_id
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+@pytest.mark.realdata
+def test_tempo_ensure_active_task_reused(client, test_user, monkeypatch):
+    """已有活跃 tempo 任务 → 复用其 task_id，不重复启动（find_active 防抖）"""
+    filename, path = _make_mp3_file(client)
+    try:
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
+        tasks.create(
+            task_id='active-ensure-tempo',
+            kind='tempo', album_pool_id=pool_id, album_name='节奏分析测试专辑',
+            user_id=test_user['user_id'],
+            status='running', message='预置活跃任务', progress=50, created_at=None,
+        )
+        calls = _mock_start_tempo_task(monkeypatch)
+        r = client.post(f'/api/ai/tempo/ensure/{pool_id}', headers=test_user['headers']).get_json()
+        assert r['code'] == 200, r
+        assert r['data']['ready'] is False
+        assert r['data']['analyzing'] is True
+        assert r['data']['task_id'] == 'active-ensure-tempo'
+        assert calls == [], '已有活跃任务仍重复启动！'
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
 
 
 # ==================== 任务链路（fake analyze_tempo） ====================

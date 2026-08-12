@@ -208,7 +208,7 @@ v0.8.3 **无新增表**。`album_pool.tracks_time` 建表 DDL 补默认值 `'[]'
 ### 分阶段路线
 
 - **P0 歌词展示页样式统一**：h2 选择器修复 + 全页颜色主题化 → `parseTimeStr` 精度修复 → 长歌词省略号 → 当前句抖动 → 单测（`parseTimeStr` 纯函数可测）+ `npm run lint` + 手动回归 ✅ 2026-08-12
-- **P1 BPM 预触发**：`ensure_tempo` 帮助函数 + ensure 路由 + chat 改照常回答 → 单测 + realdata（test_ai_chat_realdata 懒分析断言同步更新）→ 前端 AlbumDetail + AlbumAIAssistant 预触发 + 提示条轮询 → lint + 手动回归
+- **P1 BPM 预触发**：`ensure_tempo` 帮助函数 + ensure 路由 + chat 改照常回答 → 单测 + realdata（test_ai_chat_realdata 懒分析断言同步更新）→ 前端 AlbumDetail + AlbumAIAssistant 预触发 + 提示条轮询 → lint + 手动回归 ✅ 2026-08-12
 - **P2 其他优化**：`duration.js` 抽取统一 4 处格式 → `album_pool.tracks_time` DDL 漂移统一 → realdata + 回归
 
 ### 难点与对策
@@ -225,8 +225,8 @@ v0.8.3 **无新增表**。`album_pool.tracks_time` 建表 DDL 补默认值 `'[]'
 - [x] P0 `parseTimeStr` 小数精度修复（对齐 parseLrcToStandardFormat）✅ 2026-08-12
 - [x] P0 长歌词省略号撑破布局修复 ✅ 2026-08-12
 - [x] P0 当前句抖动修复 ✅ 2026-08-12
-- [ ] P1 `ensure` 接口 + chat 改照常回答 + 单测/realdata
-- [ ] P1 前端双时机预触发 + 提示条轮询
+- [x] P1 `ensure` 接口 + chat 改照常回答 + 单测/realdata ✅ 2026-08-12
+- [x] P1 前端双时机预触发 + 提示条轮询 ✅ 2026-08-12
 - [ ] P2 `utils/duration.js` 抽取统一 4 处格式
 - [ ] P2 `album_pool.tracks_time` DDL 漂移统一
 
