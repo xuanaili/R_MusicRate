@@ -151,7 +151,7 @@ MusicRate/
 
 ## v0.8.1 — AI 系列：歌词识别正式管线 + AI 助手（P0-P4 已完成，P5-P6 待实现）
 
-> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地；**P0 识别器升级、P1 异步任务 + 接口、P2 DeepSeek 校正 + 前端按钮、P3 AI key 配置（个人中心）、P4 BPM 节奏分析（tempo_analyzer + album_tempo 缓存 + 异步任务，与歌词识别共用同一任务表串行）已完成（2026-08-12）**。2026-08-12 增补：**AI 识别整轨进度条（实时转写进度）+ 添加专辑自动触发识别**（管理员添加带整轨 mp3 的专辑时自动启动识别，省得每次手动再识别一次）。
+> 承接 v0.8 P1 spike 评估结论（草稿级可行），正式落地 AI 歌词识别管线：管理员对已有整轨 mp3 的专辑触发识别 → faster-whisper（small，VAD 关）产出草稿歌词 + 时间戳 → 幻觉过滤 + OpenCC 繁转简 → DeepSeek 校正（difflib 保时间戳）→ 整轨绝对时间存储文本落 `album_lyric`，前端按 `tracks_time` 自动切分。规划于 2026-08-12 用户拍板落地；2026-08-12 补充更新：**个人中心 AI key 配置 + 专辑详情「AI 助手」子页面 + BPM 节奏分析**，并入本版本扩成「AI 系列」。实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P6 落地；**P0 识别器升级、P1 异步任务 + 接口、P2 DeepSeek 校正 + 前端按钮、P3 AI key 配置（个人中心）、P4 BPM 节奏分析（tempo_analyzer + album_tempo 缓存 + 异步任务，与歌词识别共用同一任务表串行）已完成（2026-08-12）**。2026-08-12 增补：**AI 识别整轨进度条（实时转写进度）+ 添加专辑自动触发识别**（管理员添加带整轨 mp3 的专辑时自动启动识别，省得每次手动再识别一次）。2026-08-12 增补：**平台参考歌词辅助校正**——DeepSeek 校正环节按曲目实时拉取网易云/酷狗/QQ 官方歌词作纠错参考，专治中文同音错字（参考仅用于消歧，不改草稿行文与时间戳）。
 
 ### 功能概述
 
@@ -162,6 +162,7 @@ MusicRate/
 5. **BPM 节奏分析**：为 AI 助手提供「歌曲节奏」数据——librosa 对整轨 mp3 做节奏分析，按 `tracks_time` 切分得每曲 BPM + 整专节奏结构，结果缓存 `album_tempo` 表（按 album_pool_id）；异步任务分析（与歌词识别共用同一内存任务表实例，serial_lock 全局唯一保证 CPU 串行）
 6. **AI 助手**：专辑详情左侧菜单新增「AI 助手」子页（与听后感/平台评论同级，**非** BookRate 的侧边栏形态），仅配置 key 的用户可见——AI 依据用户对这张专辑的所有听后感、当前播放歌曲的歌词、单曲节奏（BPM）、歌手信息、专辑信息、平台评论、全网听后感精选，与用户讨论整张专辑的感受；SSE 流式输出，对话历史按 user + album_pool_id 持久化
 7. **定位与覆盖**：识别产物是「草稿」，管理员可再用官方歌词上传/手动编辑覆盖（复用 v0.8 P0 的 save/upload 落库路径）
+8. **平台参考歌词辅助校正**：DeepSeek 校正环节按曲目标题+歌手实时拉取网易云/酷狗/QQ 官方歌词作参考（网易云优先 → 酷狗 → QQ 逐级兜底，每曲取第一个成功平台）——参考文本仅作纠错参考注入校正 prompt（消除同音字/错字/断句歧义），**不改草稿行文与时间戳**；拉取失败/无参考时校正行为与无此功能完全一致；**不缓存，现拉现用**（无新表）
 
 ### 已定决策（2026-08-12 拍板）
 
@@ -182,6 +183,9 @@ MusicRate/
 | **AI 助手上下文** | **含平台评论 + 全网听后感精选**（用户拍板镜像 BookRate）：用户本专辑听后感/评分/标签 + 专辑信息 + 歌手信息 + 当前歌歌词 + 单曲 BPM 节奏 + 平台评论 + 其他用户听后感精选 |
 | **AI 对话历史** | `ai_conversation` 按 user + album_pool_id 持久化，**成功才落库**（失败/中断不留半会话，镜像 BookRate 踩坑）；`ai_quota` 按日统计提问次数/字符 |
 | **流式** | SSE `text/event-stream`；前端**用原生 fetch 直连**（axios 不能流式 + 超时会杀长流，镜像 BookRate 踩坑）；后端 `threaded=True` + SSE generator 内 `with app.app_context()` |
+| **参考歌词平台** | **网易云优先 → 酷狗 → QQ 逐级兜底**（用户拍板）；非官方接口易变动，每曲取第一个成功平台、失败自动降级，全失败该曲无参考不阻断校正 |
+| **参考参与方式** | **仅作纠错参考**（用户拍板）；草稿行文/时间戳为准，参考歌词只用于消除同音字/错字/断句歧义，不替换草稿行 |
+| **参考歌词缓存** | **不缓存现拉现用**（用户拍板）；无新表，管理员低频识别，多花几秒~十几秒可接受 |
 
 ### 数据来源
 
@@ -202,12 +206,14 @@ MusicRate/
 | **当前歌歌词** | `album_lyric.lyric_text` 按 `tracks_time` 切当前曲目切片 | 现成表 | `GET /api/album/lyric/get/<pool_id>` |
 | **歌手信息** | `albums_{user_id}.singer`（字符串）+ `album_singers.detail_intro`（按 singer_name best-effort 查） | 现成（新增查询） | — |
 | **平台评论** | `album_comments` 表 | 现成 | comment.py / pool detail |
+| 平台参考歌词（每曲 LRC） | 外部 API 实时拉取（网易云/酷狗/QQ） | 需新建 `lyric_reference.py` | 校正环节按 `album_pool.tracks` + `singer` 逐曲拉取 |
 
 ### 架构设计
 
 - **识别器升级**（保持）：`lyric_recognizer.py` transcribe 默认 `vad_filter=False` + 返回 segment `no_speech_prob` → 幻觉过滤（no_speech_prob 阈值丢弃 + `[Music]`/`詞曲 李宗盛`/`字幕by` 等噪音模式滤除 + 器乐标签黑名单）；新增繁→简转换（OpenCC t2s）
 - **异步任务**（保持）：`lyric_ai.py`（新 api 模块）`POST /api/album/lyric/recognize/<album_pool_id>` 触发后台线程任务，内存任务表存状态（running/done/failed + 进度），`GET .../status/<task_id>` 轮询；完成后自动落 `album_lyric`；**BPM 分析复用同一内存任务表模式**
 - **DeepSeek 校正**（保持）：`deepseek_correct.py`：whisper 行 `mm:ss.x 文本` 作锚 → prompt 强制「逐行只改文字，不改时间戳、不增删行」→ 若行数变化用 difflib.SequenceMatcher 对齐回锚定时间戳；key 读 `config.py.DEEPSEEK_API_KEY`
+- **平台参考歌词**（新增）：`lyric_reference.py`——按「曲名+歌手」逐曲搜索并拉取官方 LRC，解析为纯文字（去时间戳）作参考；`build_correct_prompt` 增加可选 `reference_text` 参数（为空则 prompt 不变，向后兼容）；拉取按 网易云→酷狗→QQ 逐级兜底、每请求 5s 超时，失败/为空该曲无参考不阻断校正；`lyric_ai` 在 DeepSeek 校正前读 `album_pool.tracks` + `singer` 逐曲拉参考文本
 - **AI key**：`ai.py`（新 api 模块）`ai_key` 表 upsert；`POST /api/ai/key` 永不返回明文 key，`GET /api/ai/status` 返回 has_key + provider + 今日用量（镜像 BookRate）
 - **BPM 节奏分析**：`tempo_analyzer.py`（librosa）对整轨 mp3 做 tempo/RMS 分析，按 `tracks_time` 切分得每曲 BPM + 整专节奏结构（avg/min/max/单曲时长），结果缓存 `album_tempo`；**懒分析**——AI 首次提问该专辑若 tempo 缺失则触发异步分析（复用内存任务表），chat 返回「节奏分析中」提示，完成后重试即可，避免请求线程阻塞几十秒
 - **AI 助手上下文组装**：`ai.py` `_build_system_prompt` 镜像 BookRate 分层结构——【专辑信息】/【歌手信息】/【你的评分】/【你的听后感】/【你的标签】/【单曲节奏 BPM】/【当前播放歌曲歌词】/【平台评论】/【其他用户听后感精选】；各段截断（听后感 cap、评论 15 条、全网听后感每用户最新 3 条 cap 20），结尾强约束「优先依据以上上下文，信息不足如实告知，不编造」
@@ -257,6 +263,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - **P4 BPM 节奏分析**：librosa 安装 spike（portable Python 兼容性验证，同 faster-whisper spike 流程；装不上降级 aubio）→ `tempo_analyzer.py` 纯函数（整轨 mp3 → 每曲 BPM，单测）→ `album_tempo` 表 + 异步任务（与歌词识别共用共享 TaskTable）→ realdata 验证 ✅ 2026-08-12
 - **增补：识别进度条 + 自动触发**：`transcribe` 增加 `progress_callback`（segment.end/总时长 实时比例）+ `_map_transcribe_progress`（10→90 映射）+ 前端进度条；`start_recognize_task` 帮助函数抽取 + `album/add` 管理员带 mp3 自动触发识别（响应 `recognize_task_id`）→ 单测 + realdata ✅ 2026-08-12
 - **增补：AI 识别按钮移出弹窗、悬停显示**：弹窗内 AI 按钮迁到歌词展示页歌名标题栏左侧（与右上「上传/编辑歌词」对称、悬停才显示，仅歌词展示页；无歌词提示区也并排展示）；轮询逻辑迁到常驻父组件 `AlbumDetail.vue`（props 下传 + 事件触发）——切换听后感/评论/其他子页面时识别持续轮询、进度条在标题栏下方实时可见；done 后 `getAlbumLyrics()` 刷新歌词联动子组件 ✅ 2026-08-12
+- **增补：平台参考歌词辅助校正**：`lyric_reference.py`（网易云优先/酷狗/QQ 兜底拉取 LRC + 纯文字解析 + 优先级逐级降级 + 5s 超时）+ `build_correct_prompt` 加可选 `reference_text` 参数（为空则 prompt 不变）+ `lyric_ai` 集成（DeepSeek 校正前按 `album_pool.tracks`+`singer` 逐曲拉参考）+ 单测（解析/prompt）+ realdata 验证（真实拉取知名中文歌）
 - **P5 AI 助手后端**：`ai_conversation` / `ai_quota` 表 + 上下文组装（含 BPM/歌词/听后感/评论/全网听后感）+ OpenAI 兼容 chat + SSE 流式 + 配额 → 单测 + realdata
 - **P6 AI 助手前端**：`AlbumAIAssistant.vue` 子页 + SSE 流式渲染 + markdown + AlbumDetail 菜单入口（has_key 显隐）+ `npm run lint` + 手动回归
 
@@ -265,6 +272,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - **幻觉过滤**（保持）：no_speech_prob > 0.6 丢弃 + 噪音模式（`[Music]`/`詞曲 李宗盛`/`字幕by`/器乐标签）+ 连续短句聚合 → 单测锁定
 - **繁体转简体**（保持）：OpenCC `t2s`（纯 Python 实现，无外部服务）；注意歌词专名（如人名）转换后仍准确
 - **DeepSeek 校正**（保持）：以 whisper 时间戳为锚，prompt 强约束「只改文字」，difflib 对齐行数变化；校正失败回退 whisper 原稿
+- **非官方歌词接口易变动**（新增）：网易云/酷狗/QQ 均为非官方 API → 每曲按 网易云→酷狗→QQ 优先级逐级兜底（一个平台失败自动降级下一个，全失败该曲无参考）；每请求 5s 超时 + 异常捕获；网络失败/无参考不阻断 DeepSeek 校正（回退原行为）
 - **CPU 占用**（保持）：识别数分钟 100% → 串行任务 + 前端明确提示「后台生成中」；并发请求排队
 - **异步任务进程重启丢失**（保持）：内存任务表不持久化 → 后端重启任务状态丢失，识别/分析接口幂等（重复触发视为新任务）
 - **librosa 安装风险**：portable Python（Windows）装 librosa 依赖 numba/llvmlite 二进制 wheel，版本不兼容会翻车 → **P4 先 spike**（同 faster-whisper 流程）；装不上则降级 aubio（轻量 tempo 检测）
@@ -285,6 +293,7 @@ AI 助手（新增 `backend/api/ai.py`，全部 `@login_required`）：
 - [x] P4 BPM 节奏分析（librosa spike + tempo_analyzer + album_tempo 表 + 共享 TaskTable + analyze/status 异步接口 + realdata 测试）✅ 2026-08-12
 - [x] 增补：识别进度条 + 添加专辑自动触发（transcribe progress_callback + 前端进度条 + album/add 自动识别 + 测试）✅ 2026-08-12
 - [x] 增补：AI 识别按钮移出弹窗、悬停显示（歌名标题栏左侧，与上传/编辑歌词对称；轮询迁入常驻父组件 AlbumDetail，切换子页面识别持续）✅ 2026-08-12
+- [ ] 增补：平台参考歌词辅助校正（lyric_reference.py 网易云优先/酷狗/QQ 兜底 + build_correct_prompt reference 参数 + lyric_ai 集成 + 单测 + realdata）
 - [ ] P5 AI 助手后端（conversation/quota 表 + 上下文组装 + SSE chat）
 - [ ] P6 AI 助手前端（AlbumAIAssistant 子页 + markdown + AlbumDetail 入口）
 ## v0.8 — 歌词版：本地上传 LRC 接口（干净版）+ AI 歌词识别可行性验证（P0 已完成）
