@@ -166,35 +166,7 @@
                     >
                       保存并上传所有歌词
                     </button>
-                    <!-- v0.8.1 P2：AI 识别整轨歌词（仅管理员，faster-whisper 转写 + DeepSeek 校正） -->
-                    <button
-                      v-if="isAdmin"
-                      class="ai-recognize-btn"
-                      :style="{backgroundColor: mainColor}"
-                      @click="triggerAiRecognize"
-                      :disabled="aiRecognizeLoading"
-                      title="对该专辑整轨 MP3 进行 AI 语音识别（需已上传整轨 MP3），识别结果自动写入全专辑歌词"
-                    >
-                      <i class="icon-ai-recognize">🤖</i>
-                      <span v-if="!aiRecognizeLoading">AI 识别整轨歌词</span>
-                      <span v-if="aiRecognizeLoading">识别中… {{ aiRecognizeProgress }}%</span>
-                    </button>
                   </div>
-                </div>
-                <!-- v0.8.1 增补：AI 识别进度条（实时转写进度 + 阶段提示） -->
-                <div
-                  v-if="aiRecognizeLoading || aiRecognizeProgress > 0"
-                  class="ai-recognize-progress-row"
-                >
-                  <div class="ai-recognize-progress-track">
-                    <div
-                      class="ai-recognize-progress-fill"
-                      :style="{width: aiRecognizeProgress + '%', backgroundColor: mainColor}"
-                    ></div>
-                  </div>
-                  <span class="ai-recognize-progress-text">
-                    {{ aiRecognizeProgress }}% · {{ aiRecognizeStatusMsg }}
-                  </span>
                 </div>
                 <!-- 关键修改：添加ref="originalLyricTextarea" -->
                 <textarea
@@ -352,10 +324,6 @@ export default {
       batchUploadCurrent: 0,
       batchUploadTotal: 0,
       batchUploadTimer: null,
-      aiRecognizeLoading: false,
-      aiRecognizeTimer: null,
-      aiRecognizeProgress: 0,     // AI 识别进度 0-100（进度条用，轮询 status.progress 更新）
-      aiRecognizeStatusMsg: '',   // 当前阶段提示（排队中/转写中…%/写入歌词…/校正中…/完成）
     };
   },
   computed: {
@@ -1047,95 +1015,6 @@ export default {
       }
     },
 
-    // ========== 【v0.8.1 P2】AI 识别整轨歌词（faster-whisper + DeepSeek 校正，仅管理员） ==========
-    // 触发 POST /api/album/lyric/recognize/<pool_id> 拿 task_id → 每 2s 轮询 status →
-    // done 拉取最新歌词 emit('update:lyrics') 刷新（与整轨 LRC 上传同机制）→ toast 展示行数/校正状态
-    async triggerAiRecognize() {
-      if (this.aiRecognizeLoading) return;
-      const poolId = this.album.source_pool_id || this.album.id;
-      this.aiRecognizeLoading = true;  // 轮询期间保持禁用，done/failed 时由 pollAiRecognize 复位
-      this.aiRecognizeProgress = 0;    // 新任务从 0 开始展示进度
-      this.aiRecognizeStatusMsg = '任务已创建，排队等待识别';
-      try {
-        const res = await this.$axios.post(
-          `/api/album/lyric/recognize/${poolId}`,
-          {},
-          {headers: {Authorization: localStorage.getItem('token') || ''}}
-        );
-        if (res.data.code !== 200) {
-          this.$message?.error(res.data.msg || '触发 AI 识别失败');
-          this.aiRecognizeLoading = false;
-          return;
-        }
-        const taskId = res.data.data.task_id;
-        this.$message?.info('AI 识别已开始（后台生成中，整轨专辑约需数分钟，可继续做其他操作）');
-        this.aiRecognizeTimer = setInterval(() => this.pollAiRecognize(taskId), 2000);
-      } catch (err) {
-        this.$message?.error('触发 AI 识别异常：' + (err.response?.data?.msg || err.message));
-        this.aiRecognizeLoading = false;
-        this.aiRecognizeStatusMsg = '触发失败';
-      }
-    },
-
-    async pollAiRecognize(taskId) {
-      if (!taskId) return;
-      try {
-        const res = await this.$axios.get(
-          `/api/album/lyric/recognize/status/${taskId}`,
-          {headers: {Authorization: localStorage.getItem('token') || ''}}
-        );
-        if (res.data.code !== 200) return;
-        const status = res.data.data;
-        // 实时更新进度条（后端 tasks.update 上报 progress 0~100 + 阶段 message）
-        if (typeof status.progress === 'number') this.aiRecognizeProgress = status.progress;
-        if (status.message) this.aiRecognizeStatusMsg = status.message;
-        if (status.status === 'done') {
-          this.stopAiRecognizePolling();
-          this.aiRecognizeLoading = false;
-          this.aiRecognizeProgress = 100;
-          this.aiRecognizeStatusMsg = '识别完成，歌词已写入';
-          // 拉取最新歌词 → 触发父组件 update:lyrics 刷新全专辑歌词
-          const getRes = await this.$axios.get(
-            `/api/album/lyric/get/${this.album.source_pool_id || this.album.id}`,
-            {headers: {Authorization: localStorage.getItem('token') || ''}}
-          );
-          if (getRes.data.code === 200) {
-            const data = getRes.data.data;
-            this.$emit('update:lyrics', {
-              lyric_text: data.lyric_text || '',
-              lyric_translate: data.lyric_translate || '{}'
-            });
-          }
-          const corrected = status.corrected ? '（已 DeepSeek 校正）' : '';
-          this.$message?.success(`AI 识别完成${corrected}：${status.lyric_lines || 0} 行歌词已写入！`);
-          this.showUploadLyricModal = false;
-        } else if (status.status === 'failed') {
-          this.stopAiRecognizePolling();
-          this.aiRecognizeLoading = false;
-          this.aiRecognizeStatusMsg = status.message || '识别失败';
-          this.$message?.error(status.message || 'AI 识别失败');
-        }
-        // running/queued → 下一轮轮询
-      } catch (err) {
-        // 单次轮询网络抖动不中断；后端重启导致任务丢失（404）才停止
-        if (err.response && err.response.status === 404) {
-          this.stopAiRecognizePolling();
-          this.aiRecognizeLoading = false;
-          this.aiRecognizeStatusMsg = '识别任务已丢失（后端可能重启）';
-          this.$message?.warning('识别任务已丢失（后端可能重启），请重新触发');
-        }
-      }
-    },
-
-    stopAiRecognizePolling() {
-      if (this.aiRecognizeTimer) {
-        clearInterval(this.aiRecognizeTimer);
-        this.aiRecognizeTimer = null;
-      }
-    }
-  },
-  beforeDestroy() {
-    this.stopAiRecognizePolling();
   }
 };
 </script>
@@ -1160,55 +1039,6 @@ export default {
 .whole-lrc-upload-btn:hover:not(:disabled) {
   opacity: 0.9;
   transform: scale(1.02);
-}
-
-.ai-recognize-btn {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-  margin-right: 8px;
-}
-
-.ai-recognize-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.ai-recognize-btn:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: scale(1.02);
-}
-
-/* v0.8.1 增补：AI 识别进度条（实时转写进度 + 阶段提示） */
-.ai-recognize-progress-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 4px 0 10px;
-}
-.ai-recognize-progress-track {
-  flex: 1;
-  height: 8px;
-  border-radius: 4px;
-  background: #eee;
-  overflow: hidden;
-}
-.ai-recognize-progress-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.4s ease;
-}
-.ai-recognize-progress-text {
-  font-size: 12px;
-  color: #666;
-  white-space: nowrap;
-  max-width: 55%;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .lyric-detail-container {

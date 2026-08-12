@@ -29,6 +29,32 @@
 
     <!-- 右侧主内容区域 -->
     <main class="main-content">
+      <!-- v0.8.1 P2 增补：AI 识别整轨歌词按钮移出弹窗，置主内容左上方（对面上传/编辑歌词），切换子页面识别持续 -->
+      <div v-if="isAdmin" class="ai-recognize-fixed">
+        <button
+          class="ai-recognize-btn"
+          :style="{backgroundColor: albumMainColor}"
+          @click="triggerAiRecognize"
+          :disabled="aiRecognizeLoading"
+          title="对该专辑整轨 MP3 进行 AI 语音识别（需已上传整轨 MP3），识别结果自动写入全专辑歌词"
+        >
+          <i class="icon-ai-recognize">🤖</i>
+          <span v-if="!aiRecognizeLoading">AI 识别整轨歌词</span>
+          <span v-if="aiRecognizeLoading">识别中… {{ aiRecognizeProgress }}%</span>
+        </button>
+        <div
+          v-if="aiRecognizeLoading || aiRecognizeProgress > 0"
+          class="ai-recognize-progress-row"
+        >
+          <div class="ai-recognize-progress-track">
+            <div
+              class="ai-recognize-progress-fill"
+              :style="{width: aiRecognizeProgress + '%', backgroundColor: albumMainColor}"
+            ></div>
+          </div>
+          <span class="ai-recognize-progress-text">{{ aiRecognizeProgress }}% · {{ aiRecognizeStatusMsg }}</span>
+        </div>
+      </div>
       <AlbumBaseInfo
         ref="albumBaseInfo"
         v-if="activeTab === 'base'"
@@ -322,6 +348,11 @@ export default {
       currentProgress: 0,
       statusText: '',
       statusClass: '',
+      // v0.8.1 P2 增补：AI 识别整轨歌词（移到父组件，保证切换子页面仍持续轮询）
+      aiRecognizeLoading: false,
+      aiRecognizeTimer: null,
+      aiRecognizeProgress: 0,     // AI 识别进度 0-100（进度条用，轮询 status.progress 更新）
+      aiRecognizeStatusMsg: '',   // 当前阶段提示（排队中/转写中…%/写入歌词…/校正中…/完成）
       showVolume: false,
       oldMp3Url: '',
       showMenu: false,
@@ -634,6 +665,7 @@ async created() {
   beforeDestroy() {
     // ✅✅✅ 整合新增：组件销毁时彻底销毁小球动画+移除监听
     clearInterval(this.ratingTimer);
+    this.stopAiRecognizePolling(); // v0.8.1 P2：销毁时停止 AI 识别轮询（防内存泄漏）
     this.destroyBallAnimation();
       this.destroyMeteorAnimation(); // 销毁时清理流星
     this.stopAutoBallGenerate();
@@ -1790,6 +1822,11 @@ async addSingleReview(content, finalScore) {
       // 重置音量相关状态
       this.isPaused = false;
       this.pausedVolume = null;
+      // v0.8.1 P2：切换专辑时停止旧专辑的 AI 识别轮询并复位状态（任务在后台仍会跑完，进度不再追踪）
+      this.stopAiRecognizePolling();
+      this.aiRecognizeLoading = false;
+      this.aiRecognizeProgress = 0;
+      this.aiRecognizeStatusMsg = '';
     },
     // ======== 【修改点4/4】核心修改：返回按钮的跳转逻辑 ========
     goBack() {
@@ -2003,6 +2040,81 @@ async getAlbumLyrics() {
   }
 },
 
+    // ========== 【v0.8.1 P2】AI 识别整轨歌词（移出弹窗到父组件，切换子页面识别持续，仅管理员） ==========
+    // 触发 POST /api/album/lyric/recognize/<pool_id> 拿 task_id → 每 2s 轮询 status →
+    // done 拉取最新歌词刷新 album.lyric_text/lyric_translate（→ AlbumLyricViewer props 联动）→ toast
+    async triggerAiRecognize() {
+      if (this.aiRecognizeLoading) return;
+      const poolId = this.album.source_pool_id || this.album.id;
+      this.aiRecognizeLoading = true;  // 轮询期间保持禁用，done/failed 时由 pollAiRecognize 复位
+      this.aiRecognizeProgress = 0;    // 新任务从 0 开始展示进度
+      this.aiRecognizeStatusMsg = '任务已创建，排队等待识别';
+      try {
+        const res = await this.$axios.post(
+          `/api/album/lyric/recognize/${poolId}`,
+          {},
+          {headers: {Authorization: localStorage.getItem('token') || ''}}
+        );
+        if (res.data.code !== 200) {
+          this.$message?.error(res.data.msg || '触发 AI 识别失败');
+          this.aiRecognizeLoading = false;
+          return;
+        }
+        const taskId = res.data.data.task_id;
+        this.$message?.info('AI 识别已开始（后台生成中，整轨专辑约需数分钟，可继续做其他操作）');
+        this.aiRecognizeTimer = setInterval(() => this.pollAiRecognize(taskId), 2000);
+      } catch (err) {
+        this.$message?.error('触发 AI 识别异常：' + (err.response?.data?.msg || err.message));
+        this.aiRecognizeLoading = false;
+        this.aiRecognizeStatusMsg = '触发失败';
+      }
+    },
+
+    async pollAiRecognize(taskId) {
+      if (!taskId) return;
+      try {
+        const res = await this.$axios.get(
+          `/api/album/lyric/recognize/status/${taskId}`,
+          {headers: {Authorization: localStorage.getItem('token') || ''}}
+        );
+        if (res.data.code !== 200) return;
+        const status = res.data.data;
+        // 实时更新进度条（后端 tasks.update 上报 progress 0~100 + 阶段 message）
+        if (typeof status.progress === 'number') this.aiRecognizeProgress = status.progress;
+        if (status.message) this.aiRecognizeStatusMsg = status.message;
+        if (status.status === 'done') {
+          this.stopAiRecognizePolling();
+          this.aiRecognizeLoading = false;
+          this.aiRecognizeProgress = 100;
+          this.aiRecognizeStatusMsg = '识别完成，歌词已写入';
+          // 拉取最新歌词刷新本组件 album 数据 → AlbumLyricViewer 通过 lyrics props 自动联动
+          await this.getAlbumLyrics();
+          const corrected = status.corrected ? '（已 DeepSeek 校正）' : '';
+          this.$message?.success(`AI 识别完成${corrected}：${status.lyric_lines || 0} 行歌词已写入！`);
+        } else if (status.status === 'failed') {
+          this.stopAiRecognizePolling();
+          this.aiRecognizeLoading = false;
+          this.aiRecognizeStatusMsg = status.message || '识别失败';
+          this.$message?.error(status.message || 'AI 识别失败');
+        }
+        // running/queued → 下一轮轮询
+      } catch (err) {
+        // 单次轮询网络抖动不中断；后端重启导致任务丢失（404）才停止
+        if (err.response && err.response.status === 404) {
+          this.stopAiRecognizePolling();
+          this.aiRecognizeLoading = false;
+          this.aiRecognizeStatusMsg = '识别任务已丢失（后端可能重启）';
+          this.$message?.warning('识别任务已丢失（后端可能重启），请重新触发');
+        }
+      }
+    },
+
+    stopAiRecognizePolling() {
+      if (this.aiRecognizeTimer) {
+        clearInterval(this.aiRecognizeTimer);
+        this.aiRecognizeTimer = null;
+      }
+    },
 
     // ✅✅✅ ======================== 以下是整合新增的【小球动画所有核心方法】 ========================
 
@@ -2927,5 +3039,67 @@ h4 {
   overflow: hidden !important;
   cursor: none !important;
   pointer-events: none !important;
+}
+
+/* v0.8.1 P2 增补：AI 识别整轨歌词按钮（移出弹窗到父组件，置于主内容左上方，切换子页面识别持续） */
+.ai-recognize-fixed {
+  position: fixed;
+  top: 20px;
+  left: 220px;   /* 侧边栏 200px 右侧，与播放器/侧栏不重叠 */
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 320px;
+}
+.ai-recognize-btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  align-self: flex-start;
+  white-space: nowrap;
+}
+.ai-recognize-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.ai-recognize-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+.ai-recognize-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  padding: 6px 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+.ai-recognize-progress-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: #eee;
+  overflow: hidden;
+  min-width: 120px;
+}
+.ai-recognize-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.ai-recognize-progress-text {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
