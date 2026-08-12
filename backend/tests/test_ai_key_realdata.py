@@ -108,6 +108,20 @@ def test_save_key_provider_openai(client, test_user):
     assert _get_key_row(client, test_user['user_id'])['provider'] == 'openai'
 
 
+@pytest.mark.realdata
+def test_save_long_api_key(client, test_user):
+    # 回归：api_key 列原为 varchar(200)，超长 key 触发 MySQL 1406「Data too long」→ 500；
+    # 已扩为 TEXT，300 字符 key 应保存成功（bug：个人中心保存密钥失败）
+    api_key = 'sk-long-' + 'x' * 300
+    assert len(api_key) > 200  # 确保真的超旧列宽
+    r = _save_key(client, test_user['headers'], api_key=api_key)
+    assert r['code'] == 200, r
+    assert r['data']['has_key'] is True
+    # 明文完整落库（TEXT 列不截断）
+    row = _get_key_row(client, test_user['user_id'])
+    assert row['api_key'] == api_key
+
+
 # ==================== 状态查询 ====================
 
 @pytest.mark.realdata

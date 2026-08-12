@@ -1,6 +1,6 @@
 # MusicRate\backend\tests\test_ai_key.py AI key 配置参数校验单测（纯逻辑，零 DB 依赖，v0.8.1 P3）
-# 测试对象：backend/api/ai.py 的 validate_ai_key_params()（provider 规范化 + api_key 非空校验）
-from backend.api.ai import DEFAULT_PROVIDER, PROVIDER_CONFIG, validate_ai_key_params
+# 测试对象：backend/api/ai.py 的 validate_ai_key_params()（provider 规范化 + api_key 非空/长度校验）
+from backend.api.ai import MAX_API_KEY_LENGTH, DEFAULT_PROVIDER, PROVIDER_CONFIG, validate_ai_key_params
 
 
 class TestValidateAiKeyParams:
@@ -45,6 +45,18 @@ class TestValidateAiKeyParams:
         p, k, err = validate_ai_key_params('deepseek', '  sk-abc  ')
         assert err == ''
         assert k == 'sk-abc'
+
+    def test_api_key_too_long_rejected(self):
+        # 超 MAX_API_KEY_LENGTH（防误粘贴大文本）→ 返回友好错误（而非 DB 1406）
+        p, k, err = validate_ai_key_params('deepseek', 'x' * (MAX_API_KEY_LENGTH + 1))
+        assert err != ''
+        assert '过长' in err
+
+    def test_api_key_at_max_length_allowed(self):
+        # 恰好 MAX_API_KEY_LENGTH 字符 → 通过（列已是 TEXT，长度足够）
+        p, k, err = validate_ai_key_params('deepseek', 'x' * MAX_API_KEY_LENGTH)
+        assert err == ''
+        assert len(k) == MAX_API_KEY_LENGTH
 
     def test_both_invalid_returns_provider_error_first(self):
         # 非法 provider + 空 key → provider 错误优先（先校验 provider）

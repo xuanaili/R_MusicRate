@@ -30,11 +30,14 @@ DEFAULT_PROVIDER = 'deepseek'
 DAILY_LIMIT_REQUESTS = 99999
 DAILY_LIMIT_CHARS = 99999
 
+# API 密钥最大长度（db.py ai_key.api_key 为 TEXT；设上限防误粘贴大文本，超限给友好 400 而非 DB 错误）
+MAX_API_KEY_LENGTH = 1000
+
 
 def validate_ai_key_params(provider, api_key):
     """纯函数：规范化并校验 AI key 配置参数（可单测，零 DB 依赖）
     - provider：去空白 + 小写，空则回退 DEFAULT_PROVIDER；不在 PROVIDER_CONFIG 返回错误
-    - api_key：去空白；空则返回错误
+    - api_key：去空白；空则返回错误；超 MAX_API_KEY_LENGTH 返回错误（防误粘贴）
     返回 (normalized_provider, normalized_api_key, error_msg)，error_msg 非空表示校验失败
     """
     provider = (provider or DEFAULT_PROVIDER).strip().lower()
@@ -43,6 +46,8 @@ def validate_ai_key_params(provider, api_key):
         return provider, api_key, f"暂不支持该AI服务商：{provider}，请重新配置密钥"
     if not api_key:
         return provider, api_key, "API密钥不能为空！"
+    if len(api_key) > MAX_API_KEY_LENGTH:
+        return provider, api_key, f"API密钥过长（超过{MAX_API_KEY_LENGTH}字符），请检查粘贴内容！"
     return provider, api_key, ''
 
 

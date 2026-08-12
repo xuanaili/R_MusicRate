@@ -648,7 +648,7 @@ CREATE TABLE IF NOT EXISTS ai_key (
     id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     user_id INT NOT NULL COMMENT '用户ID（关联users表，MusicRate users 主键为 INT）',
     provider VARCHAR(20) NOT NULL DEFAULT 'deepseek' COMMENT 'AI服务商：deepseek/openai',
-    api_key VARCHAR(200) NOT NULL COMMENT 'API密钥（仅后端可见，绝不返回前端）',
+    api_key TEXT NOT NULL COMMENT 'API密钥（仅后端可见，绝不返回前端；TEXT 避免长度超 varchar(200) 报 1406）',
     is_enabled TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用：1启用/0禁用',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
