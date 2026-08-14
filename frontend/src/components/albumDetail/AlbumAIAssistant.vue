@@ -107,10 +107,6 @@ export default {
       required: true,
       default: ''
     },
-    currentTrackIndex: {
-      type: Number,
-      default: -1
-    },
     mainColor: { type: String, default: 'transparent' },
     mainColorDark: { type: String, default: 'transparent' },
     mainColorDarkDouble: { type: String, default: 'transparent' },
@@ -302,8 +298,7 @@ export default {
       const body = {
         album_pool_id: Number(this.albumPoolId),
         question: q,
-        // 当前播放曲目索引：由父组件 currentTime + tracks_time 推导，用于后端切当前歌歌词
-        current_track_index: this.currentTrackIndex >= 0 ? this.currentTrackIndex : null,
+        // v0.8.5：整张专辑歌词由后端在组装上下文时现查 album_lyric（与 BPM 同一步），不依赖播放曲目索引
         stream: true
       }
 

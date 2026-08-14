@@ -9,6 +9,8 @@
 #   - 上下文组装纯函数放 backend/utils/ai_context.py（零 DB 可单测），本模块只做 DB 查询与组装调用
 #   - BPM 预触发（v0.8.3 P1）：album_tempo 缺失 + 池专辑有可播放整轨 mp3 → ensure_tempo 触发后台分析（幂等防重复），
 #     本次提问照常回答（format_tempo(None) → 无 BPM 段），BPM 就绪后自动带上，不再返回「节奏分析中」占位
+#   - 整张专辑歌词（v0.8.5）：chat 不再读 current_track_index，每次现查 album_lyric 整轨 + format_album_lyric 分曲组装
+#     （与 BPM 同一步进上下文），AI 识别/上传新增歌词下次提问自动带上
 #   - 配额 ai_quota：提问成功才计数（requests+1 / chars 按问题+回答字符），失败/中断不落半会话
 #   - SSE 事件流：delta（增量文本）/ done（含落库的 user_msg_id、assistant_msg_id、完整 answer）/ error
 #   - 铁律：key 明文只存后端 DB，前端只存「是否已配置」布尔，绝不返回明文
@@ -32,7 +34,7 @@ from backend.utils.ai_context import (
     REVIEW_PER_USER,
     REVIEW_TOTAL_CAP,
     build_system_prompt,
-    extract_current_track_lyric,
+    format_album_lyric,
     format_comments,
     format_reviews,
     format_score,
@@ -171,7 +173,7 @@ def _get_album_context(db, cursor, user_id, album_pool_id):
     """
     pool_album = {}
     cursor.execute('''
-        SELECT id, album_name, singer, album_intro, tracks, release_year, main_type, tags, mp3_url
+        SELECT id, album_name, singer, album_intro, tracks, release_year, main_type, tags, mp3_url, tracks_time
         FROM album_pool WHERE id = %s
     ''', (album_pool_id,))
     row = cursor.fetchone()
@@ -179,6 +181,7 @@ def _get_album_context(db, cursor, user_id, album_pool_id):
         pool_album = dict(row)
         pool_album['tracks'] = safe_json_loads(pool_album.get('tracks')) or []
         pool_album['tags'] = safe_json_loads(pool_album.get('tags')) or []
+        pool_album['tracks_time'] = safe_json_loads(pool_album.get('tracks_time')) or []
 
     user_album = None
     try:
@@ -238,13 +241,13 @@ def _resolve_audio_path(mp3_url):
     return os.path.join(AUDIO_UPLOAD_FOLDER, filename)
 
 
-def _get_current_track_lyric(db, cursor, album_pool_id, tracks_time, current_track_index):
-    """当前播放曲目的歌词切片（整轨文本 + tracks_time → ai_context.extract_current_track_lyric）"""
+def _get_album_lyric(db, cursor, album_pool_id):
+    """album_lyric 整轨歌词文本 → 原样返回（供 ai_context.format_album_lyric 分曲/截断）；无歌词返回 ''"""
     cursor.execute('SELECT lyric_text FROM album_lyric WHERE album_pool_id = %s LIMIT 1', (album_pool_id,))
     row = cursor.fetchone()
     if not row or not row.get('lyric_text'):
         return ''
-    return extract_current_track_lyric(row['lyric_text'], tracks_time, current_track_index)
+    return row['lyric_text']
 
 
 def _get_comments_context(db, cursor, album_pool_id):
@@ -307,9 +310,9 @@ def _get_reviews_context(db, cursor, album_pool_id):
     return result[:REVIEW_TOTAL_CAP]
 
 
-def _prepare_chat_messages(db, cursor, user_id, album_pool_id, question, current_track_index):
+def _prepare_chat_messages(db, cursor, user_id, album_pool_id, question):
     """组装 chat messages：[system 上下文 + 历史 + 本次提问]
-    上下文含：专辑/歌手信息、你的评分/听后感/标签、BPM、当前歌歌词、平台评论、全网听后感
+    上下文含：专辑/歌手信息、你的评分/听后感/标签、BPM、整张专辑歌词、平台评论、全网听后感
     """
     ctx = _get_album_context(db, cursor, user_id, album_pool_id)
     pool = ctx['pool_album']
@@ -322,10 +325,12 @@ def _prepare_chat_messages(db, cursor, user_id, album_pool_id, question, current
     tempo_dict = _get_tempo(db, cursor, album_pool_id)
     tempo_text = format_tempo(tempo_dict, pool.get('tracks')) if tempo_dict else ''
 
-    current_lyric = ''
-    if current_track_index is not None:
-        tracks_time = (user or {}).get('tracks_time') or []
-        current_lyric = _get_current_track_lyric(db, cursor, album_pool_id, tracks_time, current_track_index)
+    # 整张专辑歌词（v0.8.5：无论是否播放都读，与 BPM 同一步进上下文；AI 识别新增歌词每次提问自动带上）
+    # tracks_time 优先用户私有副本（可能编辑过），回退池模板
+    tracks_time = (user or {}).get('tracks_time') or pool.get('tracks_time') or []
+    album_lyric_text = format_album_lyric(
+        _get_album_lyric(db, cursor, album_pool_id), pool.get('tracks'), tracks_time,
+    )
 
     system_prompt = build_system_prompt(
         album_name=album_name, singer=singer,
@@ -338,7 +343,7 @@ def _prepare_chat_messages(db, cursor, user_id, album_pool_id, question, current
         own_feelings=parse_feelings((user or {}).get('review')) if user else [],
         singer_intro=singer_intro,
         tempo_text=tempo_text,
-        current_lyric_text=current_lyric,
+        album_lyric_text=album_lyric_text,
         comments_text=format_comments(_get_comments_context(db, cursor, album_pool_id)),
         other_reviews_text=format_reviews(_get_reviews_context(db, cursor, album_pool_id)),
     )
@@ -635,11 +640,6 @@ def register_ai_routes(app):
             if provider not in PROVIDER_CONFIG:
                 return jsonify({"code": 400, "msg": f"暂不支持该AI服务商：{provider}，请重新配置密钥"}), 400
 
-            try:
-                current_track_index = int(data.get('current_track_index'))
-            except (TypeError, ValueError):
-                current_track_index = None
-
             db = get_db()
             cursor = db.cursor(pymysql.cursors.DictCursor)
             try:
@@ -672,7 +672,7 @@ def register_ai_routes(app):
                                     yield f"data: {json.dumps({'type': 'error', 'msg': quota_msg}, ensure_ascii=False)}\n\n"
                                     return
                                 messages = _prepare_chat_messages(
-                                    gdb, gcur, user_id, album_pool_id, question, current_track_index,
+                                    gdb, gcur, user_id, album_pool_id, question,
                                 )
                                 for delta in _call_ai_stream(provider, key_row['api_key'], messages):
                                     full_answer += delta
@@ -706,7 +706,7 @@ def register_ai_routes(app):
                 quota_ok, quota_msg = _check_quota(db, cursor, user_id)
                 if not quota_ok:
                     return jsonify({"code": 429, "msg": quota_msg}), 200
-                messages = _prepare_chat_messages(db, cursor, user_id, album_pool_id, question, current_track_index)
+                messages = _prepare_chat_messages(db, cursor, user_id, album_pool_id, question)
                 try:
                     answer = _call_ai(provider, key_row['api_key'], messages)
                 except Exception as e:

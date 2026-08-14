@@ -3,7 +3,7 @@
 # 覆盖（README P5：chat + 上下文组装 + OpenAI 兼容调用 + SSE 流式 + 配额 + 会话持久化）：
 #   - 权限/校验：未登录 401、缺专辑ID 400、空提问 400、无key 403、池专辑不存在 404
 #   - 非流式 chat：mock _call_ai → 回答 + ai_conversation 落库(user/assistant) + ai_quota 计数 + 历史可见
-#   - 上下文组装（prompt spy）：专辑/歌手信息、你的评分/听后感/标签、当前歌歌词（按 tracks_time 切片）、平台评论、全网听后感
+#   - 上下文组装（prompt spy）：专辑/歌手信息、你的评分/听后感/标签、整张专辑歌词（v0.8.5 按曲分块）、平台评论、全网听后感
 #   - 未收藏该专辑（无私有副本）→ 优雅降级，省略「你的评分/听后感/标签」段落，仍正常回答
 #   - SSE 流式：mock _call_ai_stream → delta 事件 + done 事件（含落库 id + 完整 answer）+ 落库/计数
 #   - 流式失败：中途异常 → error 事件兜底，不留半会话、不计数
@@ -325,7 +325,7 @@ def test_chat_non_stream_saves_conversation_and_quota(client, test_user, monkeyp
 
 @pytest.mark.realdata
 def test_chat_prompt_contains_own_context(client, test_user, monkeypatch):
-    """上下文组装：专辑/歌手信息、你的评分/听后感/标签、当前歌歌词（按 tracks_time 切片）、平台评论"""
+    """上下文组装：专辑/歌手信息、你的评分/听后感/标签、整张专辑歌词（v0.8.5 按曲分块，与播放无关）、平台评论"""
     _save_key(client, test_user['headers'])
     singer = '测试歌手'
     pool_id = _insert_pool_album(
@@ -339,12 +339,12 @@ def test_chat_prompt_contains_own_context(client, test_user, monkeypatch):
         review='{"feelings": [{"content": "春天的感觉", "create_time": "2026-08-12 10:00", "my_score": 90}], "personal_feeling": ""}',
         tags='["Spring【春天】"]',
     )
-    # 歌词：track1 = [0,10) 第一首，track2 = [10,∞) 第二首（tracks_time 切片）
+    # 歌词：track1 = [0,10) 第一首，track2 = [10,∞) 第二首（tracks_time 分曲标注）
     _insert_lyric(client, pool_id, '00:00.5 第一首歌词\n00:05.0 第一首续\n00:11.0 第二首歌词\n00:20.0 第二首续')
     _insert_comment(client, pool_id, test_user['user_id'], '小明', '太好听了')
     captured = _mock_call_ai(monkeypatch)
 
-    r = _chat(client, test_user['headers'], pool_id, '评价一下这张专辑', current_track_index=1).get_json()
+    r = _chat(client, test_user['headers'], pool_id, '评价一下这张专辑').get_json()
     assert r['code'] == 200, r
     sysp = _system_of(captured)
     assert '【专辑信息】' in sysp and '春天主题专辑' in sysp
@@ -353,8 +353,34 @@ def test_chat_prompt_contains_own_context(client, test_user, monkeypatch):
     assert '【你的评分】' in sysp and '专辑整体评分：85分' in sysp
     assert '【你的听后感】' in sysp and '1. 春天的感觉' in sysp
     assert '【你的标签】' in sysp and 'Spring【春天】' in sysp
-    assert '【当前播放歌曲歌词】' in sysp and '第二首歌词' in sysp and '第一首歌词' not in sysp
+    # 整张专辑歌词：两首都在（不依赖播放状态），按曲名分块
+    assert '【专辑歌词】' in sysp and '《春日光》' in sysp and '《花与树》' in sysp
+    assert '第一首歌词' in sysp and '第二首歌词' in sysp
     assert '【平台评论】' in sysp and '小明：太好听了' in sysp
+
+
+@pytest.mark.realdata
+def test_chat_lyric_sync_after_ai_recognize(client, test_user, monkeypatch):
+    """同步（v0.8.5）：初始无歌词 → 提问无【专辑歌词】段；模拟 AI 识别落库歌词 → 再次提问自动带上
+    （后端每次提问现查 album_lyric，AI 识别新增歌词无需任何额外同步逻辑）
+    """
+    _save_key(client, test_user['headers'])
+    pool_id = _insert_pool_album(client, tracks='["歌一"]')
+
+    captured1 = _mock_call_ai(monkeypatch)
+    r1 = _chat(client, test_user['headers'], pool_id, '有什么歌词？').get_json()
+    assert r1['code'] == 200, r1
+    assert '【专辑歌词】' not in _system_of(captured1)
+
+    # 模拟 AI 识别完成落库（整轨绝对时间存储格式）
+    _insert_lyric(client, pool_id, '00:01.0 识别出的歌词\n00:03.0 第二行歌词')
+
+    captured2 = _mock_call_ai(monkeypatch)
+    r2 = _chat(client, test_user['headers'], pool_id, '歌词是什么？').get_json()
+    assert r2['code'] == 200, r2
+    sysp2 = _system_of(captured2)
+    assert '【专辑歌词】' in sysp2
+    assert '识别出的歌词' in sysp2 and '第二行歌词' in sysp2
 
 
 @pytest.mark.realdata

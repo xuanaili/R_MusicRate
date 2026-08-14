@@ -5,7 +5,7 @@
 #   - parse_feelings：review（dict feelings / 旧数组）→ 听后感列表
 #   - format_own_feelings：听后感 → 文本
 #   - format_tempo：album_tempo JSON → 单曲节奏文本
-#   - extract_current_track_lyric：整轨歌词按 tracks_time 切当前曲目
+#   - format_album_lyric：整轨歌词 → 整张专辑歌词文本（按 tracks_time 分曲标注）
 #   - format_comments / format_reviews：平台评论 / 全网听后感 → 文本
 #   - build_system_prompt：分层组装 system prompt（数据有→含段落，无→不出现空段落）
 from backend.utils.ai_context import (
@@ -15,7 +15,7 @@ from backend.utils.ai_context import (
     REVIEW_TOTAL_CAP,
     _truncate,
     build_system_prompt,
-    extract_current_track_lyric,
+    format_album_lyric,
     format_comments,
     format_own_feelings,
     format_reviews,
@@ -124,29 +124,42 @@ class TestFormatTempo:
         assert format_tempo({'track_tempos': [0.0, 0.0], 'avg_bpm': 0.0}) == ''
 
 
-# ==================== extract_current_track_lyric ====================
+# ==================== format_album_lyric ====================
 
-class TestExtractCurrentTrackLyric:
-    def test_no_index_returns_empty(self):
-        assert extract_current_track_lyric('00:00 你好', [], None) == ''
+class TestFormatAlbumLyric:
+    def test_empty_returns_empty(self):
+        assert format_album_lyric('') == ''
+        assert format_album_lyric(None) == ''
 
-    def test_split_by_tracks_time(self):
-        # 整轨歌词：0-5s 第一首、5-10s 第二首
+    def test_no_tracks_time_continuous_text(self):
+        # 无单曲边界 → 整轨连续文本（去时间戳），不标曲目
+        lyric = '00:00.5 第一首歌词\n00:02.0 第一首续\n00:06.0 第二首歌词'
+        assert format_album_lyric(lyric) == '第一首歌词\n第一首续\n第二首歌词'
+
+    def test_group_by_tracks_time_with_names(self):
+        # 整轨歌词：0-5s 第一首、5-10s 第二首 → 按曲名分块
         lyric = '00:00.5 第一首歌词\n00:02.0 第一首续\n00:06.0 第二首歌词\n00:08.0 第二首续'
-        assert extract_current_track_lyric(lyric, [0, 5], 0) == '第一首歌词\n第一首续'
-        assert extract_current_track_lyric(lyric, [0, 5], 1) == '第二首歌词\n第二首续'
+        out = format_album_lyric(lyric, tracks=['春日光', '花与树'], tracks_time=[0, 5])
+        assert '《春日光》\n第一首歌词\n第一首续' in out
+        assert '《花与树》\n第二首歌词\n第二首续' in out
 
-    def test_no_tracks_time_all_lyrics_as_track0(self):
-        lyric = '00:00.5 唯一曲目歌词'
-        assert extract_current_track_lyric(lyric, [], 2) == '唯一曲目歌词'
+    def test_group_without_names_uses_number(self):
+        lyric = '00:01.0 词A\n00:06.0 词B'
+        out = format_album_lyric(lyric, tracks=[], tracks_time=[0, 5])
+        assert '《单曲1》\n词A' in out
+        assert '《单曲2》\n词B' in out
 
-    def test_out_of_range_index_returns_empty(self):
-        lyric = '00:00.5 第一首歌词'
-        assert extract_current_track_lyric(lyric, [0, 5], 3) == ''
+    def test_invalid_text_returns_empty(self):
+        # 无时间戳纯文本无法解析 → ''
+        assert format_album_lyric('随便写的文字，没有时间戳') == ''
 
-    def test_empty_lyric_returns_empty(self):
-        assert extract_current_track_lyric('', [0, 5], 0) == ''
-        assert extract_current_track_lyric(None, [0, 5], 0) == ''
+    def test_long_lyric_truncated_to_cap(self):
+        # 超长整轨 → 截断保留开头（防上下文爆炸）；时间戳用 mm:ss 分/秒生成（避免超过 99 秒格式失配）
+        lyric = '\n'.join(f'{i // 60:02d}:{i % 60:02d}.0 第{i}句歌词' for i in range(800))
+        out = format_album_lyric(lyric, tracks_time=[])
+        assert len(out) <= 4001
+        assert '…' in out
+        assert out.startswith('第0句歌词')
 
 
 # ==================== format_comments / format_reviews ====================
@@ -185,12 +198,12 @@ class TestBuildSystemPrompt:
             own_tags=['Spring【春天】'], own_score='专辑整体评分：85分',
             own_feelings=[{'content': '适合春天听'}],
             singer_intro='台湾乐团', tempo_text='春日光：120.0 BPM',
-            current_lyric_text='第一首歌词', comments_text='- 小明：好听',
+            album_lyric_text='《春日光》\n第一首歌词', comments_text='- 小明：好听',
             other_reviews_text='- 阿飞：神专',
         )
         assert '你是MusicRate的AI音乐助手' in prompt
         for section in ['【专辑信息】', '【歌手信息】', '【你的评分】', '【你的听后感】',
-                        '【你的标签】', '【单曲节奏 BPM】', '【当前播放歌曲歌词】',
+                        '【你的标签】', '【单曲节奏 BPM】', '【专辑歌词】',
                         '【平台评论】', '【其他用户听后感精选】']:
             assert section in prompt, section
         assert '不要编造' in prompt  # 结尾强约束
@@ -198,7 +211,7 @@ class TestBuildSystemPrompt:
     def test_empty_data_omits_sections(self):
         prompt = build_system_prompt(album_name='春日光', singer='苏打绿')
         for section in ['【歌手信息】', '【你的评分】', '【你的听后感】', '【你的标签】',
-                        '【单曲节奏 BPM】', '【当前播放歌曲歌词】', '【平台评论】', '【其他用户听后感精选】']:
+                        '【单曲节奏 BPM】', '【专辑歌词】', '【平台评论】', '【其他用户听后感精选】']:
             assert section not in prompt, section
         # 专辑信息即使只有名称也存在
         assert '【专辑信息】' in prompt

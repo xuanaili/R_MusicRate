@@ -1,11 +1,11 @@
 # MusicRate\backend\utils\ai_context.py AI 助手上下文组装纯函数（v0.8.1 P5，零 DB / 网络依赖）
-# 作用：把专辑/歌手/评分/听后感/标签/BPM/当前歌歌词/平台评论/全网听后感组装成 system prompt，
+# 作用：把专辑/歌手/评分/听后感/标签/BPM/整张专辑歌词/平台评论/全网听后感组装成 system prompt，
 #       供 backend/api/ai.py 的 chat 调用（镜像 BookRate _build_system_prompt 分层结构）。
-# 设计（README v0.8.1）：
+# 设计（README v0.8.1 + v0.8.5）：
 #   - 纯函数零 DB → 可单测（test_ai_context.py），DB 查询留在 ai.py
-#   - 各段截断：专辑简介 600 / 歌手简介 400 / 标签 200 / 当前歌词 1200 / 评论每条 150 / 听后感每条 180
+#   - 各段截断：专辑简介 600 / 歌手简介 400 / 标签 200 / 专辑歌词 4000 / 评论每条 150 / 听后感每条 180
 #   - 结尾强约束「优先依据以上上下文，信息不足如实告知，不编造」
-#   - 复用 lrc.parse_any_to_items + lyric_recognizer.split_by_tracks_time 切当前曲目歌词
+#   - 复用 lrc.parse_any_to_items + lyric_recognizer.split_by_tracks_time 按 tracks_time 分曲标注
 from backend.utils.lrc import parse_any_to_items
 from backend.utils.lyric_recognizer import split_by_tracks_time
 
@@ -19,7 +19,7 @@ HISTORY_LIMIT = 20
 _ALBUM_INTRO_CAP = 600
 _SINGER_INTRO_CAP = 400
 _TAGS_CAP = 200
-_LYRIC_CAP = 1200
+_ALBUM_LYRIC_CAP = 4000
 _COMMENT_LINE_CAP = 150
 _REVIEW_LINE_CAP = 180
 
@@ -108,23 +108,31 @@ def format_tempo(tempo_dict, tracks=None):
     return '\n'.join(lines)
 
 
-def extract_current_track_lyric(lyric_text, tracks_time, current_track_index):
-    """整轨歌词 → 当前播放曲目的歌词切片（纯文字行，去时间戳）；空 → ''
-    - tracks_time[i] 为第 i 首起始秒（与 split_by_tracks_time 口径一致）
-    - tracks_time 为空 → 整轨视为一首（无论 index，归 track 0）
-    - index 越界 / 无歌词 → ''（优雅降级，不阻断上下文）
+def format_album_lyric(lyric_text, tracks=None, tracks_time=None):
+    """整轨歌词 → 整张专辑歌词文本（v0.8.5，供 AI 上下文；去时间戳、按曲分块）；空 → ''
+    - 解析任意歌词文本（LRC 方括号 / 存储格式 mm:ss.x，复用 lrc.parse_any_to_items），逐行取歌词文字
+    - tracks_time 有单曲边界 → 按 split_by_tracks_time 分曲，每曲标《曲名》（无曲名用「单曲N」）；
+      无边界 → 整轨连续文本（不标曲目，避免误标「单曲1」）
+    - 超长截断（_ALBUM_LYRIC_CAP 4000，保留开头，防上下文爆炸）
     """
-    if not lyric_text or current_track_index is None:
+    if not lyric_text:
         return ''
     items = parse_any_to_items(lyric_text)
     if not items:
         return ''
-    groups = split_by_tracks_time(items, tracks_time)
-    idx = current_track_index if tracks_time else 0
-    track_items = groups.get(idx) or []
-    if not track_items:
-        return ''
-    return '\n'.join(it['text'] for it in track_items)
+    tracks = tracks or []
+    boundaries = [b for b in (tracks_time or []) if b is not None]
+    if not boundaries:
+        return _truncate('\n'.join(it['text'] for it in items), _ALBUM_LYRIC_CAP)
+    groups = split_by_tracks_time(items, boundaries)
+    blocks = []
+    for idx in sorted(groups):
+        texts = [it['text'] for it in groups[idx]]
+        if not texts:
+            continue
+        name = tracks[idx] if idx < len(tracks) and tracks[idx] else f'单曲{idx + 1}'
+        blocks.append(f'《{name}》\n' + '\n'.join(texts))
+    return _truncate('\n\n'.join(blocks), _ALBUM_LYRIC_CAP)
 
 
 def format_comments(comments):
@@ -161,7 +169,7 @@ def format_reviews(reviews):
 def build_system_prompt(
     album_name, singer, album_intro='', tracks=None, release_year=None, main_type='',
     own_tags=None, own_score=None, own_feelings=None, singer_intro='',
-    tempo_text='', current_lyric_text='', comments_text='', other_reviews_text='',
+    tempo_text='', album_lyric_text='', comments_text='', other_reviews_text='',
 ):
     """组装 AI 助手 system prompt（分层结构，镜像 BookRate）
     - 数据有 → 含对应段落；数据空 → 该段落不出现（避免空占位）
@@ -208,9 +216,9 @@ def build_system_prompt(
     if tempo_text:
         sections.append(f'【单曲节奏 BPM】\n{tempo_text}')
 
-    # 【当前播放歌曲歌词】
-    if current_lyric_text:
-        sections.append(f'【当前播放歌曲歌词】\n{_truncate(current_lyric_text, _LYRIC_CAP)}')
+    # 【专辑歌词】（v0.8.5：整张专辑歌词，去时间戳按曲分块，无论是否播放都进上下文）
+    if album_lyric_text:
+        sections.append(f'【专辑歌词】\n{album_lyric_text}')
 
     # 【平台评论】
     if comments_text:

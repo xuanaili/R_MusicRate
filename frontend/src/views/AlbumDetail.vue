@@ -137,11 +137,10 @@
   @update:lyrics="updateAlbumLyrics"
 />
 
-      <!-- v0.8.1 P6：AI 助手子页（仅配置 key 的用户可见菜单入口；currentTrackIndex 由播放器 currentTime+tracks_time 推导，用于后端切当前歌歌词） -->
+      <!-- v0.8.1 P6：AI 助手子页（仅配置 key 的用户可见菜单入口）；v0.8.5：整张专辑歌词进上下文，无需再传 currentTrackIndex -->
       <AlbumAIAssistant
         v-if="activeTab === 'ai'"
         :album-pool-id="albumPoolId"
-        :current-track-index="currentTrackIndex"
         :main-color="albumMainColor"
         :main-color-dark="albumMainColorDark"
         :main-color-dark-double="albumMainColorDarkDouble"
