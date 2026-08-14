@@ -128,6 +128,80 @@ def _wait_status(client, task_id, headers, timeout=10):
     raise AssertionError(f'识别任务超时，最后状态={last}')
 
 
+# ==================== v0.8.6 增补：active 查询 + 触发去重 ====================
+# 背景：新专辑添加自动触发识别，前端此前从不轮询自动触发任务 → 进度永远 0%；
+#   且手动再点按钮无条件新建任务，排到长任务后面。修复后：
+#   - GET /active 返回该专辑活跃（queued/running）lyric 任务 → 前端挂载时恢复轮询
+#   - POST /recognize 重复触发 → 去重复用活跃任务 task_id（start_recognize_task 内部 find_active）
+
+@pytest.mark.realdata
+def test_recognize_active_no_task(client, admin_user):
+    """无活跃任务 → active:false"""
+    pool_id = _insert_pool_album(client)
+    r = client.get(f'/api/album/lyric/recognize/active/{pool_id}', headers=admin_user['headers']).get_json()
+    assert r['code'] == 200, r
+    assert r['data'] == {'active': False}
+
+
+@pytest.mark.realdata
+def test_recognize_active_returns_task(client, admin_user):
+    """有活跃（queued）lyric 任务 → active 返回其 task_id / progress / message"""
+    from backend.utils.task_table import tasks
+    pool_id = _insert_pool_album(client)
+    tid = tasks.new_task_id()
+    tasks.create(task_id=tid, kind='lyric', album_pool_id=pool_id, status='queued',
+                 progress=10, message='模型转写中（VAD 关）… 10%', album_name='AI识别测试专辑')
+    try:
+        r = client.get(f'/api/album/lyric/recognize/active/{pool_id}', headers=admin_user['headers']).get_json()
+        assert r['code'] == 200, r
+        d = r['data']
+        assert d['active'] is True
+        assert d['task_id'] == tid
+        assert d['status'] == 'queued'
+        assert d['progress'] == 10
+        assert '模型转写中' in d['message']
+        assert d['album_name'] == 'AI识别测试专辑'
+    finally:
+        tasks.update(tid, status='done')  # 清理残留活跃任务，避免干扰后续 realdata 测试
+
+
+@pytest.mark.realdata
+def test_recognize_active_ignores_tempo_task(client, admin_user):
+    """active 只认 kind='lyric'：BPM（tempo）任务不混入（串行锁共享但任务类型区分）"""
+    from backend.utils.task_table import tasks
+    pool_id = _insert_pool_album(client)
+    tid = tasks.new_task_id()
+    tasks.create(task_id=tid, kind='tempo', album_pool_id=pool_id, status='running',
+                 progress=50, message='节奏分析中', album_name='AI识别测试专辑')
+    try:
+        r = client.get(f'/api/album/lyric/recognize/active/{pool_id}', headers=admin_user['headers']).get_json()
+        assert r['code'] == 200, r
+        assert r['data'] == {'active': False}
+    finally:
+        tasks.update(tid, status='done')
+
+
+@pytest.mark.realdata
+def test_recognize_trigger_dedup_reuses_active_task(client, admin_user):
+    """已有活跃 lyric 任务时重复触发 → 复用其 task_id，不新建（防重复排队）"""
+    from backend.utils.task_table import tasks
+    filename, audio_path = _make_mp3_file(client)
+    try:
+        pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
+        tid = tasks.new_task_id()
+        tasks.create(task_id=tid, kind='lyric', album_pool_id=pool_id, status='running',
+                     progress=30, message='模型转写中（VAD 关）… 30%', album_name='AI识别测试专辑')
+        try:
+            r = client.post(f'/api/album/lyric/recognize/{pool_id}', headers=admin_user['headers']).get_json()
+            assert r['code'] == 200, r
+            assert r['data']['task_id'] == tid  # 去重复用，不新建
+        finally:
+            tasks.update(tid, status='done')
+    finally:
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+
+
 # ==================== 触发权限 / 校验 ====================
 
 @pytest.mark.realdata
@@ -293,15 +367,19 @@ def test_recognize_with_reference_fetched(client, admin_user, fake_transcribe, m
 
 
 @pytest.mark.realdata
-def test_recognize_repeat_creates_new_task(client, admin_user, fake_transcribe):
-    # 幂等：重复触发视为新任务（README：内存任务表不持久化）
+def test_recognize_repeat_after_done_creates_new_task(client, admin_user, fake_transcribe):
+    # v0.8.6 去重语义：仅活跃（queued/running）任务被复用；任务已完成后重复触发 → 新建任务
+    # （原先断言「重复触发必为新任务」，与去重冲突且存在竞态——fake 转写很快，第二次触发时
+    #   第一个任务可能仍在 running 被去重复用；改为先等第一个任务完成再触发）
     filename, audio_path = _make_mp3_file(client)
     try:
         pool_id = _insert_pool_album(client, mp3_url=f'{AUDIO_BASE_URL}{filename}')
         r1 = client.post(f'/api/album/lyric/recognize/{pool_id}', headers=admin_user['headers']).get_json()
+        assert r1['code'] == 200
+        _wait_status(client, r1['data']['task_id'], admin_user['headers'])  # 等第一个任务完成（不再活跃）
         r2 = client.post(f'/api/album/lyric/recognize/{pool_id}', headers=admin_user['headers']).get_json()
-        assert r1['code'] == 200 and r2['code'] == 200
-        assert r1['data']['task_id'] != r2['data']['task_id']
+        assert r2['code'] == 200
+        assert r1['data']['task_id'] != r2['data']['task_id']  # 已完成 → 新建新任务
         _wait_status(client, r2['data']['task_id'], admin_user['headers'])
     finally:
         if os.path.exists(audio_path):

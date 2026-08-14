@@ -149,7 +149,38 @@ MusicRate/
 
 ---
 
-## v0.8.5 — 歌词识别语言自动检测兜底修复（中文优先）
+## v0.8.6 — 歌词识别进度 0% 修复（自动触发任务前端轮询 + 触发去重）
+
+> 修复「新专辑 AI 识别歌词进度一直 0%」：**主因一**——添加新专辑时后端自动启动 AI 识别（v0.8.1），但前端从不轮询自动触发的任务（`AddAlbum.vue` 拿到 `recognize_task_id` 只弹 toast 就跳走，`AlbumDetail.vue` 挂载时不知道有任务在跑）→ 进度条永远 0%，哪怕后端已在转写；**主因二**——识别/分析任务共用一把串行锁 `serial_lock`（BPM 分析 librosa 慢，可占锁 10+ 分钟），期间手动再点按钮会**无条件新建**识别任务排到长任务后面 → 又是 0% 排队。实测：后端重启后一个 BPM 分析占锁 ~10 分钟，期间触发的识别任务一直 `queued 0`。修复：前端挂载详情页时查询并接管该专辑活跃识别任务的轮询 + 后端触发去重（已有活跃任务则复用 task_id）。发现于 2026-08-14，修复 + 回归测试 + realdata 验证完成（2026-08-14）。
+
+### 功能概述
+
+1. **挂载恢复轮询**：专辑详情页加载完成（管理员 + 有整轨 mp3）时，`AlbumDetail.vue` 调 `GET /api/album/lyric/recognize/active/<pool_id>`——该专辑有活跃（queued/running）识别任务则接管轮询：loading 置真、用当前进度/阶段消息初始化、每 2s 轮询直至 done/failed。添加专辑自动触发的识别任务进入详情页即可看到真实进度。
+2. **触发去重**：`start_recognize_task`（手动按钮 + 添加专辑自动触发共用）用 `tasks.find_active(kind='lyric', album_pool_id)` 查该专辑活跃识别任务——有则复用其 task_id 不新建；无（任务已完成/失败）才新建。避免重复触发堆积排队任务。
+3. **进度透明**：轮询展示 `queued 0（排队等待识别）` → `running 10~90%（模型转写中）` → 完成，用户在页面直接看到真实阶段，不再误以为卡死。
+
+### 架构设计
+
+- **后端 `lyric_ai.py`**：
+  - `start_recognize_task` 前插 `tasks.find_active(kind='lyric', album_pool_id=album_pool_id)` 去重（镜像 v0.8.3 `tempo_ai.ensure_tempo` 的 find_active 防重复模式）
+  - 新增 `GET /api/album/lyric/recognize/active/<pool_id>`（`@login_required`）：返回活跃 lyric 任务 `{active, task_id, status, progress, message, album_name}`，无则 `{active: false}`；响应组装抽纯函数 `_build_active_response` 可单测
+- **前端 `AlbumDetail.vue`**：`getAlbumDetail` 成功回调 `preloadTempo()` 后调用 `resumeAiRecognize()`——镜像 v0.8.3 BPM 预触发的挂载点，查询活跃任务并接管轮询（复用既有 `pollAiRecognize`）
+
+### 难点与对策
+
+- **自动触发任务前端无感知**：添加专辑时 `recognize_task_id` 未传给详情页 → 改由详情页挂载时按 pool_id 主动查询活跃任务接管轮询（不依赖 AddAlbum 传值，导航往返都生效）
+- **重复触发堆积排队**：识别/分析共享串行锁，重复任务全排 0% → `find_active` 按 kind='lyric' + album_pool_id 去重，只认同专辑歌词识别任务（BPM 任务不混入，由 kind 区分）
+- **任务已完成/失败后要能重新触发**：去重仅命中活跃（queued/running）；done/failed 不活跃 → 可正常新建
+
+### 验证（勾选清单）
+
+- [x] 单测：`start_recognize_task` 去重 3 例（活跃复用 / kind 过滤 / 无活跃新建）+ `_build_active_response` 2 例（无任务 / 字段透传）✅ 2026-08-14
+- [x] realdata：active 接口（无任务 → false / 有任务 → 返回 task_id / tempo 任务不混入）+ 触发去重复用 + 完成后重复触发新建 ✅ 2026-08-14
+- [x] pytest 全量 458 passed + lyric_ai realdata 15 passed + eslint ✅ 2026-08-14
+- [x] 实测确认根因：后端重启后 BPM 分析占串行锁 ~10 分钟，期间识别任务 `queued 0` 排队；任务完成后识别恢复推进到 running 68%（无死锁，纯串行排队 + 前端不轮询）✅ 2026-08-14
+
+---
+
 
 > 修复 v0.8.1 正式管线缺陷：whisper 语言自动检测在音乐场景不可靠——专辑首段常是器乐/强伴奏，首个 30s 窗口无清晰语音 → 误判语种（1041 中文歌被误判 `en`，置信度仅 0.31）→ 整轨按错误语种转写，产出英文幻觉/拼音乱码，**重复副歌整段丢失**（1041 曲2《开水烫》第二遍副歌完全缺失）。修复：`transcribe()` 未显式指定语种时，自动检测置信度 < 0.6（或未检测 / 恰为兜底语言）→ 回退 `zh` 重跑，决策抽纯函数 `resolve_auto_language` 可单测。发现于 2026-08-14（用户反馈 1041 歌词缺失），修复 + 回归测试 + realdata 验证完成（2026-08-14）。
 

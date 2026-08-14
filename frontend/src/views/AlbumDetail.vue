@@ -1624,6 +1624,29 @@ handleUpdateAlbumScore(scoreList) {
         });
     },
 
+    // v0.8.6 修复：挂载详情页时恢复轮询「已自动触发 / 正在跑的歌词识别任务」
+    // 背景：添加新专辑时后端自动启动 AI 识别，但此前前端从不轮询自动触发的任务 → 进度条永远 0%；
+    // 本方法查询该专辑活跃的识别任务（queued/running），有则接管轮询展示真实进度
+    // （后端 start_recognize_task 已去重，手动点按钮会复用同一任务，不会重复排队）
+    resumeAiRecognize() {
+      if (!this.albumPoolId || !this.isAdmin || this.aiRecognizeLoading) return;
+      this.$axios.get(`/api/album/lyric/recognize/active/${this.albumPoolId}`, {
+        headers: { Authorization: localStorage.getItem('token') || '' }
+      }).then(res => {
+        if (res.data.code !== 200) return;
+        const data = res.data.data || {};
+        if (!data.active || !data.task_id) return;
+        // 接管该任务的轮询：loading 置真（按钮禁用 + 进度条显示）+ 用当前进度/消息初始化
+        this.aiRecognizeLoading = true;
+        this.aiRecognizeProgress = data.progress || 0;
+        this.aiRecognizeStatusMsg = data.message || '识别中…';
+        this.aiRecognizeTimer = setInterval(() => this.pollAiRecognize(data.task_id), 2000);
+      }).catch(err => {
+        // 失败不阻断详情页（非关键路径），保持无轮询状态
+        console.error('❌ 恢复识别轮询失败：', err);
+      });
+    },
+
     // v0.8.1 P6：加载 AI 配置状态 → 决定左侧菜单是否显示「AI 助手」（仅配置 key 的用户可见）
     loadAiStatus() {
       this.$axios.get('/api/ai/status').then(res => {
@@ -1658,6 +1681,9 @@ handleUpdateAlbumScore(scoreList) {
                 resolve();
                 // v0.8.3 P1：详情页打开即预触发 BPM 分析（幂等；专辑切换时 albumPoolId 已更新）
                 this.preloadTempo();
+                // v0.8.6 修复：恢复轮询正在跑的歌词识别任务（添加专辑自动触发 / 上次未看完的任务），
+                // 让进度条显示真实进度而非一直 0%（幂等：无活跃任务则 no-op）
+                this.resumeAiRecognize();
               } else {
                 alert(res.data.msg);
                 // ======== 【修改点2/4】替换跳转逻辑 ========

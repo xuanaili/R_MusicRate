@@ -37,6 +37,24 @@ def _map_transcribe_progress(ratio):
     return 10 + int(80 * ratio)
 
 
+def _build_active_response(active_tasks):
+    """GET active 响应组装（纯函数，可单测）：活跃任务列表 → 前端恢复轮询用 data
+    - 无活跃任务 → {'active': False}
+    - 有活跃任务 → {'active': True, task_id, status, progress, message, album_name}
+    """
+    if not active_tasks:
+        return {'active': False}
+    t = active_tasks[0]
+    return {
+        'active': True,
+        'task_id': t.get('task_id'),
+        'status': t.get('status'),
+        'progress': t.get('progress'),
+        'message': t.get('message'),
+        'album_name': t.get('album_name'),
+    }
+
+
 def _resolve_audio_path(mp3_url):
     """mp3_url（http://localhost:5000/tracks/<filename>）→ 磁盘绝对路径
     backend/data/album_track/<filename>（与 audio_resource.py 存储/读取一致）
@@ -171,7 +189,12 @@ def start_recognize_task(app, album_pool_id, album_name, user_id):
     """创建并启动歌词识别后台任务（recognize 路由 与 专辑添加自动触发 共用）
     - 复用全局任务表单例 tasks；CPU 串行由 _run_recognize 的 serial_lock 保证
     - 调用方负责前置校验（池存在 / 有整轨 mp3 / 管理员）；返回 task_id
+    - v0.8.6 去重：该专辑已有活跃（queued/running）lyric 任务 → 复用其 task_id，不新建
+      （背景：新专辑添加自动触发 + 手动按钮都可能重复创建任务，排到正在跑的长任务后面全是 0% 排队）
     """
+    active = tasks.find_active(kind='lyric', album_pool_id=album_pool_id)
+    if active:
+        return active[0].get('task_id')
     task_id = tasks.new_task_id()
     tasks.create(
         task_id=task_id,
@@ -243,7 +266,25 @@ def register_lyric_ai_routes(app):
             traceback.print_exc()
             return jsonify({"code": 500, "msg": f"触发 AI 识别失败：{str(e)}"}), 500
 
-    # 2. 查询识别任务状态（轮询）：running/done/failed + 进度 + 统计
+    # 2. 查询该专辑当前活跃识别任务（v0.8.6 增补）：供前端挂载详情页时恢复轮询
+    #    新专辑添加时后端自动触发识别，但前端此前从不轮询自动触发任务 → 页面进度永远 0%；
+    #    本接口返回 queued/running 的 lyric 任务（无则 active:false），前端据此接管轮询展示真实进度
+    @app.route('/api/album/lyric/recognize/active/<int:album_pool_id>', methods=['GET', 'OPTIONS'])
+    @login_required
+    def recognize_active(album_pool_id):
+        try:
+            active = tasks.find_active(kind='lyric', album_pool_id=album_pool_id)
+            return jsonify({
+                "code": 200,
+                "msg": "查询成功",
+                "data": _build_active_response(active),
+            })
+        except Exception as e:
+            print(f"❌ 查询活跃识别任务出错：{str(e)}")
+            traceback.print_exc()
+            return jsonify({"code": 500, "msg": f"查询活跃识别任务失败：{str(e)}"}), 500
+
+    # 3. 查询识别任务状态（轮询）：running/done/failed + 进度 + 统计
     @app.route('/api/album/lyric/recognize/status/<task_id>', methods=['GET', 'OPTIONS'])
     @login_required
     def recognize_status(task_id):
