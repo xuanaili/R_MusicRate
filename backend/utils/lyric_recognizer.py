@@ -6,7 +6,7 @@
 #   → segment 级时间戳 1 位小数去重升序 → 按 tracks_time 边界切分到单曲
 #   → 复用 lrc.py 产出整轨绝对时间存储文本（可直接落 album_lyric）
 # 纯逻辑部分（clean_segment_text / is_hallucination / filter_segments / to_simplified
-#   / segments_to_items / split_by_tracks_time / track_items_to_storage）
+#   / segments_to_items / split_by_tracks_time / track_items_to_storage / resolve_auto_language）
 # 零依赖可单测（test_lyric_recognizer.py）；模型加载 / 转写属 realdata，由 CLI 实测
 import os
 import re
@@ -128,6 +128,19 @@ def get_model(model_size='small', device='cpu', compute_type='int8'):
     return _model_cache[model_size]
 
 
+def resolve_auto_language(detected_language, detected_prob, min_lang_prob=0.6, fallback_language='zh'):
+    """自动语言检测低置信度 → 回退应用主语言（纯函数，可单测；v0.8.1 增补）
+    背景：whisper 语言自动检测在音乐场景不可靠——专辑首段常是器乐/强伴奏，首个 30s 窗口无清晰
+          语音 → 误判语种（如中文歌被误判 en，置信度仅 0.31）→ 整轨按错误语种转写，产出英文幻觉
+          /拼音乱码、重复副歌整段丢失（1041 曲2「开水烫」实测：auto=en 漏第二遍副歌，强制 zh 全召回）
+    规则：检测置信度达 min_lang_prob 且非兜底语言 → 用检测结果；否则（低置信度 / 未检测 /
+          恰为兜底语言）→ 返回 fallback_language（本应用中文优先）
+    """
+    if detected_language and detected_prob >= min_lang_prob and detected_language != fallback_language:
+        return detected_language
+    return fallback_language
+
+
 def segments_to_items(segments, no_speech_threshold=0.6):
     """whisper segments（[{start, end, text, no_speech_prob?}, ...]）→ 歌词条目 [{time, text}, ...]
     - 先 filter_segments 幻觉过滤（no_speech_prob 阈值 + 噪音模式/器乐标签，缺失字段视为 0）
@@ -200,11 +213,16 @@ def build_full_storage_text(items):
 
 
 def transcribe(audio_path, model_size='small', limit_secs=None, language=None, vad_filter=False,
-               progress_callback=None):
+               progress_callback=None, min_lang_prob=0.6, fallback_language='zh'):
     """转写音频文件 → (segments, info, metrics)
     - word_timestamps=True + vad_filter 默认 False（v0.8.1 P0 拍板：音乐场景 VAD 会整首丢失曲目）
     - word_timestamps=True 时 segment 带 no_speech_prob（幻觉过滤的数据源，保留到返回 dict）
     - limit_secs 用 clip_timestamps 限制（只转写前 N 秒，spike 首跑拿 RTF 用）
+    - language 显式指定（如 'zh'）→ 直接按该语种转写，不做自动检测
+    - language 未指定 → whisper 自动检测语言；检测置信度 < min_lang_prob（或未检测 /
+      恰为 fallback_language）→ 视为不可靠，用 fallback_language 重跑（v0.8.1 修复：
+      音乐场景专辑首段常是器乐/强伴奏，自动检测误判语种（1041 中文歌被误判 en，概率仅 0.31）
+      → 整轨按错误语种转写，重复副歌整段丢失；低置信度兜底中文优先可全召回）
     - progress_callback：可选回调，每产出一个 segment 调用 progress_callback(ratio)（0.0~1.0），
       ratio = 已转写音频比例（segment.end / 总时长 估算；无总时长信息则不回调），前端进度条用
     - 返回 faster-whisper segment 列表（含 start/end/text/no_speech_prob）与模型 info（语言 / 时长）
@@ -217,7 +235,23 @@ def transcribe(audio_path, model_size='small', limit_secs=None, language=None, v
         kwargs['clip_timestamps'] = (0.0, float(limit_secs))
 
     t0 = time.time()
-    segments_iter, info = model.transcribe(audio_path, **kwargs)
+    auto_fallback = False
+    if not language:
+        # 未显式指定语种：先自动检测（只取 info，不迭代 generator），低置信度则兜底重跑
+        segments_iter, info = model.transcribe(audio_path, **kwargs)
+        detected = getattr(info, 'language', None)
+        detected_prob = getattr(info, 'language_probability', None) or 0.0
+        resolved = resolve_auto_language(detected, detected_prob,
+                                         min_lang_prob=min_lang_prob,
+                                         fallback_language=fallback_language)
+        if resolved != detected:
+            # 检测不可靠 → 丢弃 auto 结果，按兜底语种重跑（整轨语种统一，避免中英混杂）
+            auto_fallback = True
+            kwargs['language'] = resolved
+            segments_iter, info = model.transcribe(audio_path, **kwargs)
+    else:
+        segments_iter, info = model.transcribe(audio_path, **kwargs)
+
     audio_seconds = limit_secs if limit_secs else (getattr(info, 'duration', None) or 0)
     segments = []
     for s in segments_iter:
@@ -232,4 +266,11 @@ def transcribe(audio_path, model_size='small', limit_secs=None, language=None, v
     elapsed = time.time() - t0
 
     rtf = (elapsed / audio_seconds) if audio_seconds else 0.0
-    return segments, info, {'elapsed': elapsed, 'audio_seconds': audio_seconds, 'rtf': rtf}
+    metrics = {
+        'elapsed': elapsed,
+        'audio_seconds': audio_seconds,
+        'rtf': rtf,
+        'language': getattr(info, 'language', None),
+        'auto_language_fallback': auto_fallback,
+    }
+    return segments, info, metrics

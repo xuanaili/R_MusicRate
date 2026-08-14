@@ -10,6 +10,7 @@ from backend.utils.lyric_recognizer import (
     clean_segment_text,
     filter_segments,
     is_hallucination,
+    resolve_auto_language,
     segments_to_items,
     split_by_tracks_time,
     to_simplified,
@@ -275,3 +276,159 @@ class TestToSimplified:
         import backend.utils.lyric_recognizer as mod
         monkeypatch.setattr(mod, '_simplifier', False)
         assert to_simplified('繁體測試') == '繁體測試'
+
+
+class TestResolveAutoLanguage:
+    """v0.8.1 修复：自动语言检测低置信度 → 回退应用主语言（中文优先兜底）
+    背景：whisper 语言自动检测在音乐场景不可靠——专辑首段器乐/强伴奏导致首个 30s 窗口无清晰语音
+          → 误判语种（1041 中文歌被误判 en，概率 0.31）→ 整轨漏词。规则：检测置信度达阈值
+          且非兜底语言 → 用检测结果；否则回退 fallback_language（默认 'zh'）
+    """
+
+    def test_confident_non_zh_kept(self):
+        # 检测置信英文 0.95（确为英文歌）→ 用检测结果，不兜底
+        assert resolve_auto_language('en', 0.95) == 'en'
+
+    def test_other_language_confident_kept(self):
+        assert resolve_auto_language('ja', 0.85) == 'ja'
+
+    def test_low_confidence_falls_back(self):
+        # 1041 实测场景：中文歌被误判 en(0.31) < 0.6 → 兜底中文
+        assert resolve_auto_language('en', 0.31) == 'zh'
+
+    def test_no_language_falls_back(self):
+        # 完全未检测到语言 → 兜底中文
+        assert resolve_auto_language(None, None) == 'zh'
+
+    def test_detected_fallback_language_stays_fallback(self):
+        # 检测结果恰为兜底语言（'zh'）→ 返回 'zh'（无需重跑，检测与兜底一致）
+        assert resolve_auto_language('zh', 0.2) == 'zh'
+        assert resolve_auto_language('zh', 0.99) == 'zh'
+
+    def test_custom_threshold(self):
+        # 阈值调高后，0.7 置信度也不可信 → 兜底
+        assert resolve_auto_language('en', 0.7, min_lang_prob=0.8) == 'zh'
+        # 阈值调低后，0.5 置信度即可接受 → 用检测结果
+        assert resolve_auto_language('en', 0.5, min_lang_prob=0.4) == 'en'
+
+    def test_custom_fallback_language(self):
+        assert resolve_auto_language('en', 0.31, fallback_language='ja') == 'ja'
+
+
+class _FakeSeg:
+    """faster-whisper segment 的最小替身（.start/.end/.text/.no_speech_prob）"""
+    def __init__(self, start, end, text, nsp=0.0):
+        self.start = start
+        self.end = end
+        self.text = text
+        self.no_speech_prob = nsp
+
+
+class _FakeInfo:
+    def __init__(self, language, probability, duration=100.0):
+        self.language = language
+        self.language_probability = probability
+        self.duration = duration
+
+
+class _FakeModel:
+    """记录每次调用参数的 fake 模型：auto 模式（不传 language）按构造配置返回检测结果
+    - zh 结果固定包含「开水烫」segment（对应 1041 曲2 副歌，验证兜底后不丢重复副歌）
+    """
+    def __init__(self, auto_lang='en', auto_prob=0.31):
+        self.calls = []
+        self.auto_lang = auto_lang
+        self.auto_prob = auto_prob
+
+    def transcribe(self, audio_path, **kwargs):
+        self.calls.append(dict(kwargs))
+        if 'language' not in kwargs:
+            # auto 模式：模拟音乐场景自动检测（可能误判 / 低置信度）
+            segs = [_FakeSeg(0.0, 5.0, 'english gibberish')]
+            info = _FakeInfo(self.auto_lang, self.auto_prob)
+        else:
+            lang = kwargs['language']
+            if lang == 'zh':
+                segs = [_FakeSeg(0.0, 5.0, '开水烫'), _FakeSeg(320.0, 328.0, '这是躲也躲不掉的')]
+            else:
+                segs = [_FakeSeg(0.0, 5.0, f'{lang} text')]
+            info = _FakeInfo(lang, 0.99)
+        return iter(segs), info
+
+
+class TestTranscribeAutoLanguageFallback:
+    """v0.8.1 修复：transcribe 未显式指定语种时，低置信度自动检测 → 兜底中文重跑
+    通过 monkeypatch get_model 注入 fake 模型，验证调用次数 / 兜底语言 / 重跑后中文歌词完整
+    """
+
+    def test_low_confidence_falls_back_to_zh(self, monkeypatch):
+        # auto 检测 en(0.31) < 0.6 → 丢弃 auto 结果，用 zh 重跑 → 中文歌词完整（含重复副歌）
+        import backend.utils.lyric_recognizer as mod
+        fake = _FakeModel(auto_lang='en', auto_prob=0.31)
+        monkeypatch.setattr(mod, 'get_model', lambda size='small': fake)
+
+        segments, info, metrics = mod.transcribe('some.mp3')
+
+        # 两次调用：第一次 auto 检测，第二次 zh 兜底重跑
+        assert len(fake.calls) == 2
+        assert 'language' not in fake.calls[0]
+        assert fake.calls[1]['language'] == 'zh'
+        assert metrics['auto_language_fallback'] is True
+        assert metrics['language'] == 'zh'
+        assert info.language == 'zh'
+        texts = [s['text'] for s in segments]
+        assert '开水烫' in texts
+        assert '这是躲也躲不掉的' in texts
+        # auto 误判的英文幻觉不进入结果
+        assert 'english gibberish' not in texts
+
+    def test_confident_detection_no_fallback(self, monkeypatch):
+        # auto 检测英文 0.95（置信）→ 直接用检测结果，不重跑
+        import backend.utils.lyric_recognizer as mod
+        fake = _FakeModel(auto_lang='en', auto_prob=0.95)
+        monkeypatch.setattr(mod, 'get_model', lambda size='small': fake)
+
+        segments, info, metrics = mod.transcribe('some.mp3')
+
+        assert len(fake.calls) == 1
+        assert 'language' not in fake.calls[0]
+        assert metrics['auto_language_fallback'] is False
+        assert info.language == 'en'
+        assert [s['text'] for s in segments] == ['english gibberish']
+
+    def test_detected_zh_low_confidence_no_rerun(self, monkeypatch):
+        # auto 已检测为 zh（即使低置信度）→ 检测与兜底一致，不重跑（避免浪费一次转写）
+        import backend.utils.lyric_recognizer as mod
+        fake = _FakeModel(auto_lang='zh', auto_prob=0.4)
+        monkeypatch.setattr(mod, 'get_model', lambda size='small': fake)
+
+        segments, info, metrics = mod.transcribe('some.mp3')
+
+        assert len(fake.calls) == 1
+        assert metrics['auto_language_fallback'] is False
+        assert [s['text'] for s in segments] == ['english gibberish']
+
+    def test_explicit_language_passthrough(self, monkeypatch):
+        # 显式指定语种 → 直接按该语种转写，不做自动检测 / 不兜底
+        import backend.utils.lyric_recognizer as mod
+        fake = _FakeModel()
+        monkeypatch.setattr(mod, 'get_model', lambda size='small': fake)
+
+        segments, info, metrics = mod.transcribe('some.mp3', language='zh')
+
+        assert len(fake.calls) == 1
+        assert fake.calls[0]['language'] == 'zh'
+        assert metrics['auto_language_fallback'] is False
+        assert [s['text'] for s in segments] == ['开水烫', '这是躲也躲不掉的']
+
+    def test_custom_threshold_avoids_fallback(self, monkeypatch):
+        # 阈值调低后 0.5 置信度即可接受 → 用 auto 检测结果，不重跑
+        import backend.utils.lyric_recognizer as mod
+        fake = _FakeModel(auto_lang='en', auto_prob=0.5)
+        monkeypatch.setattr(mod, 'get_model', lambda size='small': fake)
+
+        segments, info, metrics = mod.transcribe('some.mp3', min_lang_prob=0.4)
+
+        assert len(fake.calls) == 1
+        assert metrics['auto_language_fallback'] is False
+        assert info.language == 'en'

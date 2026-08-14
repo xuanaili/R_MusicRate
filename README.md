@@ -149,7 +149,35 @@ MusicRate/
 
 ---
 
-## v0.8.4 — 歌词页顶部当前单曲快捷评分（规划已定稿）
+## v0.8.5 — 歌词识别语言自动检测兜底修复（中文优先）
+
+> 修复 v0.8.1 正式管线缺陷：whisper 语言自动检测在音乐场景不可靠——专辑首段常是器乐/强伴奏，首个 30s 窗口无清晰语音 → 误判语种（1041 中文歌被误判 `en`，置信度仅 0.31）→ 整轨按错误语种转写，产出英文幻觉/拼音乱码，**重复副歌整段丢失**（1041 曲2《开水烫》第二遍副歌完全缺失）。修复：`transcribe()` 未显式指定语种时，自动检测置信度 < 0.6（或未检测 / 恰为兜底语言）→ 回退 `zh` 重跑，决策抽纯函数 `resolve_auto_language` 可单测。发现于 2026-08-14（用户反馈 1041 歌词缺失），修复 + 回归测试 + realdata 验证完成（2026-08-14）。
+
+### 功能概述
+
+1. **兜底决策**：`transcribe()` 新增 `min_lang_prob=0.6, fallback_language='zh'` 参数；未显式传 `language` 时先自动检测，置信度达阈值且非兜底语言 → 用检测结果；否则（低置信度 / 未检测 / 恰为兜底语言）→ 用 `zh` 重跑整轨（语种统一，避免中英混杂）。
+2. **透明可观测**：metrics 新增 `language`（实际转写语种）与 `auto_language_fallback`（是否触发兜底），spike / realdata 可直接断言。
+3. **不误伤真外语**：确为英文/日文等且置信度高（如 0.95）→ 保持检测语种不兜底；显式指定 `language` 完全绕开自动检测。
+
+### 架构设计
+
+- **纯函数 `resolve_auto_language(detected_language, detected_prob, min_lang_prob=0.6, fallback_language='zh')`**：单行决策——`detected_language and detected_prob >= min_lang_prob and detected_language != fallback_language → detected_language`，否则返回 `fallback_language`
+- **`transcribe()` 兜底重跑**：未显式指定语种时先 `model.transcribe(audio_path, **kwargs)`（auto 检测，只取 `info.language` / `info.language_probability`，不迭代 generator）；`resolve_auto_language` 结果 ≠ 检测语种 → 丢弃 auto 结果，`kwargs['language']=resolved` 重跑整轨
+
+### 难点与对策
+
+- **自动检测首段器乐误判**：音乐场景首个 30s 窗口常无语音 → 低置信度误判；对策是低置信度中文优先兜底，中文歌不再按错误语种转写
+- **兜底语言恰为检测语言**（检测已为 zh）：`resolve` 返回 zh == 检测 → 不重跑，避免浪费一次整轨转写
+- **真外语误伤**：置信度 ≥ 0.6 且非中文 → 保持检测结果，英文/日文歌不受影响
+
+### 验证（勾选清单）
+
+- [x] 单测：`resolve_auto_language` 8 例（置信度阈值 / 未检测 / 兜底语言一致 / 自定义参数）+ `transcribe` fake-model 5 例（低置信度兜底触发、置信不兜底、检测 zh 不重跑、显式 language 直通、自定义阈值）✅ 2026-08-14
+- [x] realdata：1041 整轨 450s 不传 language → auto 检测 en(0.31) → 触发 zh 兜底重跑，重复副歌两轮完整（319.7→347.7 / 347.7→367.3），此前 auto=en 第二遍完全缺失 ✅ 2026-08-14
+- [x] pytest 全量 453 passed ✅ 2026-08-14
+
+---
+
 
 > 承接 v0.8.3 歌词展示页样式统一，新增歌词页顶部「当前单曲快捷评分」：在歌名标题栏、上传/编辑歌词按钮左侧，加一个与单曲列表同款交互的评分进度条（悬停显示），边看歌词边对当前播放单曲打分。纯前端增强，无后端/数据库改动，复用现有 `PUT /api/album/score/save/<album_id>` 评分保存接口。规划于 2026-08-12 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地；**P0 纯函数 + 单测、P1 组件集成已完成（2026-08-12）**。
 
