@@ -669,20 +669,15 @@ async created() {
     if (this.fadeTimer) clearInterval(this.fadeTimer);
     if (this.volumeTimer) clearInterval(this.volumeTimer);
     this.volumeTimer = null;
+    // v0.8.4 修复：原 beforeUnmount（Vue 3 钩子名，Vue 2.6 下永不触发，清理全失效）里的 blob URL 释放合并进真正的销毁钩子
+    if (this.audioSrc && this.audioSrc.includes('blob:')) {
+      URL.revokeObjectURL(this.audioSrc);
+    }
     // 退出兜底上报：原 fadeOutVolume+async pause 在销毁后 $refs 被置空会漏报，改用 keepalive 上报
     window.removeEventListener('pagehide', this._pageExitHandler);
     window.removeEventListener('beforeunload', this._pageExitHandler);
     this.flushListeningReport();
     this.$refs.albumTrackListRef?.triggerSaveScore();
-  },
-  beforeUnmount() {
-    if (this.audioSrc && this.audioSrc.includes('blob:')) {
-      URL.revokeObjectURL(this.audioSrc);
-    }
-    if (this.fadeTimer) clearInterval(this.fadeTimer);
-    if (this.volumeTimer) clearInterval(this.volumeTimer);
-    this.volumeTimer = null;
-    this.flushListeningReport();
   },
   methods: {
         // 新增：接收 rhyConfig 并更新本地数据

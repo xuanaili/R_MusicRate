@@ -565,7 +565,9 @@ export default {
       this.updateCurrentLyric();
     });
   },
-  beforeUnmount() {
+  // v0.8.4 修复：项目是 Vue 2.6，Vue 3 钩子名 beforeUnmount 永不触发 → 定时器泄漏 + 组件销毁后定时器仍回调崩溃
+  // 改用 Vue 2.6 的 beforeDestroy，确保销毁前真正清理 scrollAnimationTimer 等
+  beforeDestroy() {
     if (this.scrollTimer) clearTimeout(this.scrollTimer);
     document.removeEventListener('mousemove', this.handleTrackScoreMouseMove);
     document.removeEventListener('click', this.handleClickOutside);
@@ -1008,9 +1010,10 @@ export default {
     recenterCurrentLyric(idx) {
       if (idx !== this.highlightedCombinedIndex) { this.isScrolling = false; return; }
       const box = this.$refs.lyricsContent;
+      if (!box) { this.isScrolling = false; return; } // v0.8.4 修复：450ms 延迟触发时组件可能已销毁，ref 不存在，先判空（镜像 scrollToCurrentCombinedLyric）
       const items = box.querySelectorAll('.lyric-pair');
       const item = items[idx];
-      if (!box || !item) { this.isScrolling = false; return; }
+      if (!item) { this.isScrolling = false; return; }
       const h = box.clientHeight;
       const itemRect = item.getBoundingClientRect();
       const boxRect = box.getBoundingClientRect();
