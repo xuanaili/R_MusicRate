@@ -415,8 +415,59 @@ const ballConfig = tagBallConfigList.reduce((config, item) => {
   return config;
 }, { default: defaultBallConfig });
 
+// ✅✅ v0.9 P0：风格→动画样式预设覆盖表（供 styleAuto.js 自动生成初始样式）
+// 基础参数档位由 styleAuto.js 从上方 tagBallConfigList 反推（单一数据源，无需逐风格手写），
+// 此处仅覆盖「能量启发式选型」不理想的风格：
+//   - style_type ∈ close / ball / meteor（动画类型）
+//   - bpm_scale 为 BPM 缩放系数（相对 100bpm，越大 BPM 对能量参数影响越强；缺省用 defaultBpmScale）
+const stylePresetOverrides = {
+  // 安静/氛围/古典 → 默认不开动画（close）
+  'Ambient【氛围音乐】': { style_type: 'close', bpm_scale: 0.4 },
+  'Drone【嗡鸣音乐】': { style_type: 'close', bpm_scale: 0.3 },
+  'Easy Listening【轻音乐】': { style_type: 'close', bpm_scale: 0.3 },
+  'New Age【新世纪音乐】': { style_type: 'close', bpm_scale: 0.3 },
+  'Modern Classical【现代古典】': { style_type: 'close', bpm_scale: 0.4 },
+  'Classical Music【古典音乐】': { style_type: 'close', bpm_scale: 0.4 },
+  'Sound Collage【声音拼贴】': { style_type: 'close', bpm_scale: 0.3 },
+  // 高能量舞曲/电子 → 默认流星（meteor）
+  'Techno【科技舞曲】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'House【浩室音乐】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Deep House【深度浩室】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Drum and Bass【鼓打贝斯】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Breakcore【碎核】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Electronic Dance Music【电子舞曲】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Trap【陷阱说唱】': { style_type: 'meteor', bpm_scale: 0.6 },
+  // 高能量金属/朋克 → 默认流星（meteor）
+  'Death Metal【死亡金属】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Black Metal【黑金属】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Grindcore【碾核】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Hardcore Punk【硬核朋克】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Heavy Metal【重金属】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Industrial Metal【工业金属】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Progressive Metal【前卫金属】': { style_type: 'meteor', bpm_scale: 0.6 },
+  'Melodic Death Metal【旋律死亡金属】': { style_type: 'meteor', bpm_scale: 0.6 },
+  // 慢速金属 → 能量启发式会误判成 meteor，显式压回 ball
+  'Doom Metal【厄运金属】': { style_type: 'ball', bpm_scale: 0.4 },
+  'Stoner Rock【石人摇滚】': { style_type: 'ball', bpm_scale: 0.4 },
+  'Slowcore【慢核】': { style_type: 'ball', bpm_scale: 0.4 }
+};
+
+// ✅ v0.9：自动样式默认值（无匹配标签 / 无覆盖时使用）
+const defaultStyleType = 'ball';       // 默认动画类型
+const defaultBpmScale = 0.5;           // 默认 BPM 缩放系数
+const defaultMeteorConfig = {          // 流星默认基础配置（StyleAuto 推导的兜底基准）
+  angle: 45,
+  size: 10,
+  tailLength: 50,
+  speed: 30
+};
+
 // ✅ 最终导出，组件调用方式 完全不变！
 export default {
   albumTagOptions,
-  ballConfig
+  ballConfig,
+  stylePresetOverrides,
+  defaultStyleType,
+  defaultBpmScale,
+  defaultMeteorConfig
 };

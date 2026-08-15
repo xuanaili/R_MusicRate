@@ -149,7 +149,7 @@ MusicRate/
 
 ## v0.9 — 曲目列表样式参数自动化 + 配置持久化（规划已定稿）
 
-> 承接 RhythmBall 节奏动画（小球水滴 / 流星）样式参数面板：① 打开专辑时按「类型(tags) + BPM」自动生成初始样式与参数（用户可再手动微调，手动后不再被覆盖，面板提供「按类型/BPM 重新生成」按钮）；② 配置按 user_id + album_id 存后端表，切 tab / 刷新 / 换设备不丢；③ 动画层固定在专辑详情根层 wrapDom，切 AI 助手 / 平台评论 / 听后感 / 歌词 tab 动画继续、配置不重置（修掉 RhythmBall `initialBallConfig` prop 声明未使用 → 每次切回曲目列表重置为默认的 bug）。规划于 2026-08-15 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地。
+> 承接 RhythmBall 节奏动画（小球水滴 / 流星）样式参数面板：① 打开专辑时按「类型(tags) + BPM」自动生成初始样式与参数（用户可再手动微调，手动后不再被覆盖，面板提供「按类型/BPM 重新生成」按钮）；② 配置按 user_id + album_id 存后端表，切 tab / 刷新 / 换设备不丢；③ 动画层固定在专辑详情根层 wrapDom，切 AI 助手 / 平台评论 / 听后感 / 歌词 tab 动画继续、配置不重置（修掉 RhythmBall `initialBallConfig` prop 声明未使用 → 每次切回曲目列表重置为默认的 bug）。规划于 2026-08-15 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地；**P0 纯函数 + 后端（styleAuto.js + user_album_style 表/接口 + tempo/get 直读）已完成（2026-08-15）**，P1 前端集成待落地。
 
 ### 功能概述
 
@@ -221,9 +221,9 @@ MusicRate/
 
 ### 待做（勾选清单）
 
-- [ ] P0 `styleAuto.js` 纯函数 + 单测（node golden）✅ 待实现
-- [ ] P0 `user_album_style` 表 + GET/POST 接口 + 归属校验 + realdata ✅ 待实现
-- [ ] P0 `GET /api/ai/tempo/get` 直读接口 + realdata ✅ 待实现
+- [x] P0 `styleAuto.js` 纯函数 + 单测（node golden）✅ 2026-08-15
+- [x] P0 `user_album_style` 表 + GET/POST 接口 + 归属校验 + realdata ✅ 2026-08-15
+- [x] P0 `GET /api/ai/tempo/get` 直读接口 + realdata ✅ 2026-08-15
 - [ ] P1 AlbumDetail 集成（load/save/auto-init/BPM 轮询/单一配置源）✅ 待实现
 - [ ] P1 RhythmBall initial props + 「按类型/BPM 重新生成」按钮 ✅ 待实现
 - [ ] P1 lint + build + 手动回归 + README 归档 ✅ 待实现

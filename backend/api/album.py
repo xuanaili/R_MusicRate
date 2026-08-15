@@ -13,6 +13,63 @@ import pymysql
 from ..utils.intro import get_user_album_intro, save_user_album_intro
 from ..utils.score import calculate_album_total_score
 from ..utils.last_listened import last_listened_sort_key
+from ..utils.json import safe_json_loads
+
+# ========== ✅ v0.9 P0：专辑动画样式配置规范化（纯函数） ==========
+_STYLE_TYPES = ('close', 'ball', 'meteor')
+_AUTO_MANUAL = ('auto', 'manual')
+_RHY_KEYS = ('a', 'b', 'c', 'd', 'e')
+_METEOR_KEYS = ('angle', 'size', 'tailLength', 'speed')
+
+
+def normalize_style_config(data):
+    """校验并规范化用户提交的样式配置（v0.9 P0，POST 边界校验）
+    - style_type ∈ close/ball/meteor；auto_manual ∈ auto/manual（非法回退默认）
+    - rhy_config 只保留 a-e（0-100 数字）；meteor_config 只保留 angle/size/tailLength/speed（0-100 数字）
+    - 返回 {style_type, rhy_config, meteor_config, auto_manual}
+    """
+    data = data or {}
+    style_type = str(data.get('style_type') or 'close')
+    if style_type not in _STYLE_TYPES:
+        style_type = 'close'
+    auto_manual = str(data.get('auto_manual') or 'auto')
+    if auto_manual not in _AUTO_MANUAL:
+        auto_manual = 'auto'
+
+    def _clean_nums(raw, keys):
+        raw = raw or {}
+        out = {}
+        for k in keys:
+            try:
+                out[k] = int(round(max(0.0, min(100.0, float(raw.get(k, 0))))))
+            except (TypeError, ValueError):
+                out[k] = 0
+        return out
+
+    return {
+        'style_type': style_type,
+        'rhy_config': _clean_nums(data.get('rhy_config'), _RHY_KEYS),
+        'meteor_config': _clean_nums(data.get('meteor_config'), _METEOR_KEYS),
+        'auto_manual': auto_manual,
+    }
+
+
+def _get_style_row(user_id, album_id):
+    """查本人该专辑样式配置行（无则 None）；归属校验（albums_{user_id} 存在专辑才可读写）"""
+    db = get_db()
+    cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
+    table_name = get_album_table_name(user_id)
+    cursor.execute(f'SELECT id FROM `{table_name}` WHERE id = %s', (album_id,))
+    if not cursor.fetchone():
+        cursor.close()
+        return None, None  # 专辑不存在/非本人
+    cursor.execute(
+        'SELECT style_type, rhy_config, meteor_config, auto_manual, update_time FROM user_album_style WHERE user_id = %s AND album_id = %s',
+        (user_id, album_id),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    return row, True
 
 
 def register_album_routes(app):
@@ -793,5 +850,85 @@ def register_album_routes(app):
             print(f"❌ 收藏曲目保存失败：{str(e)}")
             traceback.print_exc()
             return jsonify({"code": 500, "msg": f"保存收藏曲目失败：{str(e)}"}), 200
+
+    # ========== ✅ v0.9 P0：专辑动画样式配置读写（按 user_id + album_id 持久化，跨设备同步） ==========
+    @app.route('/api/album/style/<int:album_id>', methods=['GET', 'OPTIONS'])
+    @login_required
+    def get_album_style(album_id):
+        try:
+            if request.method == 'OPTIONS':
+                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
+            row, owned = _get_style_row(current_user_id, album_id)
+            if not owned:
+                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 200
+            if not row:
+                # 无记录 = 从未配置，首次打开由前端自动生成（data:null）
+                return jsonify({"code": 200, "msg": "该专辑尚无样式配置", "data": None})
+            return jsonify({
+                "code": 200,
+                "msg": "获取样式配置成功",
+                "data": {
+                    "style_type": row["style_type"],
+                    "rhy_config": safe_json_loads(row["rhy_config"]) or {},
+                    "meteor_config": safe_json_loads(row["meteor_config"]) or {},
+                    "auto_manual": row["auto_manual"],
+                    "update_time": str(row["update_time"]) if row["update_time"] else None
+                }
+            })
+        except Exception as e:
+            print(f"❌ 获取样式配置出错：{str(e)}")
+            traceback.print_exc()
+            return jsonify({"code": 500, "msg": f"获取样式配置失败：{str(e)}"}), 200
+
+    @app.route('/api/album/style/<int:album_id>', methods=['POST', 'OPTIONS'])
+    @login_required
+    def save_album_style(album_id):
+        try:
+            if request.method == 'OPTIONS':
+                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 200
+            row, owned = _get_style_row(current_user_id, album_id)
+            if not owned:
+                return jsonify({"code": 404, "msg": f"未找到ID为{album_id}的专辑！"}), 200
+
+            data = request.get_json(silent=True) or {}
+            style = normalize_style_config(data)
+            rhy_json = json.dumps(style["rhy_config"], ensure_ascii=False)
+            meteor_json = json.dumps(style["meteor_config"], ensure_ascii=False)
+
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('''
+                INSERT INTO user_album_style (user_id, album_id, style_type, rhy_config, meteor_config, auto_manual)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    style_type = VALUES(style_type),
+                    rhy_config = VALUES(rhy_config),
+                    meteor_config = VALUES(meteor_config),
+                    auto_manual = VALUES(auto_manual)
+            ''', (current_user_id, album_id, style["style_type"], rhy_json, meteor_json, style["auto_manual"]))
+            db.commit()
+            cursor.close()
+
+            return jsonify({
+                "code": 200,
+                "msg": "样式配置保存成功",
+                "data": {
+                    "album_id": album_id,
+                    "style_type": style["style_type"],
+                    "rhy_config": style["rhy_config"],
+                    "meteor_config": style["meteor_config"],
+                    "auto_manual": style["auto_manual"]
+                }
+            })
+        except Exception as e:
+            print(f"❌ 保存样式配置出错：{str(e)}")
+            traceback.print_exc()
+            return jsonify({"code": 500, "msg": f"保存样式配置失败：{str(e)}"}), 200
 
 

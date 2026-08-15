@@ -292,6 +292,42 @@ def register_tempo_ai_routes(app):
             traceback.print_exc()
             return jsonify({"code": 500, "msg": f"查询任务状态失败：{str(e)}"}), 500
 
+    # 3. 直读 album_tempo 缓存（v0.9 P0）：前端自动样式按 BPM 微调用，只读不改动 ensure/analyze/status
+    #    有缓存 → {ready:true, tempo:{track_tempos, avg_bpm, ...}}；无缓存 → {ready:false}（等待 ensure/analyze 补齐）
+    @app.route('/api/ai/tempo/get/<int:album_pool_id>', methods=['GET', 'OPTIONS'])
+    @login_required
+    def tempo_get(album_pool_id):
+        try:
+            if request.method == 'OPTIONS':
+                return jsonify({"code": 200, "msg": "OPTIONS allowed"}), 200
+            current_user_id = get_current_user_id()
+            if current_user_id is None:
+                return jsonify({"code": 401, "msg": "用户未登录！"}), 401
+
+            db = get_db()
+            cursor = db.cursor(pymysql.cursors.DictCursor)
+            try:
+                cursor.execute('SELECT 1 FROM album_pool WHERE id = %s', (album_pool_id,))
+                if not cursor.fetchone():
+                    return jsonify({"code": 404, "msg": f"公共专辑ID[{album_pool_id}]不存在！"}), 404
+                cursor.execute('SELECT tempo FROM album_tempo WHERE album_pool_id = %s', (album_pool_id,))
+                row = cursor.fetchone()
+            finally:
+                cursor.close()
+
+            if not row:
+                return jsonify({"code": 200, "msg": "该专辑尚无 BPM 缓存（未分析或分析中）", "data": {"ready": False}})
+            tempo = safe_json_loads(row.get('tempo')) or {}
+            return jsonify({
+                "code": 200,
+                "msg": "获取 BPM 缓存成功",
+                "data": {"ready": True, "tempo": tempo},
+            })
+        except Exception as e:
+            print(f"❌ 直读 BPM 缓存出错：{str(e)}")
+            traceback.print_exc()
+            return jsonify({"code": 500, "msg": f"读取 BPM 缓存失败：{str(e)}"}), 500
+
     return app
 
 

@@ -415,6 +415,35 @@ def test_tempo_status_not_found(client, admin_user):
     assert r['code'] == 404, r
 
 
+# ==================== 直读 album_tempo 缓存（v0.9 P0，GET /api/ai/tempo/get） ====================
+
+@pytest.mark.realdata
+def test_tempo_get_pool_not_found(client, test_user):
+    r = client.get('/api/ai/tempo/get/999999', headers=test_user['headers']).get_json()
+    assert r['code'] == 404, r
+
+
+@pytest.mark.realdata
+def test_tempo_get_no_cache_ready_false(client, test_user):
+    pool_id = _insert_pool_album(client)  # 无 mp3 也无缓存
+    r = client.get(f'/api/ai/tempo/get/{pool_id}', headers=test_user['headers']).get_json()
+    assert r['code'] == 200, r
+    assert r['data']['ready'] is False
+
+
+@pytest.mark.realdata
+def test_tempo_get_cached_returns_tempo(client, test_user):
+    pool_id = _insert_pool_album(client)
+    _insert_tempo_cache(client, pool_id, {
+        'track_tempos': [120.0, 90.0], 'avg_bpm': 105.0, 'min_bpm': 90.0, 'max_bpm': 120.0,
+    })
+    r = client.get(f'/api/ai/tempo/get/{pool_id}', headers=test_user['headers']).get_json()
+    assert r['code'] == 200, r
+    assert r['data']['ready'] is True
+    assert r['data']['tempo']['avg_bpm'] == 105.0
+    assert r['data']['tempo']['track_tempos'] == [120.0, 90.0]
+
+
 # ==================== 真实 librosa 冒烟（验证正式管线端到端） ====================
 
 @pytest.mark.realdata

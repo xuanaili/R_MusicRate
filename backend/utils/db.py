@@ -758,6 +758,42 @@ CREATE TABLE IF NOT EXISTS ai_quota (
         raise e
 
 
+# ========== ✅ v0.9 P0：用户专辑样式配置表 user_album_style ==========
+def create_user_album_style():
+    """创建用户专辑动画样式配置表（按 user_id + album_id 持久化，切 tab / 刷新 / 换设备不丢）
+    - UNIQUE(user_id, album_id)：每个用户每张专辑一条样式配置（upsert 幂等）
+    - style_type ∈ close / ball / meteor；auto_manual ∈ auto / manual（手动调整后不再被自动覆盖）
+    - rhy_config TEXT 存 JSON {a,b,c,d,e}（0-100）；meteor_config TEXT 存 JSON {angle,size,tailLength,speed}
+    """
+    db = None
+    try:
+        db = get_db()
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('''
+CREATE TABLE IF NOT EXISTS user_album_style (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    user_id INT NOT NULL COMMENT '用户ID（关联users表）',
+    album_id INT NOT NULL COMMENT '专辑ID（关联 albums_{user_id}）',
+    style_type VARCHAR(10) NOT NULL DEFAULT 'close' COMMENT '动画类型：close/ball/meteor',
+    rhy_config TEXT NOT NULL COMMENT '小球参数JSON：{a,b,c,d,e}（0-100）',
+    meteor_config TEXT NOT NULL COMMENT '流星参数JSON：{angle,size,tailLength,speed}',
+    auto_manual VARCHAR(10) NOT NULL DEFAULT 'auto' COMMENT '自动/手动：auto=自动生成可覆盖，manual=手动调整不再覆盖',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_user_album (user_id, album_id),
+    INDEX idx_album_id (album_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户专辑动画样式配置表（v0.9 P0）';
+        ''')
+        db.commit()
+        cursor.close()
+        print("✅ user_album_style 用户专辑样式配置表 创建/检查成功！")
+    except Exception as e:
+        if db: db.rollback()
+        print(f"❌ 创建user_album_style表失败：{str(e)}")
+        print(traceback.format_exc())
+        raise e
+
+
 # ========== ✅✅✅ 核心：初始化所有基础表 ==========
 def init_base_tables():
     """初始化基础表"""
@@ -792,6 +828,8 @@ def init_base_tables():
         # v0.8.1 P5：AI 助手对话历史 + 用量表（chat 成功才落库 + 每日配额）
         create_ai_conversation()
         create_ai_quota()
+        # v0.9 P0：用户专辑动画样式配置表（曲目列表样式参数自动化，持久化）
+        create_user_album_style()
 
         print("✅ MySQL基础表初始化成功！")
         init_default_admin()
