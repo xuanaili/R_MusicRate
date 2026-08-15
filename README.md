@@ -147,6 +147,87 @@ MusicRate/
 
 ---
 
+## v0.9 — 曲目列表样式参数自动化 + 配置持久化（规划已定稿）
+
+> 承接 RhythmBall 节奏动画（小球水滴 / 流星）样式参数面板：① 打开专辑时按「类型(tags) + BPM」自动生成初始样式与参数（用户可再手动微调，手动后不再被覆盖，面板提供「按类型/BPM 重新生成」按钮）；② 配置按 user_id + album_id 存后端表，切 tab / 刷新 / 换设备不丢；③ 动画层固定在专辑详情根层 wrapDom，切 AI 助手 / 平台评论 / 听后感 / 歌词 tab 动画继续、配置不重置（修掉 RhythmBall `initialBallConfig` prop 声明未使用 → 每次切回曲目列表重置为默认的 bug）。规划于 2026-08-15 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地。
+
+### 功能概述
+
+1. **自动初始化**：打开专辑时，若该专辑无手动配置，自动按「tags 决定风格预设（选小球水滴 or 流星 + 基础参数档位）→ BPM 微调能量参数（速度 / 密度 / 生成频率）」生成初始样式与参数并落库为 auto 态；BPM 未就绪先用 tags，分析完成后若仍为 auto 态则补 BPM 微调生效。
+2. **手动后不覆盖**：用户拖拽参数 / 切换样式 / 手动点开关即标记 manual，之后不再被自动覆盖；面板提供「按类型/BPM 重新生成」按钮手动重跑自动参数（结果落为 auto 态）。
+3. **后端持久化**：样式配置（style_type + rhy_config + meteor_config + auto_manual）按 user_id + album_id 存后端表，刷新 / 切页 / 换设备不丢；GET 无记录即「从未配置」，首次打开自动生成。
+4. **专辑页内动画持久**：动画层已 `position: fixed` 全屏（z-index:99，pointer-events:none）固定在 AlbumDetail 根层，切 AI 助手 / 平台评论 / 听后感 / 歌词 tab 动画继续运行；RhythmBall 面板挂载时用父组件单一配置源初始化，不再回默认。
+
+### 已定决策（2026-08-15 拍板）
+
+| 决策点 | 结论 |
+|--------|------|
+| 自动依据 | **类型(tags) + BPM 结合**（用户拍板）——tags 决定风格预设与基础参数，BPM 微调能量参数；BPM 未就绪先用 tags |
+| 持久化位置 | **后端表**（用户拍板）——新增 `user_album_style` 按 user_id + album_id 存，跨设备同步 |
+| 动画范围 | **专辑页内持久**（用户拍板）——动画层保持 AlbumDetail 根层，切 tab 不销毁；离开专辑页动画随音乐停止（音频本就在专辑页内） |
+| 自动时机 | **首次自动 + 手动后不覆盖**（用户拍板）——无手动配置才自动生成；任何手动调整置 manual 不再覆盖；提供「按类型/BPM 重新生成」按钮 |
+| BPM 粒度 | 专辑 `avg_bpm` 为主（稳定），单曲 BPM 作后续增强 |
+| 自动样式选择 | 自动生成同时决定 `style_type`（ball / meteor / close），用户可再手动切换 |
+
+### 数据来源
+
+| 数据 | 存哪 | 现成 or 需新建 | 查询接口 / 字段 |
+|------|------|--------------|----------------|
+| 专辑类型 / 风格 tags | `albums_{user_id}.tags`（前端 `album.tags`） | 现成 | `GET /api/album/detail` |
+| 每曲 / 专辑 BPM | `album_tempo`（album_pool_id 唯一，track_tempos + avg/min/max） | 现成表 | `GET /api/ai/tempo/get/<pool_id>`（**需新增**直接读缓存接口） |
+| 样式配置 | `user_album_style`（新表，user_id + album_id 唯一） | 需新建表 | `GET/POST /api/album/style/<album_id>` |
+| 自动预设映射 | `frontend/src/config/index.js` + `utils/styleAuto.js` | 需新建 | 纯函数 |
+
+### 架构设计
+
+- **纯函数自动参数**：`frontend/src/utils/styleAuto.js`——`buildAutoConfig(tags, tempoDict)` 返回 `{style_type, rhy_config, meteor_config}`；内部 `presetFromTags(tags)`（读 config/index.js 风格→预设表，English 英文 + 【中文】双向匹配）→ `applyBpmAdjustment(preset, avg_bpm)`（相对 100bpm 缩放速度 / 密度 / 生成频率）；纯函数 node 可单测（镜像 scoreList / duration 既有模式）
+- **后端表 user_album_style**：user_id + album_id UNIQUE；字段 style_type + rhy_config（JSON a-e）+ meteor_config（JSON angle/size/tailLength/speed）+ auto_manual('auto'/'manual') + 时间戳；建表幂等挂 `init_base_tables()`
+- **读写接口**：`GET/POST /api/album/style/<album_id>`（`@login_required`，校验 album 归属 `albums_{user_id}`）——GET 无记录返回 `data:null`；POST upsert 幂等
+- **BPM 直读接口**：`GET /api/ai/tempo/get/<album_pool_id>`——读 `album_tempo` 缓存 JSON 返回 `{ready:true, tempo:{...}}` / `{ready:false}`；不改动 ensure / analyze / status 既有接口
+- **AlbumDetail 集成（单一配置源）**：getAlbumDetail 成功 → GET style：null → `buildAutoConfig(tags, tempo?)` + save(auto)；auto → 若 tempo 新就绪重跑并 save；manual → 原样加载。结果统一写入 `isBallPlay / isMeteorPlay / rhyConfig / meteorConfig`，经 props 下发给 RhythmBall 初始化；任何用户调整事件 → auto_manual='manual' + 防抖 save；「重新生成」→ 重跑 auto + save(auto)
+- **BPM 懒获取**：auto 模式且 tempo 未就绪 → 复用 ensure（v0.8.3 已预触发）返回 task_id → 轮询 `tempo/status` 至 done（~90s 上限，镜像 AI 助手提示条模式）→ GET tempo 补 BPM 微调（仅 auto 模式生效，manual 不动）
+- **RhythmBall 修复**：`initialBallConfig` prop 真正应用（初始化 rhyConfig）；新增 `initialMeteorConfig` / `initialToggleStatus` props；新增「按类型/BPM 重新生成」按钮（emit 上抛父组件）；参数滑杆 / 开关变更即 emit（父组件负责持久化与标记 manual）
+
+### 数据库（1 张新表）
+
+1. 新增 `user_album_style` 表——`id`、`user_id INT`、`album_id INT`、`style_type VARCHAR(10)`（close/ball/meteor）、`rhy_config TEXT`（JSON a-e）、`meteor_config TEXT`（JSON angle/size/tailLength/speed）、`auto_manual VARCHAR(10)`（auto/manual）、`create_time DATETIME DEFAULT CURRENT_TIMESTAMP`、`update_time DATETIME`，`UNIQUE KEY(user_id, album_id)`；复用 `create_user_listening_log()` 的 `CREATE TABLE IF NOT EXISTS` 幂等模式挂 `init_base_tables()`
+
+### 后端接口
+
+- `GET /api/album/style/<album_id>`（新增，登录）——读本人该专辑样式配置；无记录 `data:null`；归属校验（`albums_{user_id}` 存在）
+- `POST /api/album/style/<album_id>`（新增，登录）——upsert `{style_type, rhy_config, meteor_config, auto_manual}`；归属校验；返回保存后数据
+- `GET /api/ai/tempo/get/<album_pool_id>`（新增，登录）——读 `album_tempo` 缓存 JSON；`{ready:false}` 或 `{ready:true, tempo:{track_tempos, avg_bpm, ...}}`
+
+### 前端组件
+
+- `utils/styleAuto.js`（新增）——`buildAutoConfig / presetFromTags / applyBpmAdjustment` 纯函数
+- `config/index.js`（改）——风格→样式预设表（各风格选 ball/meteor + 基础参数档位 + BPM 缩放系数）
+- `views/AlbumDetail.vue`（改）——样式配置 load/save/auto-init/BPM 轮询；单一配置源下发 props；手动调整防抖保存 + 标记 manual
+- `components/albumDetail/AlbumTrackList.vue`（改）——转发 style 配置 props + 「按类型/BPM 重新生成」事件
+- `components/RhythmBall.vue`（改）——应用 `initialBallConfig` / `initialMeteorConfig` / `initialToggleStatus`；新增「按类型/BPM 重新生成」按钮；变更即 emit
+
+### 分阶段路线
+
+- **P0 纯函数 + 后端**：`styleAuto.js` 纯函数 + 单测（node golden，镜像 scoreList 模式）→ `user_album_style` 表 + GET/POST 接口 + 归属校验 → `tempo/get` 直读接口 → realdata 测试
+- **P1 前端集成**：AlbumDetail load/save/auto-init + BPM 轮询 + RhythmBall initial props + 「重新生成」按钮 → `npm run lint` + build + 手动回归（切 tab 配置不重置、手动后不覆盖、重新生成、BPM 就绪补生效、刷新持久）
+
+### 难点与对策
+
+- **RhythmBall 每次 v-if 重置**：根因 `initialBallConfig` prop 声明未使用 + 默认值与父组件不一致（a-e: 20-50 vs 1-5）→ 父组件作单一配置源，props 初始化子组件，统一默认值
+- **BPM 未就绪**：ensure 预触发已存在（v0.8.3），auto 模式轮询 status 至 done 后补 BPM 微调；超时仅用 tags 预设，下次打开自动补
+- **手动后不覆盖**：`auto_manual` 标记 + 任何调整即置 manual，杜绝自动覆盖用户微调
+- **后端持久化一致性**：同一专辑只有一份用户副本（copy 查重），user_id + album_id 唯一键足够；归属校验防越权读写他人配置
+- **配置并发**：防抖保存 + upsert 幂等；GET 无记录 null 与「从未配置」等价，首次打开即自动生成
+
+### 待做（勾选清单）
+
+- [ ] P0 `styleAuto.js` 纯函数 + 单测（node golden）✅ 待实现
+- [ ] P0 `user_album_style` 表 + GET/POST 接口 + 归属校验 + realdata ✅ 待实现
+- [ ] P0 `GET /api/ai/tempo/get` 直读接口 + realdata ✅ 待实现
+- [ ] P1 AlbumDetail 集成（load/save/auto-init/BPM 轮询/单一配置源）✅ 待实现
+- [ ] P1 RhythmBall initial props + 「按类型/BPM 重新生成」按钮 ✅ 待实现
+- [ ] P1 lint + build + 手动回归 + README 归档 ✅ 待实现
+
 ---
 
 ## v0.8.5 — AI 助手整张专辑歌词上下文（规划已定稿）
