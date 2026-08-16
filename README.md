@@ -229,7 +229,7 @@ MusicRate/
 - **切 tab 动画持久**：RhythmBall `clearAllStates()` 不再发 toggle-off 到父组件（原实现销毁即关父动画）——动画开关单一配置源在 AlbumDetail，切 AI/评论/听后感/歌词 tab 动画继续、配置不重置
 - **流星参数统一**：父 `startAutoMeteorGenerate` 视觉参数改读 `this.meteorConfig`（原从 rhyConfig a-e 反推，与后端 0-100 档位不兼容），生成频率仍由 c/d/e 决定，与 RhythmBall 双生成器视觉一致
 - **0 值保留**：`handleUpdateRhyConfig` 原 `|| 1` 会吞 0（styleAuto 可产出 e=0）→ 改 `Number.isFinite` + clamp 0-100
-- **验收**：`npm run lint` 过 + `npm run build` 过；后端 457 单测 + 28 realdata 绿；API 冒烟（GET null → POST auto → GET 持久 → tempo/get ready）全通过
+- **验收**：`npm run lint` 过 + `npm run build` 过；后端 457 单测 + 28 realdata 绿；API 冒烟（GET null → POST auto → GET 持久 → tempo/get ready）全通过；**Playwright + Edge headless 真实浏览器回归 10 项全过**（首次打开自动生成落库 / auto 态 / RhythmBall 加载配置 / toggle 与 style_type 一致 / 拖拽标 manual / 切 tab 参数不重置且仍 manual / 重新生成回 auto / 刷新持久 / 无前端运行时错误）
 
 ### 待做（勾选清单）
 
