@@ -149,7 +149,7 @@ MusicRate/
 
 ## v0.9 — 曲目列表样式参数自动化 + 配置持久化（规划已定稿）
 
-> 承接 RhythmBall 节奏动画（小球水滴 / 流星）样式参数面板：① 打开专辑时按「类型(tags) + BPM」自动生成初始样式与参数（用户可再手动微调，手动后不再被覆盖，面板提供「按类型/BPM 重新生成」按钮）；② 配置按 user_id + album_id 存后端表，切 tab / 刷新 / 换设备不丢；③ 动画层固定在专辑详情根层 wrapDom，切 AI 助手 / 平台评论 / 听后感 / 歌词 tab 动画继续、配置不重置（修掉 RhythmBall `initialBallConfig` prop 声明未使用 → 每次切回曲目列表重置为默认的 bug）。规划于 2026-08-15 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地；**P0 纯函数 + 后端（styleAuto.js + user_album_style 表/接口 + tempo/get 直读）已完成（2026-08-15）**，P1 前端集成待落地。
+> 承接 RhythmBall 节奏动画（小球水滴 / 流星）样式参数面板：① 打开专辑时按「类型(tags) + BPM」自动生成初始样式与参数（用户可再手动微调，手动后不再被覆盖，面板提供「按类型/BPM 重新生成」按钮）；② 配置按 user_id + album_id 存后端表，切 tab / 刷新 / 换设备不丢；③ 动画层固定在专辑详情根层 wrapDom，切 AI 助手 / 平台评论 / 听后感 / 歌词 tab 动画继续、配置不重置（修掉 RhythmBall `initialBallConfig` prop 声明未使用 → 每次切回曲目列表重置为默认的 bug）。规划于 2026-08-15 定稿，实现按 `feature_development_workflow`（20260810）+ `testing_workflow`（20260810）成对拆 P0→P1 落地；**P0 纯函数 + 后端（styleAuto.js + user_album_style 表/接口 + tempo/get 直读，2026-08-15）+ P1 前端集成（AlbumDetail 单一配置源 + RhythmBall initial props + 重新生成按钮，2026-08-16）均已完成**。
 
 ### 功能概述
 
@@ -219,14 +219,26 @@ MusicRate/
 - **后端持久化一致性**：同一专辑只有一份用户副本（copy 查重），user_id + album_id 唯一键足够；归属校验防越权读写他人配置
 - **配置并发**：防抖保存 + upsert 幂等；GET 无记录 null 与「从未配置」等价，首次打开即自动生成
 
+### P1 实现要点（复盘速查）
+
+- **单一配置源**：AlbumDetail 持有 `rhyConfig`（a-e 0-100）/ `meteorConfig`（angle/size/tailLength/speed）/ `isBallPlay` / `isMeteorPlay` / `autoManual`，经 `initialRhyConfig` / `initialMeteorConfig` / `initialToggleStatus` props 下发 RhythmBall；RhythmBall 初始化读 props + deep watch 父组件更新（`rhyEqual`/`meteorEqual` 等值跳过防 emit 回环）
+- **load 三分支**：`loadAlbumStyle()` GET `/api/album/style` → `null`（从未配置）→ `buildAutoConfig(tags, tempo?)` + save(auto)；`auto` → tempo 已就绪重跑 BPM 微调并 save、未就绪加载现有 + 轮询；`manual` → 原样加载
+- **BPM 懒补**：auto 模式 tempo 未就绪 → 复用 `ensure`（幂等）拿 task_id → 轮询 `tempo/status` 至 done（90s 上限）→ `tempo/get` 重跑 `buildAutoConfig` 并 save(auto)；仅 `autoManual==='auto'` 生效，manual 不动
+- **manual 标记**：RhythmBall 用户交互（拖拽/点击滑杆、切换 close/ball/meteor）`$emit('mark-manual')` → 父 `autoManual='manual'` + 防抖 800ms save；**初始化/父驱动 sync 的 emit 不标 manual**（`styleLoaded` 守卫防未加载时误写 close）
+- **重新生成**：RhythmBall 面板新增「按类型/BPM 重新生成」按钮 `$emit('re-generate')` → 父 `regenerateStyle()` 重跑 auto 并落 auto 态
+- **切 tab 动画持久**：RhythmBall `clearAllStates()` 不再发 toggle-off 到父组件（原实现销毁即关父动画）——动画开关单一配置源在 AlbumDetail，切 AI/评论/听后感/歌词 tab 动画继续、配置不重置
+- **流星参数统一**：父 `startAutoMeteorGenerate` 视觉参数改读 `this.meteorConfig`（原从 rhyConfig a-e 反推，与后端 0-100 档位不兼容），生成频率仍由 c/d/e 决定，与 RhythmBall 双生成器视觉一致
+- **0 值保留**：`handleUpdateRhyConfig` 原 `|| 1` 会吞 0（styleAuto 可产出 e=0）→ 改 `Number.isFinite` + clamp 0-100
+- **验收**：`npm run lint` 过 + `npm run build` 过；后端 457 单测 + 28 realdata 绿；API 冒烟（GET null → POST auto → GET 持久 → tempo/get ready）全通过
+
 ### 待做（勾选清单）
 
 - [x] P0 `styleAuto.js` 纯函数 + 单测（node golden）✅ 2026-08-15
 - [x] P0 `user_album_style` 表 + GET/POST 接口 + 归属校验 + realdata ✅ 2026-08-15
 - [x] P0 `GET /api/ai/tempo/get` 直读接口 + realdata ✅ 2026-08-15
-- [ ] P1 AlbumDetail 集成（load/save/auto-init/BPM 轮询/单一配置源）✅ 待实现
-- [ ] P1 RhythmBall initial props + 「按类型/BPM 重新生成」按钮 ✅ 待实现
-- [ ] P1 lint + build + 手动回归 + README 归档 ✅ 待实现
+- [x] P1 AlbumDetail 集成（load/save/auto-init/BPM 轮询/单一配置源）✅ 2026-08-16
+- [x] P1 RhythmBall initial props + 「按类型/BPM 重新生成」按钮 ✅ 2026-08-16
+- [x] P1 lint + build + 手动回归 + README 归档 ✅ 2026-08-16
 
 ---
 

@@ -190,21 +190,23 @@
               </div>
             </div>
           </div>
-          <!-- 引入节奏小球子组件 -->
+          <!-- 引入节奏小球子组件（v0.9 P1：父组件 AlbumDetail 单一配置源下发初始参数 + 用户调整事件上抛） -->
           <RhythmBall
             :album="album"
             :isMusicPlaying="isMusicPlaying"
             :mainColorDark="mainColorDark"
             :mainColorDarkDouble="mainColorDarkDouble"
 
-
-            :initialBallConfig="currentBallConfig"
+            :initialBallConfig="initialRhyConfig"
+            :initialMeteorConfig="initialMeteorConfig"
+            :initialToggleStatus="initialToggleStatus"
             @toggle-ball-play="handleBallPlayToggle"
             @toggle-meteor-play="handleMeteorPlayToggle"
             @generate-meteor="handleGenerateMeteor"
-
             @update-rhy-config="$emit('update-rhy-config', $event);"
-
+            @update-meteor-config="$emit('update-meteor-config', $event);"
+            @mark-manual="$emit('mark-manual')"
+            @re-generate="$emit('re-generate')"
           />
         </div>
       </div>
@@ -220,7 +222,6 @@
 </template>
 
 <script>
-import globalConfig from '@/config/index.js';
 import TrackParse from '@/components/sidebar/TrackParse.vue';
 // 引入节奏小球子组件
 import RhythmBall from '@/components/RhythmBall.vue';
@@ -248,6 +249,19 @@ export default {
       type: Boolean,
       required: true,
       default: true
+    },
+    // v0.9 P1：转发父组件 AlbumDetail 单一配置源（小球 a-e / 流星 angle-size-tailLength-speed / 动画开关）
+    initialRhyConfig: {
+      type: Object,
+      default: () => ({})
+    },
+    initialMeteorConfig: {
+      type: Object,
+      default: () => ({})
+    },
+    initialToggleStatus: {
+      type: String,
+      default: ''
     }
   },
   data() {
@@ -263,8 +277,6 @@ export default {
       currentSliderDom: null,
       isDurationMode: false,
       showParseModal: false,
-      // 仅保留小球配置传递给子组件
-      currentBallConfig: globalConfig.ballConfig.default,
       isHoverRatingArea: false,
       isMeteorPlay: false, // 新增：流星播放状态
       // 评分防抖保存（v0.6 收尾）：打分隔评分也能落盘，不必等离开页面/切歌
@@ -295,8 +307,6 @@ export default {
           this.initFavouriteTrackList(false);
           this.getAllScore();
         }
-        // 更新小球配置（传递给子组件）
-        //this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
       }, deep: true
     },
     isTrackEditMode(newVal) {if (!newVal) this.showParseModal = false;},
@@ -309,17 +319,11 @@ export default {
     this.initTrackList();
     this.initFavouriteTrackList();
     this.getAllScore();
-    this.$nextTick(() => {
-      //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
-    });
   },
   activated() {
     this.initTrackList(true);
     this.initFavouriteTrackList();
     this.getAllScore();
-    this.$nextTick(() => {
-      //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
-    });
   },
   deactivated() {
     this.saveAllScore();
@@ -711,24 +715,10 @@ export default {
       this.scoreEditVersion++; // 本地打分版本号递增
       this.scheduleScoreSave();
     },
-    // 获取小球配置（仅用于初始化传递给子组件）
-    getBallConfigByTag(tags) {
-      if (!tags || !Array.isArray(tags) || tags.length === 0) {
-        return globalConfig.ballConfig.default;
-      }
-      const firstTag = tags[0];
-      return globalConfig.ballConfig[firstTag] || globalConfig.ballConfig.default;
-    },
     // 子组件事件处理方法
     handleBallPlayToggle(isPlay) {
       // 向父组件发射小球开关状态
       this.$emit('toggle-ball-play', isPlay);
-    },
-    handleBallConfigUpdate(newConfig) {
-      // 更新父组件中的小球配置
-      this.currentBallConfig = newConfig;
-      // 向父组件的父组件发射配置更新事件
-      this.$emit('update-ball-config', newConfig);
     },
     handleGenerateRhythmBall(ballInfo) {
       // 向父组件发射生成小球事件

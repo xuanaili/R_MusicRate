@@ -67,6 +67,12 @@
 
 
         @update-rhy-config="handleUpdateRhyConfig"
+        :initial-rhy-config="rhyConfig"
+        :initial-meteor-config="meteorConfig"
+        :initial-toggle-status="initialToggleStatus"
+        @update-meteor-config="handleUpdateMeteorConfig"
+        @mark-manual="markStyleManual"
+        @re-generate="regenerateStyle"
 
       />
 
@@ -266,7 +272,8 @@ import AlbumLyricViewer from '@/components/albumDetail/AlbumLyricViewer'
 import AlbumAIAssistant from '@/components/albumDetail/AlbumAIAssistant'
 import {calculateAlbumTotalScore} from '@/utils/scoreCalc.js'
 import {handleLevelFeedback} from '@/utils/levelFeedback'
-// ✅✅✅ 整合新增：引入全局配置文件 (小球动画配置)
+// v0.9 P1：动画样式自动生成纯函数（tags + BPM → style_type / rhy_config / meteor_config）
+import {buildAutoConfig} from '@/utils/styleAuto.js'
 
 export default {
   name: 'AlbumDetail',
@@ -384,15 +391,25 @@ export default {
     autoMeteorTimer: null, // 流星自动生成定时器 ✅ 新增
 
 
-      //节奏组件共用配置
+      //节奏组件共用配置（v0.9 P1：单一配置源——打开专辑时从后端 user_album_style 加载，
+      // 未配置则 styleAuto buildAutoConfig(tags+BPM) 自动生成并落库；任何用户调整 → auto_manual='manual' 不再覆盖）
       rhyConfig:{
-        a:1,
-        b:2,
-        c:3,
-        d:4,
-        e:5
-
+        a:20,
+        b:40,
+        c:30,
+        d:50,
+        e:10
       },
+      meteorConfig: {
+        angle: 45,
+        size: 10,
+        tailLength: 50,
+        speed: 30
+      },
+      autoManual: 'auto',    // auto_manual 状态：auto=可被自动覆盖 / manual=用户微调后不再自动覆盖
+      styleLoaded: false,    // 样式配置是否已加载/应用（加载前的初始化 emit 不落库，防止误写 close）
+      styleSaveTimer: null,  // 样式配置防抖保存定时器（用户调整后 800ms 落库）
+      tempoStyleTimer: null  // BPM 就绪轮询定时器（auto 模式补 BPM 微调用）
     };
 
 
@@ -403,6 +420,18 @@ export default {
     },
     currentPlaylist() {
       return this.playlistTabs[this.activeTabIndex]?.tracks || []
+    },
+    // v0.9 P1：动画开关 → RhythmBall initialToggleStatus（'play'/'meteor'/'close'），单一配置源派生
+    initialToggleStatus() {
+      if (this.isMeteorPlay) return 'meteor';
+      if (this.isBallPlay) return 'play';
+      return 'close';
+    },
+    // v0.9 P1：动画类型（后端 user_album_style.style_type 存储值：close/ball/meteor）
+    styleType() {
+      if (this.isMeteorPlay) return 'meteor';
+      if (this.isBallPlay) return 'ball';
+      return 'close';
     },
     // 核心新增：计算属性 - 自动计算专辑综合评分，响应式更新
     albumTotalScore() {
@@ -424,18 +453,6 @@ export default {
     }
   },
   watch: {
-
-        // 新增：监听流星配置更新
-    meteorConfig: {
-      handler(newVal) {
-        // 同步到currentBallConfig，确保参数统一
-        this.currentBallConfig = {
-          ...this.currentBallConfig,
-          ...newVal
-        };
-      },
-      deep: true
-    },
 
   volume(val) {
     const volumeNum = Number(val);
@@ -484,8 +501,7 @@ export default {
 
           this.setFullPageBg(newVal.cover_img);
           if (newVal.cover_img) this.extractAlbumMainColor(newVal.cover_img);
-          // ✅✅✅ 整合新增：专辑切换时，重新匹配小球配置
-          //this.currentBallConfig = this.getBallConfigByTag(newVal.tags);
+          // v0.9 P1：动画样式配置单一配置源在 AlbumDetail，专辑切换由 loadAlbumStyle() 重新加载
         }
       }
     },
@@ -570,24 +586,6 @@ export default {
     }
   },
 
-
-      // 新增：监听配置参数变化，实时重启动画
-  currentBallConfig: {
-    handler() {
-      // 如果当前是小球模式且音乐在播放，重启小球生成
-      if (this.isBallPlay && this.isPlaying) {
-        this.stopAutoBallGenerate(); // 先停止旧定时器
-        this.startAutoBallGenerate(); // 重启加载新参数
-      }
-      // 如果当前是流星模式且音乐在播放，重启流星生成
-      if (this.isMeteorPlay && this.isPlaying) {
-        this.stopAutoMeteorGenerate(); // 先停止旧定时器
-        this.startAutoMeteorGenerate(); // 重启加载新参数
-      }
-    },
-    deep: true // 深度监听对象内部属性变化
-  },
-
   },
 async created() {
   if (!localStorage.getItem('token')) {
@@ -631,8 +629,7 @@ async created() {
   this.autoPlayCurrentAlbumAudio();
 },
   mounted() {
-    // ✅✅✅ 整合新增：父组件挂载后初始化小球动画
-    //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
+    // ✅✅✅ 整合新增：父组件挂载后初始化小球动画（样式配置已由 loadAlbumStyle 加载）
     this.initBallAnimation();
       this.initMeteorAnimation(); // 初始化流星动画
     this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();
@@ -645,7 +642,6 @@ async created() {
   },
   activated() {
     // ✅✅✅ 整合新增：组件激活时重新初始化小球动画
-    //this.currentBallConfig = this.getBallConfigByTag(this.album.tags);
     this.initBallAnimation();
       this.initMeteorAnimation(); // 激活时初始化流星
     this.isBallPlay && this.isPlaying && this.startAutoBallGenerate();
@@ -660,6 +656,12 @@ async created() {
     // ✅✅✅ 整合新增：组件销毁时彻底销毁小球动画+移除监听
     clearInterval(this.ratingTimer);
     this.stopAiRecognizePolling(); // v0.8.1 P2：销毁时停止 AI 识别轮询（防内存泄漏）
+    this.stopTempoStylePoll(); // v0.9 P1：销毁时停止 BPM 就绪轮询（防内存泄漏）
+    if (this.styleSaveTimer) { // v0.9 P1：销毁时落盘待保存的样式配置快照
+      clearTimeout(this.styleSaveTimer);
+      this.styleSaveTimer = null;
+      this.saveAlbumStyle(this.autoManual);
+    }
     this.destroyBallAnimation();
       this.destroyMeteorAnimation(); // 销毁时清理流星
     this.stopAutoBallGenerate();
@@ -680,22 +682,20 @@ async created() {
   },
   methods: {
         // 新增：接收 rhyConfig 并更新本地数据
+    // 接收 RhythmBall 上报的小球参数（a-e，0-100；v0.9 P1：保留 0 值 + 防抖保存，不再 || 1 吞 0）
     handleUpdateRhyConfig(rhyConfig) {
+      const num = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+      };
+      this.rhyConfig = {
+        a: num(rhyConfig.a),
+        b: num(rhyConfig.b),
+        c: num(rhyConfig.c),
+        d: num(rhyConfig.d),
+        e: num(rhyConfig.e)
+      };
 
-console.log('祖父组件接收的 rhyConfig：', JSON.parse(JSON.stringify(this.rhyConfig)));
-  // 2. 核心修改：只提取需要的5个字段，忽略所有其他字段
-  const pureRhyConfig = {
-    a: Number(rhyConfig.a) || 1,  // 加默认值，避免空值/非数字
-    b: Number(rhyConfig.b) || 2,
-    c: Number(rhyConfig.c) || 3,
-    d: Number(rhyConfig.d) || 4,
-    e: Number(rhyConfig.e) || 5
-  };
-
-  // 3. 赋值纯净的对象给 this.rhyConfig
-  this.rhyConfig = pureRhyConfig;
-
-      // 可选：如果需要根据 rhyConfig 更新动画逻辑
       if (this.isBallPlay && this.isPlaying) {
         this.stopAutoBallGenerate();
         this.startAutoBallGenerate();
@@ -704,6 +704,7 @@ console.log('祖父组件接收的 rhyConfig：', JSON.parse(JSON.stringify(this
         this.stopAutoMeteorGenerate();
         this.startAutoMeteorGenerate();
       }
+      if (this.styleLoaded) this.scheduleStyleSave(); // 样式加载前的初始化 emit 不落库
     },
 
 
@@ -719,6 +720,8 @@ console.log('祖父组件接收的 rhyConfig：', JSON.parse(JSON.stringify(this
     // ✅✅✅ 【修复3】父组件新增：接收子组件的小球开关事件，修改父组件状态
     handleToggleBallPlay(val) {
       this.isBallPlay = val;
+      // v0.9 P1：开关变化即防抖持久化（manual 标记由 RhythmBall mark-manual 事件负责；样式加载前不落库）
+      if (this.styleLoaded) this.scheduleStyleSave();
     },
 
 
@@ -1606,16 +1609,198 @@ handleUpdateAlbumScore(scoreList) {
 
     // v0.8.3 P1：打开专辑详情页即预触发 BPM 节奏分析（幂等 get-or-trigger），消除首次提问「节奏分析中」滞后；
     // 失败不阻断详情页（非关键路径），与 AI 助手 tab 打开的触发互不冲突（ensure 内部缓存短路 + find_active 防重复）
-    preloadTempo() {
-      if (!this.albumPoolId) return;
-      this.$axios.post(`/api/ai/tempo/ensure/${this.albumPoolId}`)
-        .then(res => {
-          if (res.data.code !== 200) return;
-          // ready / analyzing / 无 mp3 皆无需处理：AI 助手 tab 打开时会自行轮询就绪
-        })
-        .catch(err => {
-          console.error('❌ 预触发节奏分析失败：', err);
+    async preloadTempo() {
+      if (!this.albumPoolId) return null;
+      try {
+        const res = await this.$axios.post(`/api/ai/tempo/ensure/${this.albumPoolId}`);
+        if (res.data.code !== 200) return null;
+        // {ready:true} / {analyzing:true, task_id} / {has_mp3:false} —— AI 助手 tab 打开时会自行轮询就绪
+        return res.data.data || null;
+      } catch (err) {
+        console.error('❌ 预触发节奏分析失败：', err);
+        return null;
+      }
+    },
+
+    // ========== v0.9 P1：动画样式配置 load/save/auto-init/BPM 轮询（单一配置源） ==========
+    // 打开专辑后调用：GET user_album_style → null 自动生成落库 / auto 视 tempo 就绪重跑 / manual 原样加载
+    async loadAlbumStyle() {
+      const albumId = this.album.id;
+      if (!albumId) return;
+      try {
+        const res = await this.$axios.get(`/api/album/style/${albumId}`, {
+          headers: {'Authorization': localStorage.getItem('token') || ''}
         });
+        if (res.data.code !== 200) return;
+        const data = res.data.data; // null = 从未配置（首次打开自动生成）
+        if (data === null) {
+          const tempo = await this.fetchTempo();
+          if (this.album.id !== albumId) return; // 期间已切专辑，丢弃过期结果
+          const cfg = buildAutoConfig(this.album.tags, tempo);
+          this.applyStyleConfig(cfg, 'auto');
+          this.saveAlbumStyle('auto');
+          if (!tempo) this.ensureTempoAndPoll();
+          return;
+        }
+        if (data.auto_manual === 'manual') {
+          // manual：原样加载，不再被自动覆盖
+          this.applyStyleConfig(data, 'manual');
+          return;
+        }
+        // auto：tempo 新就绪则重跑 BPM 微调；否则按现有配置加载 + 轮询就绪后补生效
+        const tempo = await this.fetchTempo();
+        if (this.album.id !== albumId) return;
+        if (tempo) {
+          const cfg = buildAutoConfig(this.album.tags, tempo);
+          this.applyStyleConfig(cfg, 'auto');
+          this.saveAlbumStyle('auto');
+        } else {
+          this.applyStyleConfig(data, 'auto');
+          this.ensureTempoAndPoll();
+        }
+      } catch (err) {
+        console.error('❌ 加载样式配置失败：', err);
+      }
+    },
+
+    // 直读 album_tempo 缓存（tempo/get，v0.9 P0 接口）；未就绪返回 null
+    async fetchTempo() {
+      if (!this.albumPoolId) return null;
+      try {
+        const res = await this.$axios.get(`/api/ai/tempo/get/${this.albumPoolId}`, {
+          headers: {'Authorization': localStorage.getItem('token') || ''}
+        });
+        if (res.data.code === 200 && res.data.data && res.data.data.ready) {
+          return res.data.data.tempo;
+        }
+      } catch (err) {
+        console.error('❌ 读取 BPM 缓存失败：', err);
+      }
+      return null;
+    },
+
+    // auto 模式且 tempo 未就绪：复用 ensure（幂等）拿 task_id → 轮询 status 至 done → 补 BPM 微调
+    async ensureTempoAndPoll() {
+      const info = await this.preloadTempo();
+      if (!info) return;
+      if (info.ready) return; // 已就绪（理论上 fetchTempo 应已命中，双保险）
+      if (info.task_id) this.pollTempoForStyle(info.task_id);
+    },
+
+    // 轮询 tempo/status 至 done（~90s 上限），仅 auto 模式生效；就绪后重跑自动参数并落 auto
+    pollTempoForStyle(taskId) {
+      this.stopTempoStylePoll();
+      const deadline = Date.now() + 90 * 1000;
+      const tick = async () => {
+        if (this.autoManual !== 'auto') return; // manual 不动（用户已手动微调，不再自动覆盖）
+        if (Date.now() > deadline) return; // 超时仅用 tags 预设，下次打开自动补
+        try {
+          const res = await this.$axios.get(`/api/ai/tempo/status/${taskId}`, {
+            headers: {'Authorization': localStorage.getItem('token') || ''}
+          });
+          if (res.data.code !== 200) return;
+          const status = res.data.data && res.data.data.status;
+          if (status === 'done') {
+            const tempo = await this.fetchTempo();
+            if (tempo && this.autoManual === 'auto') {
+              const cfg = buildAutoConfig(this.album.tags, tempo);
+              this.applyStyleConfig(cfg, 'auto');
+              this.saveAlbumStyle('auto');
+            }
+            return;
+          }
+          if (status === 'failed') return;
+        } catch (err) {
+          // 网络错误继续轮询
+        }
+        this.tempoStyleTimer = setTimeout(tick, 3000);
+      };
+      tick();
+    },
+    stopTempoStylePoll() {
+      if (this.tempoStyleTimer) {
+        clearTimeout(this.tempoStyleTimer);
+        this.tempoStyleTimer = null;
+      }
+    },
+
+    // 应用样式配置到父组件单一配置源（rhyConfig / meteorConfig / isBallPlay / isMeteorPlay）
+    applyStyleConfig(cfg, autoManual) {
+      if (!cfg) return;
+      this.styleLoaded = true;
+      this.autoManual = autoManual === 'manual' ? 'manual' : 'auto';
+      const rc = cfg.rhy_config || {};
+      const mc = cfg.meteor_config || {};
+      this.rhyConfig = {
+        a: this.numClamp(rc.a),
+        b: this.numClamp(rc.b),
+        c: this.numClamp(rc.c),
+        d: this.numClamp(rc.d),
+        e: this.numClamp(rc.e)
+      };
+      this.meteorConfig = {
+        angle: this.numClamp(mc.angle),
+        size: this.numClamp(mc.size),
+        tailLength: this.numClamp(mc.tailLength),
+        speed: this.numClamp(mc.speed)
+      };
+      const type = cfg.style_type || 'close';
+      if (type === 'close') {
+        this.isBallPlay = false;
+        this.isMeteorPlay = false;
+      } else if (type === 'meteor') {
+        this.isMeteorPlay = true;
+        this.isBallPlay = false;
+      } else {
+        this.isBallPlay = true;
+        this.isMeteorPlay = false;
+      }
+    },
+    numClamp(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+    },
+
+    // 防抖保存样式配置（upsert user_album_style）
+    scheduleStyleSave() {
+      if (this.styleSaveTimer) clearTimeout(this.styleSaveTimer);
+      this.styleSaveTimer = setTimeout(() => {
+        this.styleSaveTimer = null;
+        this.saveAlbumStyle(this.autoManual);
+      }, 800);
+    },
+    saveAlbumStyle(autoManual) {
+      const albumId = this.album.id;
+      if (!albumId) return;
+      this.$axios.post(`/api/album/style/${albumId}`, {
+        style_type: this.styleType,
+        rhy_config: this.rhyConfig,
+        meteor_config: this.meteorConfig,
+        auto_manual: autoManual || 'auto'
+      }, {
+        headers: {'Authorization': localStorage.getItem('token') || '', 'Content-Type': 'application/json'}
+      }).then(res => {
+        if (res.data && res.data.code === 200 && res.data.data) {
+          this.autoManual = res.data.data.auto_manual;
+        }
+      }).catch(err => {
+        console.error('❌ 保存样式配置失败：', err);
+      });
+    },
+
+    // 用户手动调整（RhythmBall mark-manual 事件）→ 标记 manual 不再被自动覆盖 + 防抖保存
+    markStyleManual() {
+      this.autoManual = 'manual';
+      this.scheduleStyleSave();
+    },
+
+    // 「按类型/BPM 重新生成」（RhythmBall re-generate 事件）→ 重跑 auto 并落 auto 态
+    async regenerateStyle() {
+      const tempo = await this.fetchTempo();
+      const cfg = buildAutoConfig(this.album.tags, tempo);
+      this.applyStyleConfig(cfg, 'auto');
+      this.saveAlbumStyle('auto');
+      if (!tempo) this.ensureTempoAndPoll();
     },
 
     // v0.8.1 P6：加载 AI 配置状态 → 决定左侧菜单是否显示「AI 助手」（仅配置 key 的用户可见）
@@ -1652,6 +1837,8 @@ handleUpdateAlbumScore(scoreList) {
                 resolve();
                 // v0.8.3 P1：详情页打开即预触发 BPM 分析（幂等；专辑切换时 albumPoolId 已更新）
                 this.preloadTempo();
+                // v0.9 P1：详情页打开即加载/自动生成动画样式配置（单一配置源，BPM 就绪补微调）
+                this.loadAlbumStyle();
               } else {
                 alert(res.data.msg);
                 // ======== 【修改点2/4】替换跳转逻辑 ========
@@ -2351,31 +2538,25 @@ handleMouseLeave() {
     },
 
 
-    // 修复：自动生成流星逻辑
+    // 自动生成流星逻辑（v0.9 P1：视觉参数统一读 meteorConfig 单一配置源；生成频率由 rhyConfig c/d/e 决定，
+    // 与 RhythmBall startAutoMeteorGenerate 同公式，双生成器视觉一致）
     startAutoMeteorGenerate() {
-
       // 三重条件校验
       if (this.autoMeteorTimer || this.isMouseHover || !this.isPlaying || !this.isMeteorPlay) return;
 
-      // 正确获取参数：从meteorConfig和currentBallConfig中取值
-
-
-      const {a, b, c, d,e} = this.rhyConfig;
-      const angle=a/1.5
-      const size=b*5
-      const timeLine=c*10
-      const speed=d/5
-      const finalNumWeight=Math.floor(e/20)
-
-
-
-      // 使用合理的默认值兜底
+      const {c, d, e} = this.rhyConfig;
+      const minRate = Math.floor(c * 29) + 100;
+      const maxRate = Math.floor(d * 49) + 100;
+      const numWeight = Math.floor(e * 0.09) + 1;
+      const angle = this.meteorConfig.angle || 45;
+      const size = this.meteorConfig.size || 10;
+      const speed = this.meteorConfig.speed || 30;
 
       this.autoMeteorTimer = setInterval(() => {
         if (!this.wrapDom || this.isMouseHover || !this.isPlaying || !this.isMeteorPlay) return;
 
         // 批量生成流星
-        for (let i = 0; i < finalNumWeight; i++) {
+        for (let i = 0; i < numWeight; i++) {
           // 随机起始位置（屏幕顶部外）
           const x = Math.floor(Math.random() * this.wrapDom.offsetWidth);
           const y = -50;
@@ -2389,8 +2570,7 @@ handleMouseLeave() {
 
           this.createMeteor(x, y, randomParams);
         }
-      },
-          timeLine);
+      }, Math.floor(Math.random() * (maxRate - minRate)) + minRate);
     },
 
     // 优化：创建流星方法，修复参数使用
@@ -2470,20 +2650,13 @@ stopAutoMeteorGenerate() {
   this.autoMeteorTimer && (clearInterval(this.autoMeteorTimer), (this.autoMeteorTimer = null));
 },
 
-    // 新增：接收子组件的流星配置更新
+    // 接收子组件的流星配置更新（v0.9 P1：meteorConfig 已是响应式 data，更新 + 防抖保存）
     handleUpdateMeteorConfig(config) {
       this.meteorConfig = {
         ...this.meteorConfig,
-        ...config
+        ...(config || {})
       };
-    },
-
-    // 修复：接收小球配置更新
-    handleUpdateBallConfig(config) {
-      this.currentBallConfig = {
-        ...this.currentBallConfig,
-        ...config
-      };
+      if (this.styleLoaded) this.scheduleStyleSave(); // 样式加载前的初始化 emit 不落库
     },
 // 初始化流星动画
 initMeteorAnimation() {
@@ -2559,6 +2732,8 @@ handleToggleMeteorPlay(val) {
     // 关闭流星：销毁动画 + 停止自动生成
     this.destroyMeteorAnimation();
   }
+  // v0.9 P1：开关变化即防抖持久化（manual 标记由 RhythmBall mark-manual 事件负责；样式加载前不落库）
+  if (this.styleLoaded) this.scheduleStyleSave();
 },
 
 

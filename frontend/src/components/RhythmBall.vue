@@ -3,6 +3,11 @@
     <div class="ball-config-panel">
       <div class="ball-switch-wrap">
         <h3>样式参数</h3>
+        <button
+          class="regen-btn"
+          @click="$emit('re-generate')"
+          title="按类型/BPM 重新生成初始动画样式与参数"
+        >按类型/BPM 重新生成</button>
       </div>
       <div class="config-with-toggle">
         <div class="ball-config-list">
@@ -46,6 +51,21 @@
 </template>
 
 <script>
+// v0.9 P1：数值归一（0-100 收敛），非法/缺省回退默认（镜像 styleAuto roundClamp）
+function num(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : fallback;
+}
+// v0.9 P1：小球参数等值比较（父组件初始配置 sync 时跳过等值，防 emit 回环）
+function rhyEqual(a, b) {
+  if (!a || !b) return false;
+  return ['a', 'b', 'c', 'd', 'e'].every(k => num(a[k]) === num(b[k]));
+}
+function meteorEqual(a, b) {
+  if (!a || !b) return false;
+  return ['angle', 'size', 'tailLength', 'speed'].every(k => num(a[k]) === num(b[k]));
+}
+
 export default {
   name: 'RhythmBall',
   props: {
@@ -69,21 +89,33 @@ export default {
       required: true,
       default: '#257d51'
     },
+    // v0.9 P1：父组件（AlbumDetail 单一配置源）下发初始化参数
+    // 修复原 initialBallConfig prop 声明未使用 → 切回曲目列表每次重置默认的 bug
     initialBallConfig: {
       type: Object,
       default: () => ({})
+    },
+    initialMeteorConfig: {
+      type: Object,
+      default: () => ({})
+    },
+    initialToggleStatus: {
+      type: String,
+      default: ''
     }
   },
   data() {
+    const ball = this.initialBallConfig || {};
+    const meteor = this.initialMeteorConfig || {};
     return {
-      toggleStatus: 'close',
-      // ========== 核心：rhyConfig 只保留5个参数 ==========
+      toggleStatus: this.initialToggleStatus || 'close',
+      // ========== 核心：rhyConfig 只保留5个参数（v0.9 P1：由 initialBallConfig 初始化，不再回默认）==========
       rhyConfig: {
-        a: 20,
-        b: 40,
-        c: 30,
-        d: 50,
-        e: 10
+        a: num(ball.a, 20),
+        b: num(ball.b, 40),
+        c: num(ball.c, 30),
+        d: num(ball.d, 50),
+        e: num(ball.e, 10)
       },
       // ========== 仅保留必要的基础数据 ==========
       isBallConfigDragging: false,
@@ -97,12 +129,12 @@ export default {
         {key: 'd', label: '参数D'},
         {key: 'e', label: '参数E'}
       ],
-      // 流星基础配置（独立存在，不混入rhyConfig）
+      // 流星基础配置（独立存在，不混入rhyConfig；v0.9 P1：由 initialMeteorConfig 初始化）
       meteorConfig: {
-        angle: 45,
-        size: 10,
-        tailLength: 50,
-        speed: 30
+        angle: num(meteor.angle, 45),
+        size: num(meteor.size, 10),
+        tailLength: num(meteor.tailLength, 50),
+        speed: num(meteor.speed, 30)
       },
       // 定时器（必要的控制变量）
       autoBallTimer: null,
@@ -153,6 +185,28 @@ export default {
         this.$emit('update-meteor-config', newVal);
       },
       deep: true
+    },
+    // v0.9 P1：父组件（单一配置源）BPM 就绪/重新生成后更新初始参数 → 同步内部（等值跳过防回环）
+    initialBallConfig: {
+      handler(v) {
+        if (!v || !Object.keys(v).length) return;
+        const next = {a: num(v.a), b: num(v.b), c: num(v.c), d: num(v.d), e: num(v.e)};
+        if (!rhyEqual(this.rhyConfig, next)) this.rhyConfig = next;
+      },
+      deep: true
+    },
+    initialMeteorConfig: {
+      handler(v) {
+        if (!v || !Object.keys(v).length) return;
+        const next = {angle: num(v.angle), size: num(v.size), tailLength: num(v.tailLength), speed: num(v.speed)};
+        if (!meteorEqual(this.meteorConfig, next)) this.meteorConfig = next;
+      },
+      deep: true
+    },
+    initialToggleStatus: {
+      handler(v) {
+        if (v && v !== this.toggleStatus) this.toggleStatus = v;
+      }
     }
   },
   mounted() {
@@ -178,6 +232,8 @@ export default {
     // 切换动画状态
     switchToggle(status) {
       this.toggleStatus = status;
+      // v0.9 P1：用户手动切换动画类型 → 通知父组件标记 manual（父组件负责持久化）
+      this.$emit('mark-manual');
       if (status === 'close') {
         this.$emit('toggle-ball-play', false);
         this.$emit('toggle-meteor-play', false);
@@ -225,6 +281,8 @@ export default {
           ...this.rhyConfig,
           [letterKey]: Math.round(value)
         };
+        // v0.9 P1：用户拖拽/点击参数滑杆 → 通知父组件标记 manual（父组件负责持久化）
+        this.$emit('mark-manual');
       } catch (error) {
         console.error('计算进度条值时出错:', error);
       }
@@ -296,9 +354,9 @@ export default {
     },
     // 统一清理状态
     clearAllStates() {
-      this.toggleStatus = 'close';
-      this.$emit('toggle-ball-play', false);
-      this.$emit('toggle-meteor-play', false);
+      // v0.9 P1：仅停止本地生成定时器，不再发 toggle-off 到父组件 —— 父组件（AlbumDetail）持有
+      // 动画开关单一配置源，切 tab / 销毁本组件时父动画层继续运行（专辑页内动画持久）；
+      // 关闭动画由用户点击 close 触发（switchToggle 才发 toggle-off）
       this.stopAutoBallGenerate();
       this.stopAutoMeteorGenerate();
     }
@@ -337,6 +395,12 @@ export default {
 
 .ball-switch-wrap {
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 4px solid v-bind(mainColorDark);
 }
 
 .ball-switch-wrap h3 {
@@ -344,8 +408,27 @@ export default {
   font-size: 16px;
   color: v-bind(mainColorDarkDouble);
   font-weight: 600;
-  padding-bottom: 8px;
-  border-bottom: 4px solid v-bind(mainColorDark);
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.regen-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid v-bind(mainColorDark);
+  color: v-bind(mainColorDark);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.regen-btn:hover {
+  background: v-bind(mainColorDark);
+  color: #fff;
 }
 
 .config-with-toggle {
