@@ -32,10 +32,10 @@ PYTHONIOENCODING=utf-8 portable\python\python.exe backend/run.py   # 启动 Flas
 **不要为了访问 localhost 关闭三个防火墙配置文件**（Domain/Private/Public 全关会导致局域网/公网其他机器也能访问 5000/8080，不安全）。localhost 打不开的常见元凶：首次启动弹窗点了“取消”，生成了 python/node 的**阻止规则**。一键修复（需管理员，会弹 UAC）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\firewall_dev.ps1
+powershell -ExecutionPolicy Bypass -File .\portable\firewall_dev.ps1
 ```
 
-该脚本（幂等，日志见 `firewall_dev_log.txt`）：开启三个配置文件 → 添加「仅本机回环 127.0.0.1/::1」放行 5000/8080 的入站规则 → 禁用历史误建的 python/node 阻止规则。脚本必须保持 UTF-8 **带 BOM** 编码（否则 Windows PowerShell 5.1 会按 ANSI 误读报语法错）。若需局域网手机真机调试，按脚本头注释额外添加 `-RemoteAddress LocalSubnet -Profile Private` 规则。
+该脚本（幂等，日志见 `portable\firewall_dev_log.txt`，属本机小工具存放于 `portable/` 不入库）：开启三个配置文件 → 添加「仅本机回环 127.0.0.1/::1」放行 5000/8080 的入站规则 → 禁用历史误建的 python/node 阻止规则。脚本必须保持 UTF-8 **带 BOM** 编码（否则 Windows PowerShell 5.1 会按 ANSI 误读报语法错）。若需局域网手机真机调试，按脚本头注释额外添加 `-RemoteAddress LocalSubnet -Profile Private` 规则。
 
 ### 测试（pytest）
 
@@ -141,6 +141,7 @@ portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 
 - 注释和 UI 文本使用中文；风格/标签名使用英文
 - Vue Router 使用 hash 模式（`mode: 'hash'`）以兼容移动端
 - 管理员专属功能在后端通过 `is_admin` 标志判断
+- **本机小工具习惯**：主目录不堆脚本——本机私有的启动/修复/诊断类脚本（如 `portable/start_musicrate.bat/.ps1` 一键启动、`portable/firewall_dev.ps1` 防火墙修复）一律放 `portable/`（`.gitignore` 已整体忽略，不入库）；只有项目代码与文档才进 git。ps1 一律保存为 UTF-8 **带 BOM**（Windows PowerShell 5.1 按 ANSI 误读无 BOM 文件会报语法错）
 
 ## 铁律
 - 每次修改，都要git上传，并说明修改内容

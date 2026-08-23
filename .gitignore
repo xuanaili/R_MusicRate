@@ -30,11 +30,10 @@ __pycache__/
 backend/*.log
 # 数据库文件（如果后续用SQLite）
 backend/*.db
-# 数据
-backend/data/album_covers
-backend/data/album_covers_thumb
-backend/data/album_track
-backend/data/spike_output
+# 数据（运行时产物：封面/音频缓存、转码临时目录、日志等，全部不入库）
+backend/data/
+# 临时诊断脚本（repro_*，文件头自带“不入库不提交”）
+backend/repro_*.py
 
 
 # 便携式应用（portable/，每台机器本地安装，不入仓库）
@@ -51,8 +50,6 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.bak
-# 防火墙脚本运行日志
-firewall_dev_log.txt
 # CDN版前端的临时文件（可选）
 frontend-cdn/
 
