@@ -27,15 +27,15 @@ npm run lint      # ESLint 检查
 PYTHONIOENCODING=utf-8 portable\python\python.exe backend/run.py   # 启动 Flask http://0.0.0.0:5000（Windows 下会自动启动 MySQL80 服务）
 ```
 
-### Windows 防火墙（localhost 访问）
+### Windows 防火墙（localhost）
 
-**不要为了访问 localhost 关闭三个防火墙配置文件**（Domain/Private/Public 全关会导致局域网/公网其他机器也能访问 5000/8080，不安全）。localhost 打不开的常见元凶：首次启动弹窗点了“取消”，生成了 python/node 的**阻止规则**。一键修复（需管理员，会弹 UAC）：
+**禁止关闭三个防火墙配置文件**（全关 = 局域网/公网都能访问 5000/8080）。打不开的常见元凶：首次启动弹窗点“取消”生成的 python/node 阻止规则。一键修复（管理员运行，会弹 UAC；幂等，日志 `portable\firewall_dev_log.txt`，属本机小工具不入库）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\portable\firewall_dev.ps1
 ```
 
-该脚本（幂等，日志见 `portable\firewall_dev_log.txt`，属本机小工具存放于 `portable/` 不入库）：开启三个配置文件 → 添加「仅本机回环 127.0.0.1/::1」放行 5000/8080 的入站规则 → 禁用历史误建的 python/node 阻止规则。脚本必须保持 UTF-8 **带 BOM** 编码（否则 Windows PowerShell 5.1 会按 ANSI 误读报语法错）。若需局域网手机真机调试，按脚本头注释额外添加 `-RemoteAddress LocalSubnet -Profile Private` 规则。
+作用：开启三配置文件 + 仅放行本机回环 127.0.0.1/::1 的 5000/8080 + 清除误建阻止规则；局域网手机调试见脚本头注释。
 
 ### 测试（pytest）
 
