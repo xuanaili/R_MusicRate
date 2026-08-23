@@ -52,6 +52,15 @@ npm install
 npm run serve      # 开发服务器 http://localhost:8080
 ```
 
+### 一键启动（推荐）
+
+```bash
+# Windows 下双击 start_musicrate.bat（或桌面「MusicRate 启动」快捷方式）即可
+# 自动完成：启动后端 Flask(:5000) + 前端 npm(:8080) → 轮询等待就绪 → 自动打开浏览器
+# 首次运行会在桌面自动创建带图标的快捷方式；已运行则直接打开页面
+# 图标由 launcher/make_icon.py 重新生成（纯 stdlib，无 PIL 依赖）
+```
+
 ### 运行测试
 
 ```bash
@@ -115,6 +124,8 @@ MusicRate/
 │           ├── user/          # 个人中心（资料/外观/统计/头像）
 │           ├── RhythmBall.vue # 节奏小球动画
 │           └── TagBubbleChart.vue  # ECharts 气泡图
+├── start_musicrate.bat/.ps1  # 一键启动脚本（bat 双击入口 + ps1 编排逻辑，UTF-8 带 BOM）
+├── launcher/                 # 桌面图标（musicrate.ico）与生成脚本 make_icon.py
 ├── portable/                 # 便携 Python + 音频工具
 ├── ai/                       # 开发文档（skill 流程 / case notes / knowledge）
 └── pytest.ini / requirements.txt
