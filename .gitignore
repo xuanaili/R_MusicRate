@@ -51,6 +51,8 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.bak
+# 防火墙脚本运行日志
+firewall_dev_log.txt
 # CDN版前端的临时文件（可选）
 frontend-cdn/
 

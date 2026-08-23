@@ -27,6 +27,16 @@ npm run lint      # ESLint 检查
 PYTHONIOENCODING=utf-8 portable\python\python.exe backend/run.py   # 启动 Flask http://0.0.0.0:5000（Windows 下会自动启动 MySQL80 服务）
 ```
 
+### Windows 防火墙（localhost 访问）
+
+**不要为了访问 localhost 关闭三个防火墙配置文件**（Domain/Private/Public 全关会导致局域网/公网其他机器也能访问 5000/8080，不安全）。localhost 打不开的常见元凶：首次启动弹窗点了“取消”，生成了 python/node 的**阻止规则**。一键修复（需管理员，会弹 UAC）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\firewall_dev.ps1
+```
+
+该脚本（幂等，日志见 `firewall_dev_log.txt`）：开启三个配置文件 → 添加「仅本机回环 127.0.0.1/::1」放行 5000/8080 的入站规则 → 禁用历史误建的 python/node 阻止规则。脚本必须保持 UTF-8 **带 BOM** 编码（否则 Windows PowerShell 5.1 会按 ANSI 误读报语法错）。若需局域网手机真机调试，按脚本头注释额外添加 `-RemoteAddress LocalSubnet -Profile Private` 规则。
+
 ### 测试（pytest）
 
 测试统一放在 `backend/tests/`，使用 pytest 框架（已装入便携 Python）：
