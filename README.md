@@ -58,7 +58,7 @@ npm run serve      # 开发服务器 http://localhost:8080
 # Windows 下双击 portable\start_musicrate.bat（本机小工具，git 不携带，需自行保留；或桌面「MusicRate 启动」快捷方式）即可
 # 自动完成：启动后端 Flask(:5000) + 前端 npm(:8080) → 轮询等待就绪 → 自动打开浏览器
 # 首次运行会在桌面自动创建带图标的快捷方式；已运行则直接打开页面
-# 图标由 launcher/make_icon.py 重新生成（纯 stdlib，无 PIL 依赖）
+# 图标由 portable/launcher/make_icon.py 重新生成（纯 stdlib，无 PIL 依赖）
 ```
 
 ### 运行测试
@@ -124,9 +124,9 @@ MusicRate/
 │           ├── user/          # 个人中心（资料/外观/统计/头像）
 │           ├── RhythmBall.vue # 节奏小球动画
 │           └── TagBubbleChart.vue  # ECharts 气泡图
-├── launcher/                 # 桌面图标（musicrate.ico）与生成脚本 make_icon.py
 ├── portable/                 # 本机小工具专区（gitignored，不入库）：便携 Python、ffmpeg、
-│                             #   一键启动脚本 start_musicrate.bat/.ps1、防火墙修复脚本 firewall_dev.ps1 等
+│                             #   一键启动脚本 start_musicrate.bat/.ps1、防火墙修复脚本 firewall_dev.ps1、
+│                             #   桌面图标生成器 launcher/（musicrate.ico + make_icon.py）等
 ├── ai/                       # 开发文档（skill 流程 / case notes / knowledge）
 └── pytest.ini / requirements.txt
 ```
@@ -157,6 +157,10 @@ MusicRate/
 # 版本历史
 
 ---
+
+## v0.9.1 — 目录整理：launcher 移入 portable（仓库整理）
+
+> 按本机小工具习惯将 `launcher/`（桌面图标 `musicrate.ico`、预览图与生成脚本 `make_icon.py`）从项目根目录移入 `portable/launcher/`（gitignored，不入库），并清理 git 追踪；README 目录树与一键启动说明同步更新。
 
 ## v0.9 — 曲目列表样式参数自动化 + 配置持久化（规划已定稿）
 
