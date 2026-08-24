@@ -53,7 +53,14 @@ AUDIO_BASE_URL = f"http://{HOST}:{PORT}/tracks/"
 # ================= v0.8.1：DeepSeek 歌词校正（服务器端，仅管理员识别用） =================
 # 管理员 AI 歌词识别产出的草稿，若配置本 key 则调用 DeepSeek 校正（difflib 保时间戳只改文字）
 # 与个人用户 AI key（ai_key 表，P3）分离两套；留空则识别直接落 whisper 草稿
+# key 存于 gitignore 的 backend/data/deepseek_api_key.txt（首行），不入库
 DEEPSEEK_API_KEY = ''
+try:
+    _key_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend/data/deepseek_api_key.txt')
+    with open(_key_file, 'r', encoding='utf-8') as _f:
+        DEEPSEEK_API_KEY = _f.readline().strip()
+except (IOError, OSError):
+    pass
 
 # ================= 分页默认值 =================
 DEFAULT_PAGE = 1

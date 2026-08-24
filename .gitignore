@@ -34,6 +34,10 @@ backend/*.db
 backend/data/
 # 临时诊断脚本（repro_*，文件头自带“不入库不提交”）
 backend/repro_*.py
+# 本机小工具/下载的第三方工具（含登录 token、安装包，不入库）
+frontend/auto-record.js
+backend/tools/WinCam*.exe
+backend/tools/get-pip.py
 
 
 # 便携式应用（portable/，每台机器本地安装，不入仓库）

@@ -144,7 +144,7 @@ portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 
 - **本机小工具习惯**：主目录不堆脚本——本机私有的启动/修复/诊断类脚本（如 `portable/start_musicrate.bat/.ps1` 一键启动、`portable/firewall_dev.ps1` 防火墙修复）一律放 `portable/`（`.gitignore` 已整体忽略，不入库）；只有项目代码与文档才进 git。ps1 一律保存为 UTF-8 **带 BOM**（Windows PowerShell 5.1 按 ANSI 误读无 BOM 文件会报语法错）
 
 ## 铁律
-- 每次修改，都要git上传，并说明修改内容
+- 每次修改，都要 git 提交并 **push 到 GitHub 远程 origin**（GitHub 为唯一真相源，commit 后必须 push），并说明修改内容
 - 开发新功能前，必须先阅读 `ai/skill/` 目录下的规则文件，避免重复踩坑
 - **版本规划**：按 `ai/skill/20260810_big_version_planning_workflow.md` 执行——规划产出 = **直接写 README 版本章节（最新版本在前） + git 提交**，不进 plan mode、不出独立方案文件；需用户拍板的决策用 AskUserQuestion
 - **新需求（新对话）启动时，先同时加载「开发 skill」`ai/skill/20260810_feature_development_workflow.md` +「测试 skill」`ai/skill/20260810_testing_workflow.md`**，两者成对使用：测试先行→实现→跑测试→提交，互相验证修改；测试失败 = 改代码或按新需求改测试，不得静默跳过
