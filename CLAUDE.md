@@ -149,6 +149,9 @@ portable\python\python.exe portable\tools\db_change.py auto      # 直接用 bac
 ### 数据库关键模式
 
 - **用户分表**：每个用户拥有独立的 `albums_{user_id}` 表，存储其私有专辑副本
+- **用户表数量 = 用户数量**（线上库 1199 张 `albums_%`，其中多数是历史/测试用户建的**空表**）。任何「遍历 `albums_%`」的查询都必须走批量方案：`backend/utils/tag.py` 的 `get_album_tag_stats_map(cursor, pool_ids)` = 一次 UNION ALL 分块扫描（`UNION_CHUNK_SIZE`） + 全量快照缓存（`CACHE_TTL_SECONDS=120`，`invalidate_cache()` 可主动失效）
+  - ⚠️ 反面教材（v0.9 修复）：老版 `get_album_tag_stats` 对**每张**专辑都 `SELECT ... FROM albums_N WHERE source_pool_id=%s` 扫全部 1199 张表 ≈ 1.0s/张，搜索一页 10 张 ≈ 11s，超过前端 axios 10s 超时 → 页面永远停在「搜索中」。修复后：首次 0.7s（建缓存），之后 50ms
+  - 同理，`album_pool.py` 里删除/同步公共专辑时遍历用户表的逻辑（低频路径）仍未批量优化，改这些功能时注意别再引入「每专辑一次全表遍历」
 - **共享表**：`album_pool`（公共模板）、`users`、`user_playlist`、`user_recommend`、`user_album_intro`、`album_tags`、`singers`、`album_singers`
 - **JSON 列**：多个字段以 TEXT 类型存储 JSON 数组（tracks、my_score、tags、favourite_tracks、tracks_time、playlist）
 - **评分格式**：`[专辑整体评分, 单曲1评分, 单曲2评分, ...]`，0 表示未评分

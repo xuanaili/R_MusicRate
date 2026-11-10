@@ -1,7 +1,6 @@
 from flask import request, jsonify, g
 import json
 import traceback
-import random
 import os  # 文件操作模块
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
@@ -12,7 +11,7 @@ from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, UPLOAD_FOLDER, AUDIO_UPLOA
 
 import pymysql.cursors
 
-from ..utils.tag import get_album_tag_stats
+from ..utils.tag import get_album_tag_stats, get_album_tag_stats_map
 
 
 def register_album_pool_routes(app):
@@ -77,70 +76,8 @@ def register_album_pool_routes(app):
             db = get_db()
             cursor = db.cursor(cursor=pymysql.cursors.DictCursor)
 
-            # 修复：从所有用户的专辑表中统计标签（而非仅user_album_relation）
-            cursor.execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "albums_%"')
-            user_tables = cursor.fetchall()
-
-            # 步骤1：统计所有用户对该专辑的标签
-            tag_count = {}
-            total_tags = 0
-
-            # 先查公共专辑池的基础标签
-            cursor.execute('SELECT tags FROM album_pool WHERE id = %s', (album_pool_id,))
-            pool_album = cursor.fetchone()
-            if pool_album and pool_album['tags']:
-                try:
-                    pool_tags = json.loads(pool_album['tags'])
-                    for tag in pool_tags:
-                        tag = tag.strip()
-                        if tag:
-                            tag_count[tag] = tag_count.get(tag, 0) + 1
-                            total_tags += 1
-                except:
-                    pass
-
-            # 遍历所有用户表统计标签
-            for table in user_tables:
-                table_name = table['TABLE_NAME']
-                try:
-                    # 查询该用户表中关联到当前专辑池的专辑
-                    cursor.execute(f'''
-                        SELECT tags FROM `{table_name}` 
-                        WHERE source_pool_id = %s AND tags IS NOT NULL
-                    ''', (album_pool_id,))
-                    user_albums = cursor.fetchall()
-                    for album in user_albums:
-                        if album['tags']:
-                            try:
-                                tags = json.loads(album['tags'])
-                                for tag in tags:
-                                    tag = tag.strip()
-                                    if tag:
-                                        tag_count[tag] = tag_count.get(tag, 0) + 1
-                                        total_tags += 1
-                            except:
-                                continue
-                except Exception as e:
-                    print(f"统计用户表 {table_name} 失败：{str(e)}")
-                    continue
-
-            # 步骤3：计算占比，过滤<10%的标签
-            result = []
-            if total_tags > 0:
-                for tag, count in tag_count.items():
-                    percent = (count / total_tags) * 100
-                    if percent >= 10:
-                        # 计算气泡大小（按占比动态调整）
-                        size = int(percent * 2 + 40)
-                        # 随机生成颜色
-                        color = f"#{random.randint(0, 0xFFFFFF):06x}"
-                        result.append({
-                            "tag": tag,
-                            "count": count,
-                            "percent": round(percent, 1),
-                            "size": size,
-                            "color": color
-                        })
+            # 统一走 utils/tag.py 的批量统计 + 缓存（原来这里逐张用户表扫一遍，1199 张表 ≈ 1.2s）
+            result = get_album_tag_stats(album_pool_id, cursor)
 
             cursor.close()
             return jsonify({"code": 200, "msg": "成功", "data": result})
@@ -253,11 +190,13 @@ def register_album_pool_routes(app):
             album_list = cursor.fetchall()
 
             # 最终返回的结果集
+            # 标签气泡统计批量取（一次扫描 + 缓存），不再逐张专辑扫全部用户表（原来 10 张 ≈ 11s 超时）
+            tag_stats_map = get_album_tag_stats_map(cursor, [album['id'] for album in album_list])
             result_list = []
             for album in album_list:
                 create_user_name = album.get('create_user_name') or "未知用户"
                 # 计算聚合标签（仅前端展示，不参与搜索）
-                album_tag_stats = get_album_tag_stats(album['id'], cursor)
+                album_tag_stats = tag_stats_map.get(album['id'], [])
 
                 result_list.append({
                     "id": album['id'],
@@ -343,9 +282,11 @@ def register_album_pool_routes(app):
             all_album_list = cursor.fetchall()
 
             # ✅ 修复核心2：先过滤标签匹配的专辑，再分页，总数是真实匹配数
+            # 批量取标签统计（一次扫描 + 缓存），避免逐张专辑扫全部用户表
+            all_tag_stats_map = get_album_tag_stats_map(cursor, [album['id'] for album in all_album_list])
             match_album_list = []
             for album in all_album_list:
-                album_tag_stats = get_album_tag_stats(album['id'], cursor)
+                album_tag_stats = all_tag_stats_map.get(album['id'], [])
                 album_all_tags = [item['tag'].lower() for item in album_tag_stats]
                 album_origin_tags = safe_json_loads(album.get('tags')) or []
                 album_origin_tags = [tag.lower().strip() for tag in album_origin_tags if tag and tag.strip()]
@@ -364,11 +305,11 @@ def register_album_pool_routes(app):
             # ✅ 对匹配后的列表做分页切片
             paginated_albums = match_album_list[offset:offset + page_size]
 
-            # 组装返回结果
+            # 组装返回结果（复用上面已批量取到的标签统计）
             result_list = []
             for album in paginated_albums:
                 create_user_name = album.get('create_user_name') or "未知用户"
-                album_tag_stats = get_album_tag_stats(album['id'], cursor)
+                album_tag_stats = all_tag_stats_map.get(album['id'], [])
                 result_list.append({
                     "id": album['id'],
                     "album_name": album['album_name'],
