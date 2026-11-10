@@ -68,6 +68,8 @@ portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 
 - `pytest.ini` 已配 `testpaths = backend/tests`（避免误收 site-packages 自带测试）+ `addopts = -m "not realdata"`
 - 开发/测试流程详见 `ai/skill/20260810_feature_development_workflow.md` 与 `20260810_testing_workflow.md`
 - `backend/test.py` 为空文件，`frontend/playwright` 尚未配置（未使用）
+- **realdata 测试会真实写库**：`backend/tests/conftest.py` 的 `db_pollution_guard`（会话级 autouse）负责兜底回收——会话开始记录各表自增水位线 + `backend/data` 素材目录快照，结束删掉会话内新建的测试用户、池专辑（`create_user=0` 或新用户创建）、关联行，DROP 测试用户的 `albums_N` 分表，删除测试新建的音频/封面文件；连不上库时静默跳过（纯单测不受影响）。实现见 `backend/tests/_db_guard.py`，单测 `test_db_guard.py`
+- 排查/清理历史残留：`portable\tools\_clean_test_pollution.py`（本机小工具，默认干跑预览，`--apply` 才执行，执行前自动 `mysqldump` 整库备份到 `portable\backup\`）
 
 ## 架构
 
@@ -196,6 +198,13 @@ portable\python\python.exe portable\tools\db_change.py auto      # 直接用 bac
 - 开发新功能前，必须先阅读 `ai/skill/` 目录下的规则文件，避免重复踩坑
 - **版本规划**：按 `ai/skill/20260810_big_version_planning_workflow.md` 执行——规划产出 = **在 `ai/planning/` 新建 `v0.x_*.md`（先读 `00_template.md`，README 只加一行版本演进索引）+ git 提交**，不进 plan mode、不出独立方案文件；需用户拍板的决策用 AskUserQuestion
 - **新需求（新对话）启动时，先同时加载「开发 skill」`ai/skill/20260810_feature_development_workflow.md` +「测试 skill」`ai/skill/20260810_testing_workflow.md`**，两者成对使用：测试先行→实现→跑测试→提交，互相验证修改；测试失败 = 改代码或按新需求改测试，不得静默跳过
+- **禁止测试污染数据库（硬性）**：
+  - 测试**不得**往生产库 `music_rate` 留任何脏数据——历史上 realdata 测试没回收，留下 1193 个 `test_*` 用户、1193 张空 `albums_N` 表、557 条「XX测试专辑」，搜索页全是「暂无封面 / 节奏分析测试专辑」
+  - 写 realdata 测试只能写「会话内新建的数据」：插入 `album_pool` 用 `create_user=0` 或本用例新建的测试用户 id；**禁止**用真实用户 id 造数据、**禁止**改/删真实用户数据
+  - 兜底守卫在 `backend/tests/conftest.py::db_pollution_guard` + `backend/tests/_db_guard.py`（水位线 + 素材文件快照回收）：**不得关闭、不得 monkeypatch 绕过**；它只是兜底，测试本身仍应先想好清理
+  - 跑完 `pytest -m realdata` 后 `users` / `album_pool` / `albums_%` 表数量必须与会话前一致（守卫会打印「🧹 测试数据回收：…」）
+  - 一旦发现残留：`portable\tools\_clean_test_pollution.py` 干跑核对 → `--apply` 清理（自动整库备份）
+  - 严禁在公共 `album_pool` 里插固定名字的测试专辑（如「节奏分析测试专辑」）长期驻留；测试产物必须能被守卫识别回收
 
 ## 对话结束归档
 
