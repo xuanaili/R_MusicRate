@@ -8,6 +8,7 @@ import os.path
 from ..config import AUDIO_BASE_URL, AUDIO_UPLOAD_FOLDER
 from backend.utils.db import get_db, get_current_user_id
 from backend.utils.decorators import login_required
+from backend.utils.net_domain import url_file_name
 import pymysql
 # 音频时长解析核心库（python自带，无需额外安装）
 from mutagen.mp3 import MP3
@@ -66,8 +67,9 @@ def register_audio_routes(app):
             save_file_path = os.path.join(AUDIO_UPLOAD_FOLDER, unique_filename)
 
             # ===== 删除服务器上的旧音频文件（如果有）=====
-            if old_mp3_url and old_mp3_url != '' and AUDIO_BASE_URL in old_mp3_url:
-                old_filename = old_mp3_url.replace(AUDIO_BASE_URL, '')
+            # 按文件名删除，不再用 AUDIO_BASE_URL 前缀比对：后端 HOST 由 localhost 变成局域网 IP 后前缀对不上，旧文件会残留
+            old_filename = url_file_name(old_mp3_url)
+            if old_filename:
                 old_file_path = os.path.join(AUDIO_UPLOAD_FOLDER, old_filename)
                 if os.path.exists(old_file_path):
                     try:
@@ -197,8 +199,9 @@ def register_audio_routes(app):
                 return jsonify({"code": 404, "msg": f"公共专辑ID[{album_id}]不存在！"}), 404
 
             # ===== 1. 删除服务器上的音频文件 =====
-            if mp3_url and AUDIO_BASE_URL in mp3_url:
-                file_name = mp3_url.replace(AUDIO_BASE_URL, '')
+            # 按文件名删除（与后端 HOST 无关，换网络后依然能删干净）
+            file_name = url_file_name(mp3_url)
+            if file_name:
                 file_path = os.path.join(AUDIO_UPLOAD_FOLDER, file_name)
                 if os.path.exists(file_path):
                     try:
@@ -343,9 +346,9 @@ def register_audio_routes(app):
             # 提取文件名
             mp3_name = mp3_url.split('/')[-1] if '/' in mp3_url else 'merged_audio.mp3'
 
-            # 删除旧音频文件
-            if old_mp3_url and old_mp3_url != '' and AUDIO_BASE_URL in old_mp3_url:
-                old_filename = old_mp3_url.replace(AUDIO_BASE_URL, '')
+            # 删除旧音频文件（按文件名，不依赖 AUDIO_BASE_URL 前缀）
+            old_filename = url_file_name(old_mp3_url)
+            if old_filename:
                 old_file_path = os.path.join(AUDIO_UPLOAD_FOLDER, old_filename)
                 if os.path.exists(old_file_path):
                     try:
@@ -358,7 +361,7 @@ def register_audio_routes(app):
             mp3_duration = 0
             duration_format = "0:00"
             # 从URL获取文件路径
-            mp3_filename = mp3_url.replace(AUDIO_BASE_URL, '')
+            mp3_filename = url_file_name(mp3_url)
             mp3_path = os.path.join(AUDIO_UPLOAD_FOLDER, mp3_filename)
 
             if os.path.exists(mp3_path):

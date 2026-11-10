@@ -96,6 +96,8 @@
 //   - 对话历史按 album_pool_id 持久化，挂载时 GET /api/ai/conversation 加载
 //   - markdown 渲染 markdown-it({html:false}) 转义原始 HTML 防 XSS；Enter 发送 / Shift+Enter 换行
 import MarkdownIt from 'markdown-it'
+// AI 对话走原生 fetch（axios 不支持流式），后端地址跟随当前访问主机，手机访问时才连得对
+import { apiOrigin } from '@/utils/apiBase'
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -304,7 +306,7 @@ export default {
 
       try {
         // 原生 fetch：axios 无法流式且 10s 超时会杀长流
-        const res = await fetch('http://localhost:5000/api/ai/chat', {
+        const res = await fetch(apiOrigin() + '/api/ai/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -11,6 +11,8 @@ import noAutofill from '@/directives/noAutofill'
 import { getSavedTheme } from '@/utils/themeColor'
 // v0.7.1 P0：全局消息提示（toast + 升级横幅），挂载为 Vue.prototype.$message
 import message from '@/utils/message'
+// 后端地址动态解析 + 响应里写死的本机媒体地址改写（局域网/手机访问用）
+import { apiOrigin, normalizeBackendUrls } from '@/utils/apiBase'
 // 导入页面组件（统一用@别名，避免路径错误）
 import LoginPage from '@/views/LoginPage.vue'
 import MusicList from '@/components/myMusic/MusicList.vue'
@@ -99,16 +101,14 @@ router.beforeEach((to, from, next) => {
   }
 })
 
-// ========== ✅✅✅ 核心修改点 1 (重中之重！手机访问必改) ==========
-// 原地址：axios.defaults.baseURL = 'http://127.0.0.1:5000' → 手机永远访问不到
-// 修改为：你的【电脑连手机热点后的内网IP】+ 后端端口5000
-// ✅ 正确配置
-
-// axios.defaults.baseURL = 'http://192.168.0.105:5000'
-axios.defaults.baseURL = 'http://localhost:5000'
+// ========== 后端地址：跟随页面访问的主机，不再写死 localhost ==========
+// 原来写死 'http://localhost:5000'，手机（http://192.168.19.139:8080）打开时
+// localhost 指向手机自己 → 登录请求发不出去，表现为“服务异常/连接服务器失败”。
+// 现在由 apiOrigin() 自动推导：本机 → localhost:5000；手机/局域网 → 同一主机的 5000 端口。
+// 需要指向别的机器时在控制台设置 localStorage.backend_origin（见 utils/apiBase.js 说明）
+axios.defaults.baseURL = apiOrigin()
 axios.defaults.timeout = 10000
 axios.defaults.withCredentials = true // ✅ 保留，后端需要这个接收token
-axios.defaults.crossDomain = true; // ✅✅✅ 新增这一行，解决手机端跨域请求拦截问题
 // 请求拦截器：自动加token
 axios.interceptors.request.use(
   config => {
@@ -126,7 +126,12 @@ axios.interceptors.request.use(
 // （否则会把 persistMainColor / persistCoverBg / maskOpacity 等用户偏好一并清掉，导致主题/蒙版丢失）
 const AUTH_LOCALSTORAGE_KEYS = ['token', 'username', 'user_id', 'is_admin', 'is_vip', 'avatar', 'level']
 axios.interceptors.response.use(
-  response => response,
+  response => {
+    // 数据库里存的是 http://localhost:5000/... 的封面/缩略图/音频绝对地址，
+    // 手机用局域网 IP 访问时 localhost 是手机自己 → 统一改写成当前后端地址，否则封面和音频全挂
+    if (response && response.data) normalizeBackendUrls(response.data)
+    return response
+  },
   error => {
     if (error.response) {
       const { status, data } = error.response

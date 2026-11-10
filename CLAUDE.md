@@ -6,6 +6,25 @@
 
 MusicRate 是一个音乐专辑评分与发现的 Web 应用。用户可以给专辑打分、写听后感、管理播放列表、上传音频文件，以及通过标签/气泡图探索音乐。界面以中文为主，风格标签格式为 `English【中文】`。
 
+### 与 P_Workflow 的关系（重要）
+
+本项目的 `ai/` 文件夹与 `CLAUDE.md`（含 `README.md`）由 **P_Workflow** 跨项目 AI 知识统一管理仓库托管：
+
+- **真身**位于 `U:\P_Workflow\MusicRate\`
+- 本项目目录 `U:\MusicRate` 下的 `ai\` 为**目录联接（Junction）**、`CLAUDE.md` 与 `README.md` 为**硬链接（Hardlink）**，均指向上述真身
+- 在本项目目录读写 `ai/`、`CLAUDE.md` 或 `README.md`，实际操作的就是 P_Workflow 中的真身——**只有一个真身，杜绝两份不同步**
+
+`ai/` 文件夹是本项目的 AI 知识库，用于沉淀对话中产生的技能、知识和案例笔记。它由三个子目录组成：
+
+| 子目录 | 归属内容 | 文件命名 |
+|---|---|---|
+| `ai/ai_case_notes/` | 解决了 bug、排查了问题、修复了错误（归档型） | `YYYYMMDD_简短英文描述.md` |
+| `ai/knowledge/` | 学习了技术、记录了配置方法、整理了参考信息（归档型） | `YYYYMMDD_主题.md` |
+| `ai/skill/` | 总结了工作流程、制定了编码规范、提炼了操作步骤（归档型） | `YYYYMMDD_技能名.md` |
+| `ai/planning/` | 版本规划：进行中/已定稿/已完成的版本设计（**工作文档，非归档**） | `v0.x_简短英文描述.md`（按版本号） |
+
+每个子目录都有 `00_template.md` 模板，新增内容时先读模板再按格式写。
+
 ## 技术栈
 
 - **前端**: Vue 2.6 + Vue Router 3 (hash 模式) + Vue CLI 5, Axios, ECharts 5
@@ -55,10 +74,26 @@ portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 
 ### 前后端通信
 
 - 前端运行在 `:8080`，后端运行在 `:5000`
-- Axios 配置：`baseURL = 'http://localhost:5000'`，`withCredentials: true`
+- Axios 配置：`baseURL = apiOrigin()`（`frontend/src/utils/apiBase.js`），即「页面自身主机 + 5000 端口」，**不再写死 localhost**——本机打开 = localhost:5000，手机用局域网 IP 打开 = 同一主机:5000
+  - 需要前端连另一台机器时：控制台 `localStorage.setItem('backend_origin', 'http://10.0.0.5:5000')` 后刷新
+  - 后端写进数据库的媒体绝对地址（封面/缩略图/音频/头像）由响应拦截器 `normalizeBackendUrls()` 统一改写到当前主机，换网络后旧 IP 也能自动纠正
+- 后端 `HOST` 自动跟随当前局域网 IP（`backend/config.py`：环境变量 `MUSICRATE_HOST` > `backend/data/lan_host.txt` > 自动探测 > localhost），新上传文件生成的地址永远与当前网络一致
 - Token 认证：通过 `Authorization` 请求头传递，存储在 `localStorage`
 - 401 响应自动清除 localStorage 并跳转到 `/login`
-- CORS 仅允许 `localhost:8080` 来源
+- CORS 由 `flask_cors` 正则 `.*` 放行任意来源（开发期换 IP 不用改配置）
+
+### 局域网（手机）访问
+
+1. 手机与电脑同一网络，访问 `http://<电脑局域网IP>:8080`
+2. 表里存量的旧地址（localhost / 换网络前的旧 IP）用工具批量改写（本机小工具，`portable/` 不入库）：
+
+```bash
+portable\python\python.exe portable\tools\db_change.py list      # 只看现状：旧域名统计 + 影响行数
+portable\python\python.exe portable\tools\db_change.py           # 交互式选地址后替换
+portable\python\python.exe portable\tools\db_change.py auto      # 直接用 backend/config.py 当前生效地址
+```
+
+改写逻辑在 `backend/utils/net_domain.py`（纯逻辑有单测 `backend/tests/test_net_domain.py`）：只替换「localhost / 任意 IPv4 + 后端 5000 端口」前缀，外链不动；`album_pool`、`albums_%`、`users` 的 `cover_img / mp3_url / avatar` 字段，字段按 information_schema 取交集（老表缺列也不会报错）。
 
 ### 后端结构
 
@@ -143,10 +178,20 @@ portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 
 - 管理员专属功能在后端通过 `is_admin` 标志判断
 - **本机小工具习惯**：主目录不堆脚本——本机私有的启动/修复/诊断类脚本（如 `portable/start_musicrate.bat/.ps1` 一键启动、`portable/firewall_dev.ps1` 防火墙修复）一律放 `portable/`（`.gitignore` 已整体忽略，不入库）；只有项目代码与文档才进 git。ps1 一律保存为 UTF-8 **带 BOM**（Windows PowerShell 5.1 按 ANSI 误读无 BOM 文件会报语法错）
 
+
+## 文档导航（重要）
+
+按需 read，不要每次全量加载：
+
+- **版本规划** → `ai/planning/`（按版本号命名，当前 v0.9.x；跨版本待办见 `BACKLOG.md`，先读 `00_template.md`）
+- **基础概念（跨版本稳定）** → `ai/knowledge/`（数据库模式 / 认证 / 评分 / 音频管线）
+- **技能与流程** → `ai/skill/`
+- **README.md**：只保留稳定信息 + 版本演进索引（一行一版本，2026-08-30 起规划不再写进 README）
+
 ## 铁律
 - 每次修改，都要 git 提交并 **push 到 GitHub 远程 origin**（GitHub 为唯一真相源，commit 后必须 push），并说明修改内容
 - 开发新功能前，必须先阅读 `ai/skill/` 目录下的规则文件，避免重复踩坑
-- **版本规划**：按 `ai/skill/20260810_big_version_planning_workflow.md` 执行——规划产出 = **直接写 README 版本章节（最新版本在前） + git 提交**，不进 plan mode、不出独立方案文件；需用户拍板的决策用 AskUserQuestion
+- **版本规划**：按 `ai/skill/20260810_big_version_planning_workflow.md` 执行——规划产出 = **在 `ai/planning/` 新建 `v0.x_*.md`（先读 `00_template.md`，README 只加一行版本演进索引）+ git 提交**，不进 plan mode、不出独立方案文件；需用户拍板的决策用 AskUserQuestion
 - **新需求（新对话）启动时，先同时加载「开发 skill」`ai/skill/20260810_feature_development_workflow.md` +「测试 skill」`ai/skill/20260810_testing_workflow.md`**，两者成对使用：测试先行→实现→跑测试→提交，互相验证修改；测试失败 = 改代码或按新需求改测试，不得静默跳过
 
 ## 对话结束归档
@@ -169,3 +214,18 @@ portable\python\python.exe -m pytest backend/tests/test_xxx.py -k 关键词   # 
 2. 读取对应子目录的 `00_template.md` 模板
 3. 按模板格式生成总结文档，命名规则 `YYYYMMDD_简短英文描述.md`，并把第一步的优化复盘并入
 4. 告知用户文件已保存的路径和简要内容
+
+## 归档与推送流程
+
+1. 在本项目目录 `U:\MusicRate\ai\<子目录>\` 下按模板写新 md（直接落进 P_Workflow 真身）
+2. 切到 `U:\P_Workflow`，提交并推送：
+
+```bash
+cd U:\P_Workflow
+git add -A
+git commit -m "归档: MusicRate/<子目录> <简述>"
+git push
+```
+
+3. push 前确保 VPN 已开（走 `127.0.0.1:7897` 代理）
+4. **铁律：禁止触碰 `rdgitlab.wbtz.cloud`**——本项目的任何 git / 链接操作都不得涉及公司 GitLab 远程，只动本地文件系统与 P_Workflow 的 GitHub 远程

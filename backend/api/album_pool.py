@@ -5,8 +5,10 @@ import random
 import os  # 文件操作模块
 from backend.utils.db import get_db, get_album_table_name, get_current_user_id
 from backend.utils.decorators import login_required
+# url_file_name：按文件名取音频文件，不依赖 AUDIO_BASE_URL 前缀（后端 HOST 会随局域网 IP 变化）
+from backend.utils.net_domain import url_file_name
 # 导入所有需要的配置，包含音频相关
-from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, UPLOAD_FOLDER, AUDIO_BASE_URL, AUDIO_UPLOAD_FOLDER
+from ..config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, UPLOAD_FOLDER, AUDIO_UPLOAD_FOLDER
 
 import pymysql.cursors
 
@@ -443,9 +445,9 @@ def register_album_pool_routes(app):
             delete_audio_flag = False
             # ========== 步骤1：删除【专辑音频资源文件】+ 清空音频数据库字段 ==========
             mp3_url = album.get('mp3_url', '')
-            if mp3_url and mp3_url.strip() and AUDIO_BASE_URL in mp3_url:
+            if mp3_url and mp3_url.strip():
                 try:
-                    audio_filename = mp3_url.replace(AUDIO_BASE_URL, '')
+                    audio_filename = url_file_name(mp3_url)
                     full_audio_path = os.path.join(AUDIO_UPLOAD_FOLDER, audio_filename)
                     if os.path.exists(full_audio_path):
                         os.remove(full_audio_path)

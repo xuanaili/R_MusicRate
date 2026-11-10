@@ -1,11 +1,58 @@
 # MusicRate\backend\config.py 全局配置文件 - 包含所有基础配置项
 import os
+import re
+import socket
 import pymysql
 # ================= Flask 基础配置 =================
 SECRET_KEY = 'albumDetail-rate-secret-key'
 DEBUG = True
-HOST = 'localhost'
 PORT = 5000
+FRONTEND_PORT = 8080  # 前端 npm run serve 端口（仅工具脚本拼 CORS 来源时用）
+
+
+def detect_local_ip():
+    """自动识别本机当前局域网 IPv4（UDP connect 技巧，不实际发包），失败回退 localhost
+
+    为什么不再写死 HOST：封面/音频地址（COVER_BASE_URL / AUDIO_BASE_URL）都拼在 HOST 上，
+    写死 localhost 时，手机通过局域网访问会拿到 http://localhost:5000/... → 指向手机自己，
+    封面全裂、音频放不出来。自动探测可以保证新上传的文件地址始终与当前局域网一致。
+    """
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1)
+        sock.connect(('8.8.8.8', 80))  # 只用于让系统选出口网卡，不发包
+        ip = sock.getsockname()[0]
+        if re.match(r'^\d{1,3}(\.\d{1,3}){3}$', ip) and not ip.startswith('127.'):
+            return ip
+    except OSError:
+        pass
+    finally:
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+    return 'localhost'
+
+
+# 优先级：环境变量 MUSICRATE_HOST > backend/data/lan_host.txt（由域名切换工具写入）> 自动探测当前局域网 IP > localhost
+# 想强制用某个地址（如反向代理域名）时：set MUSICRATE_HOST=example.com 再启动后端
+LAN_HOST_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backend', 'data', 'lan_host.txt'
+)
+
+
+def read_preferred_host():
+    """读取工具选定的后端地址（首行），没有/读不到返回 None"""
+    try:
+        with open(LAN_HOST_FILE, 'r', encoding='utf-8') as f:
+            return f.readline().strip() or None
+    except (IOError, OSError):
+        return None
+
+
+HOST = os.environ.get('MUSICRATE_HOST', '').strip() or read_preferred_host() or detect_local_ip()
 
 # ================= MySQL 数据库配置 =================
 MYSQL_CONFIG = {

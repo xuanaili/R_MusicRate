@@ -274,6 +274,8 @@ import {calculateAlbumTotalScore} from '@/utils/scoreCalc.js'
 import {handleLevelFeedback} from '@/utils/levelFeedback'
 // v0.9 P1：动画样式自动生成纯函数（tags + BPM → style_type / rhy_config / meteor_config）
 import {buildAutoConfig} from '@/utils/styleAuto.js'
+// 退出兜底上报用原生 fetch（要 keepalive），地址必须跟随当前访问主机，不能写死 localhost
+import {apiOrigin} from '@/utils/apiBase'
 
 export default {
   name: 'AlbumDetail',
@@ -1266,7 +1268,7 @@ togglePlayPause() {
       const liveTime = audio && audio.currentTime ? audio.currentTime : this.currentTime;
       const progressSeconds = Math.max(0, Number(liveTime) || 0);
       try {
-        fetch('http://localhost:5000/api/album/listening/pause/' + this.album.id, {
+        fetch(apiOrigin() + '/api/album/listening/pause/' + this.album.id, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json;charset=utf-8',
